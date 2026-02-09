@@ -1,0 +1,55 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: newpublishing
+      POSTGRES_USER: newpub
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U newpub -d newpublishing"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://newpub:devpassword@db:5432/newpublishing"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      LOG_LEVEL: "debug"
+      ENVIRONMENT: "development"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./extensions:/app/extensions
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      uvicorn newpublishing.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app/src
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    profiles: ["debug"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: dev@newpublishing.local
+      PGADMIN_DEFAULT_PASSWORD: devpassword
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
