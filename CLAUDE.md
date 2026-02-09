@@ -1,72 +1,87 @@
-# Knowledge Backend - Claude Code Context
+# NewPublishing - Implementation Context
 
-## Project Overview
-**Vision:** Replace academic papers as the medium for sharing scientific knowledge. Papers are an outdated format now that AI can synthesize, query, and reason over structured knowledge.
+## Project Vision
+Replace academic papers with a queryable knowledge backend. One canonical database storing semantic knowledge (claims, proofs, evidence, relationships). All interfaces are extensions.
 
-**Core Idea:** One canonical backend database that stores semantic knowledge (claims, proofs, evidence, relationships, dependencies). All interfaces are just extensions/views.
+## Design Docs
+Read `docs/design/synthesis.md` first — it summarizes the schema and key decisions.
 
-## Design Principles
+## Implementation Principles
 
-### 1. Schema-First, Future-Proof
-The backend schema is THE critical decision. It must be:
-- **Maximally general** — can represent any type of knowledge
-- **Semantically rich** — captures relationships, not just text
-- **Machine-readable** — AI can reason over the graph
-- **Human-writable** — researchers can contribute naturally
-- **Extensible** — new knowledge types don't require schema changes
+### 1. PLAN BEFORE CODE
+This project needs to be widely adopted. Poor early decisions will haunt us forever. Spend significant time on:
+- Architecture decisions (language, framework, structure)
+- Extension interface design (must be simple for third-party devs)
+- Deployment strategy (containerization, ease of self-hosting)
+- API design (versioned, stable, well-documented)
 
-### 2. Extensions as First-Class Citizens
-Users NEVER interact with the backend directly. All interaction is through extensions:
-- **Input extensions:** How knowledge enters the system
-  - Voice/dictation → structured entries
-  - Photo of blackboard → formalized proof
-  - PDF paper → extracted claims with citations
-  - Conversation → synthesized insights
-  - Code → documented algorithms
-  
-- **Output extensions:** How knowledge is consumed
-  - Traditional paper view (for journals)
-  - Interactive exploration (for learning)
-  - API queries (for AI agents)
-  - Citation graphs (for discovery)
-  - Proof verification (for rigor)
+### 2. Extensibility is Everything
+The core value is the schema + extension protocol. Third parties MUST be able to:
+- Write new input extensions (new ways to add knowledge)
+- Write new output extensions (new ways to query/view)
+- Deploy their own instance easily
+- Contribute extensions back to the ecosystem
 
-### 3. Knowledge Graph Properties
-- **Claims** are first-class entities (not paragraphs)
-- **Evidence** links to claims with typed relationships
-- **Provenance** tracks where every piece came from
-- **Confidence** and verification status explicit
-- **Dependencies** form a DAG (what assumes what)
-- **Versioning** — knowledge evolves, history preserved
+**Base classes for extensions are critical.** Make it trivially easy to:
+```python
+class MyInputExtension(InputExtension):
+    def ingest(self, source: Source) -> List[Claim]:
+        ...
 
-## What We're Building
-1. **The Schema** — the core data model (this is 80% of the work)
-2. **Reference Backend** — probably PostgreSQL + vector embeddings
-3. **Extension Protocol** — how extensions read/write
-4. **2-3 Demo Extensions** — to prove the concept
-   - Paper ingestion
-   - Voice/dictation input
-   - Search/query interface
+class MyOutputExtension(OutputExtension):  
+    def query(self, request: QueryRequest) -> QueryResponse:
+        ...
+```
 
-## Technical Considerations
-- Graph database vs relational? (Neo4j vs Postgres with ltree/graph extensions)
-- Vector embeddings for semantic search (pgvector)
-- Proof verification integration (Lean? Metamath?)
-- Multi-modal inputs (images, equations, code)
-- Distributed knowledge? (multiple backends, federation?)
+### 3. Containerization
+- Docker Compose for local dev (postgres + backend + example extensions)
+- Helm charts or similar for production Kubernetes
+- Single-command startup: `docker compose up`
+- Environment-based config, no hardcoded paths
+
+### 4. License: GPL-3.0 (Copyleft)
+You can copy, modify, and distribute freely — but if you distribute modifications, you must share your changes under the same license. This keeps the ecosystem open.
+
+## Technical Decisions Needed
+
+### Language
+Options: Python (fast dev, AI ecosystem), Rust (performance, safety), Go (simplicity, deployment), TypeScript (full-stack).
+
+**Recommendation:** Python backend (FastAPI) for v1. AI/ML ecosystem is Python. Rewrite hot paths in Rust later if needed.
+
+### Database
+Decision made: PostgreSQL + pgvector (see schema-proposal.md for DDL).
+
+### Structure
+```
+newpublishing/
+├── core/                 # Schema, models, base classes
+│   ├── models/          # SQLAlchemy/Pydantic models
+│   ├── extensions/      # Base classes for extensions
+│   └── api/             # FastAPI routes
+├── extensions/          # Built-in extensions
+│   ├── input/
+│   │   ├── paper_ingestion/
+│   │   ├── voice_transcription/
+│   │   └── manual_entry/
+│   └── output/
+│       ├── search/
+│       ├── paper_view/
+│       └── graph_viz/
+├── docker/
+│   ├── Dockerfile
+│   └── docker-compose.yml
+├── docs/
+└── tests/
+```
 
 ## What Success Looks Like
-A researcher can:
-1. Dictate findings while walking
-2. Photo their blackboard proof
-3. Have AI synthesize and verify
-4. Query related work semantically
-5. Export to paper format when needed
-6. Other researchers can query their claims programmatically
+1. `docker compose up` starts everything
+2. Developer reads 1-page extension guide, writes a working extension in <1 hour
+3. Researcher can ingest a paper, query claims, export to paper format
+4. Self-hosting is trivial (single docker-compose.yml)
 
-## Open Questions
-- What's the minimal viable schema?
-- How do we handle uncertainty and disagreement?
-- Peer review integration?
-- Incentive structure for contribution?
-- Intellectual property / attribution?
+## Current Status
+- Schema design: COMPLETE (see docs/design/)
+- Implementation: NOT STARTED
+- Next step: Architecture/planning phase
