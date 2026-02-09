@@ -15,7 +15,5 @@ class BundleRepository(BaseRepository[Bundle]):
         super().__init__(session, Bundle)
 
     async def get_by_idempotency_key(self, key: str) -> Bundle | None:
-        result = await self.session.execute(
-            select(Bundle).where(Bundle.idempotency_key == key)
-        )
+        result = await self.session.execute(select(Bundle).where(Bundle.idempotency_key == key))
         return result.scalar_one_or_none()

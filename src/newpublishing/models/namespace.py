@@ -39,6 +39,4 @@ class Namespace(UUIDMixin, TimestampMixin, Base):
         back_populates="namespace",
     )
 
-    __table_args__ = (
-        Index("idx_namespaces_parent", "parent_id"),
-    )
+    __table_args__ = (Index("idx_namespaces_parent", "parent_id"),)

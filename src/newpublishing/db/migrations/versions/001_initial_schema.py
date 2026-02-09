@@ -10,8 +10,8 @@ Create Date: 2026-02-08
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "001"
@@ -43,8 +43,18 @@ def upgrade() -> None:
         sa.Column("trust_score", sa.Float(), nullable=False, server_default="1.0"),
         sa.Column("api_key_hash", sa.Text(), nullable=True),
         sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint(
             "agent_type IN ('human', 'ai', 'organization', 'pipeline', 'extension')",
             name="ck_agents_agent_type",
@@ -67,8 +77,18 @@ def upgrade() -> None:
         sa.Column("parent_id", sa.Uuid(), sa.ForeignKey("namespaces.id"), nullable=True),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("idx_namespaces_parent", "namespaces", ["parent_id"])
 
@@ -83,7 +103,12 @@ def upgrade() -> None:
         sa.Column("external_ref", sa.Text(), nullable=True),
         sa.Column("content_hash", sa.Text(), nullable=True),
         sa.Column("submitted_by", sa.Uuid(), sa.ForeignKey("agents.id"), nullable=False),
-        sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "submitted_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
         sa.CheckConstraint(
             "source_type IN ("
@@ -138,7 +163,9 @@ def upgrade() -> None:
     op.execute("CREATE INDEX idx_claims_lineage ON claims(lineage_id, version DESC)")
     op.execute("CREATE INDEX idx_claims_namespace ON claims(namespace_id)")
     op.execute("CREATE INDEX idx_claims_created_by ON claims(created_by)")
-    op.execute("CREATE INDEX idx_claims_embedding ON claims USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)")
+    op.execute(
+        "CREATE INDEX idx_claims_embedding ON claims USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+    )
     op.execute("CREATE INDEX idx_claims_search_tsv ON claims USING gin(search_tsv)")
     op.execute("CREATE INDEX idx_claims_attrs ON claims USING gin(attrs)")
     op.execute("CREATE INDEX idx_claims_active ON claims(status) WHERE status = 'active'")
@@ -171,8 +198,18 @@ def upgrade() -> None:
         sa.Column("edge_type", sa.Text(), sa.ForeignKey("edge_types.name"), nullable=False),
         sa.Column("strength", sa.Float(), nullable=True),
         sa.Column("created_by", sa.Uuid(), sa.ForeignKey("agents.id"), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("source_provenance", sa.Uuid(), sa.ForeignKey("sources.id"), nullable=True),
         sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
         sa.UniqueConstraint("source_id", "target_id", "edge_type", "created_by"),
@@ -196,7 +233,12 @@ def upgrade() -> None:
         sa.Column("extracted_by", sa.Uuid(), sa.ForeignKey("agents.id"), nullable=False),
         sa.Column("extraction_method", sa.Text(), nullable=True),
         sa.Column("location_in_source", sa.Text(), nullable=True),
-        sa.Column("extracted_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "extracted_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("confidence", sa.Float(), nullable=True),
         sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
         sa.UniqueConstraint("claim_id", "source_id", "extracted_by"),
@@ -219,8 +261,18 @@ def upgrade() -> None:
         sa.Column("verdict", sa.Text(), nullable=False),
         sa.Column("confidence", sa.Float(), nullable=False),
         sa.Column("comment", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.UniqueConstraint("claim_id", "reviewer_id"),
         sa.CheckConstraint(
             "verdict IN ('endorse', 'dispute', 'request_revision', 'retract')",
@@ -247,7 +299,12 @@ def upgrade() -> None:
         sa.Column("claim_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("edge_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("artifact_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "submitted_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
         sa.CheckConstraint(
             "status IN ('accepted', 'rejected', 'processing')",
@@ -268,7 +325,12 @@ def upgrade() -> None:
         sa.Column("content_inline", sa.Text(), nullable=True),
         sa.Column("structured_data", sa.JSON(), nullable=True),
         sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -291,7 +353,12 @@ def upgrade() -> None:
         sa.Column("edge_type", sa.Text(), sa.ForeignKey("edge_types.name"), nullable=False),
         sa.Column("status", sa.Text(), nullable=False, server_default="pending"),
         sa.Column("resolved_to", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
             "status IN ('pending', 'resolved', 'expired')",

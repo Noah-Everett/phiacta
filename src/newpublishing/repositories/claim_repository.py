@@ -18,9 +18,7 @@ class ClaimRepository(BaseRepository[Claim]):
 
     async def get_by_lineage(self, lineage_id: UUID) -> list[Claim]:
         result = await self.session.execute(
-            select(Claim)
-            .where(Claim.lineage_id == lineage_id)
-            .order_by(Claim.version.desc())
+            select(Claim).where(Claim.lineage_id == lineage_id).order_by(Claim.version.desc())
         )
         return list(result.scalars().all())
 

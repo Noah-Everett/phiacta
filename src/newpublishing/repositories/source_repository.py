@@ -15,9 +15,7 @@ class SourceRepository(BaseRepository[Source]):
         super().__init__(session, Source)
 
     async def get_by_external_ref(self, ref: str) -> Source | None:
-        result = await self.session.execute(
-            select(Source).where(Source.external_ref == ref)
-        )
+        result = await self.session.execute(select(Source).where(Source.external_ref == ref))
         return result.scalar_one_or_none()
 
     async def get_by_content_hash(self, content_hash: str) -> Source | None:

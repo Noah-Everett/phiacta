@@ -25,9 +25,7 @@ class BaseRepository[T: Base]:
         return entity
 
     async def list_all(self, limit: int = 50, offset: int = 0) -> list[T]:
-        result = await self.session.execute(
-            select(self.model).limit(limit).offset(offset)
-        )
+        result = await self.session.execute(select(self.model).limit(limit).offset(offset))
         return list(result.scalars().all())
 
     async def delete(self, entity: T) -> None:

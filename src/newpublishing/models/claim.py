@@ -52,7 +52,7 @@ class Claim(UUIDMixin, TimestampMixin, Base):
         Vector(1536),
         default=None,
     )
-    search_tsv: Mapped[str | None] = mapped_column(  # type: ignore[assignment]
+    search_tsv: Mapped[str | None] = mapped_column(
         TSVECTOR,
         default=None,
     )

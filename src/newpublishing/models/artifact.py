@@ -12,7 +12,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from newpublishing.models.base import Base
 
-
 # Association table for artifact <-> claim many-to-many
 artifact_claims = Table(
     "artifact_claims",

@@ -15,13 +15,9 @@ class AgentRepository(BaseRepository[Agent]):
         super().__init__(session, Agent)
 
     async def get_by_external_id(self, external_id: str) -> Agent | None:
-        result = await self.session.execute(
-            select(Agent).where(Agent.external_id == external_id)
-        )
+        result = await self.session.execute(select(Agent).where(Agent.external_id == external_id))
         return result.scalar_one_or_none()
 
     async def get_by_name(self, name: str) -> Agent | None:
-        result = await self.session.execute(
-            select(Agent).where(Agent.name == name)
-        )
+        result = await self.session.execute(select(Agent).where(Agent.name == name))
         return result.scalar_one_or_none()

@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from sqlalchemy import CheckConstraint, Float, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
