@@ -66,12 +66,12 @@ class Claim(UUIDMixin, TimestampMixin, Base):
     namespace: Mapped[Namespace] = relationship(  # type: ignore[name-defined]  # noqa: F821
         back_populates="claims",
     )
-    outgoing_edges: Mapped[list[Edge]] = relationship(  # type: ignore[name-defined]  # noqa: F821
-        foreign_keys="[Edge.source_id]",
+    outgoing_relations: Mapped[list[Relation]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        foreign_keys="[Relation.source_id]",
         back_populates="source_claim",
     )
-    incoming_edges: Mapped[list[Edge]] = relationship(  # type: ignore[name-defined]  # noqa: F821
-        foreign_keys="[Edge.target_id]",
+    incoming_relations: Mapped[list[Relation]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        foreign_keys="[Relation.target_id]",
         back_populates="target_claim",
     )
     provenance_records: Mapped[list[Provenance]] = relationship(  # type: ignore[name-defined]  # noqa: F821
@@ -86,11 +86,6 @@ class Claim(UUIDMixin, TimestampMixin, Base):
 
     __table_args__ = (
         UniqueConstraint("lineage_id", "version"),
-        CheckConstraint(
-            "claim_type IN ('assertion', 'definition', 'theorem', 'conjecture', "
-            "'observation', 'method', 'question')",
-            name="ck_claims_claim_type",
-        ),
         CheckConstraint(
             "status IN ('draft', 'active', 'deprecated', 'retracted')",
             name="ck_claims_status",

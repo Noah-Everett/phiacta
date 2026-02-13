@@ -6,10 +6,11 @@ from newpublishing.models.artifact import Artifact, artifact_claims
 from newpublishing.models.base import Base, TimestampMixin, UUIDMixin
 from newpublishing.models.bundle import Bundle
 from newpublishing.models.claim import Claim
-from newpublishing.models.edge import Edge, EdgeType
+from newpublishing.models.layer_registry import LayerRecord
 from newpublishing.models.namespace import Namespace
 from newpublishing.models.pending_reference import PendingReference
 from newpublishing.models.provenance import Provenance
+from newpublishing.models.relation import Relation
 from newpublishing.models.review import Review
 from newpublishing.models.source import Source
 
@@ -19,11 +20,11 @@ __all__ = [
     "Base",
     "Bundle",
     "Claim",
-    "Edge",
-    "EdgeType",
+    "LayerRecord",
     "Namespace",
     "PendingReference",
     "Provenance",
+    "Relation",
     "Review",
     "Source",
     "TimestampMixin",

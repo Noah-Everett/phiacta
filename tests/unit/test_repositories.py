@@ -10,13 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from newpublishing.models.agent import Agent
 from newpublishing.models.bundle import Bundle
 from newpublishing.models.claim import Claim
-from newpublishing.models.edge import Edge
+from newpublishing.models.relation import Relation
 from newpublishing.models.source import Source
 from newpublishing.repositories.agent_repository import AgentRepository
 from newpublishing.repositories.base import BaseRepository
 from newpublishing.repositories.bundle_repository import BundleRepository
 from newpublishing.repositories.claim_repository import ClaimRepository
-from newpublishing.repositories.edge_repository import EdgeRepository
+from newpublishing.repositories.relation_repository import RelationRepository
 from newpublishing.repositories.source_repository import SourceRepository
 
 
@@ -67,17 +67,17 @@ class TestBundleRepositoryInstantiation:
         assert callable(getattr(repo, "get_by_idempotency_key", None))
 
 
-class TestEdgeRepositoryInstantiation:
-    def test_edge_repository_sets_model(self) -> None:
+class TestRelationRepositoryInstantiation:
+    def test_relation_repository_sets_model(self) -> None:
         mock_session = MagicMock(spec=AsyncSession)
-        repo = EdgeRepository(mock_session)
-        assert repo.model is Edge
+        repo = RelationRepository(mock_session)
+        assert repo.model is Relation
 
-    def test_edge_repository_has_custom_methods(self) -> None:
+    def test_relation_repository_has_custom_methods(self) -> None:
         mock_session = MagicMock(spec=AsyncSession)
-        repo = EdgeRepository(mock_session)
-        assert callable(getattr(repo, "get_edges_for_claim", None))
-        assert callable(getattr(repo, "get_edges_by_type", None))
+        repo = RelationRepository(mock_session)
+        assert callable(getattr(repo, "get_relations_for_claim", None))
+        assert callable(getattr(repo, "get_relations_by_type", None))
 
 
 class TestSourceRepositoryInstantiation:

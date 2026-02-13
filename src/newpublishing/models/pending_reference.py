@@ -29,8 +29,8 @@ class PendingReference(UUIDMixin, Base):
         nullable=False,
     )
     external_ref: Mapped[str] = mapped_column(Text, nullable=False)
-    edge_type: Mapped[str] = mapped_column(
-        ForeignKey("edge_types.name"),
+    relation_type: Mapped[str] = mapped_column(
+        String,
         nullable=False,
     )
     status: Mapped[str] = mapped_column(String, default="pending")

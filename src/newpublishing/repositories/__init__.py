@@ -5,7 +5,7 @@ from newpublishing.repositories.agent_repository import AgentRepository
 from newpublishing.repositories.base import BaseRepository
 from newpublishing.repositories.bundle_repository import BundleRepository
 from newpublishing.repositories.claim_repository import ClaimRepository
-from newpublishing.repositories.edge_repository import EdgeRepository
+from newpublishing.repositories.relation_repository import RelationRepository
 from newpublishing.repositories.source_repository import SourceRepository
 
 __all__ = [
@@ -13,6 +13,6 @@ __all__ = [
     "BaseRepository",
     "BundleRepository",
     "ClaimRepository",
-    "EdgeRepository",
+    "RelationRepository",
     "SourceRepository",
 ]

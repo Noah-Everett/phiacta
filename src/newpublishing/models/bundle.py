@@ -36,7 +36,7 @@ class Bundle(UUIDMixin, Base):
     extension_id: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, default="accepted")
     claim_count: Mapped[int] = mapped_column(Integer, default=0)
-    edge_count: Mapped[int] = mapped_column(Integer, default=0)
+    relation_count: Mapped[int] = mapped_column(Integer, default=0)
     artifact_count: Mapped[int] = mapped_column(Integer, default=0)
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

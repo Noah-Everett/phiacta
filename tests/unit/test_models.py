@@ -10,7 +10,8 @@ from newpublishing.models.artifact import Artifact
 from newpublishing.models.base import Base, TimestampMixin, UUIDMixin
 from newpublishing.models.bundle import Bundle
 from newpublishing.models.claim import Claim
-from newpublishing.models.edge import EdgeType
+from newpublishing.models.layer_registry import LayerRecord
+from newpublishing.models.relation import Relation
 
 
 class TestClaimDefaults:
@@ -42,17 +43,9 @@ class TestClaimDefaults:
         assert status_col.default is not None
         assert status_col.default.arg == "active"
 
-    def test_claim_type_valid(self) -> None:
-        valid_types = [
-            "assertion",
-            "definition",
-            "theorem",
-            "conjecture",
-            "observation",
-            "method",
-            "question",
-        ]
-        for ct in valid_types:
+    def test_claim_type_accepts_arbitrary_strings(self) -> None:
+        """claim_type is freeform text — no CHECK constraint in core."""
+        for ct in ["assertion", "theorem", "clinical_finding", "custom_type"]:
             claim = Claim(
                 lineage_id=uuid4(),
                 content=f"Claim of type {ct}",
@@ -64,22 +57,45 @@ class TestClaimDefaults:
             assert claim.claim_type == ct
 
 
-class TestEdgeTypeProperties:
-    def test_edge_type_fields(self) -> None:
-        et = EdgeType(
-            name="supports",
-            description="Source supports target",
-            inverse_name="supported_by",
-            is_transitive=False,
-            is_symmetric=False,
-            category="evidential",
+class TestRelationDefaults:
+    def test_relation_defaults(self) -> None:
+        rel = Relation(
+            source_id=uuid4(),
+            target_id=uuid4(),
+            relation_type="supports",
+            created_by=uuid4(),
+            attrs={},
         )
-        assert et.name == "supports"
-        assert et.description == "Source supports target"
-        assert et.inverse_name == "supported_by"
-        assert et.is_transitive is False
-        assert et.is_symmetric is False
-        assert et.category == "evidential"
+        assert rel.relation_type == "supports"
+        assert rel.strength is None
+        assert rel.source_provenance is None
+
+    def test_relation_type_accepts_arbitrary_strings(self) -> None:
+        """relation_type is freeform text — layers interpret semantics."""
+        for rt in ["supports", "contradicts", "custom_relation", "cites"]:
+            rel = Relation(
+                source_id=uuid4(),
+                target_id=uuid4(),
+                relation_type=rt,
+                created_by=uuid4(),
+                attrs={},
+            )
+            assert rel.relation_type == rt
+
+
+class TestLayerRecordDefaults:
+    def test_layer_record_fields(self) -> None:
+        lr = LayerRecord(
+            name="graph",
+            version="0.1.0",
+            config={},
+        )
+        assert lr.name == "graph"
+        assert lr.version == "0.1.0"
+        # enabled default is applied at flush, verify column config
+        enabled_col = LayerRecord.__table__.c["enabled"]
+        assert enabled_col.default is not None
+        assert enabled_col.default.arg is True
 
 
 class TestAgentDefaults:
@@ -118,6 +134,9 @@ class TestBundleDefaults:
         claim_count_col = Bundle.__table__.c["claim_count"]
         assert claim_count_col.default is not None
         assert claim_count_col.default.arg == 0
+        relation_count_col = Bundle.__table__.c["relation_count"]
+        assert relation_count_col.default is not None
+        assert relation_count_col.default.arg == 0
 
 
 class TestArtifactDefaults:

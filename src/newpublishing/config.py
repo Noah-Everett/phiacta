@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     database_pool_size: int = 20
     max_bundle_claims: int = 500
     max_traversal_depth: int = 10
+    auto_install_layers: bool = True
 
     model_config = {"env_file": ".env"}
 

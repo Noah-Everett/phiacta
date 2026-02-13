@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 NewPublishing Contributors
 
-"""Initial schema: all core tables, indexes, seed data, and views.
+"""Initial schema: core tables, indexes, and views.
 
 Revision ID: 001
 Revises:
@@ -137,10 +137,7 @@ def upgrade() -> None:
         """
         CREATE TABLE claims (
             id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            claim_type      TEXT NOT NULL CHECK (claim_type IN (
-                'assertion', 'definition', 'theorem', 'conjecture',
-                'observation', 'method', 'question'
-            )),
+            claim_type      TEXT NOT NULL,
             content         TEXT NOT NULL,
             formal_content  TEXT,
             namespace_id    UUID NOT NULL REFERENCES namespaces(id),
@@ -171,31 +168,14 @@ def upgrade() -> None:
     op.execute("CREATE INDEX idx_claims_active ON claims(status) WHERE status = 'active'")
 
     # ------------------------------------------------------------------
-    # 5. edge_types (no deps)
+    # 5. relations (depends on claims, agents, sources)
     # ------------------------------------------------------------------
     op.create_table(
-        "edge_types",
-        sa.Column("name", sa.Text(), primary_key=True),
-        sa.Column("description", sa.Text(), nullable=False),
-        sa.Column("inverse_name", sa.Text(), nullable=True),
-        sa.Column("is_transitive", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("is_symmetric", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("category", sa.Text(), nullable=False),
-        sa.CheckConstraint(
-            "category IN ('evidential', 'logical', 'structural', 'editorial')",
-            name="ck_edge_types_category",
-        ),
-    )
-
-    # ------------------------------------------------------------------
-    # 6. edges (depends on claims, edge_types, agents, sources)
-    # ------------------------------------------------------------------
-    op.create_table(
-        "edges",
+        "relations",
         sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
         sa.Column("source_id", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=False),
         sa.Column("target_id", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=False),
-        sa.Column("edge_type", sa.Text(), sa.ForeignKey("edge_types.name"), nullable=False),
+        sa.Column("relation_type", sa.Text(), nullable=False),
         sa.Column("strength", sa.Float(), nullable=True),
         sa.Column("created_by", sa.Uuid(), sa.ForeignKey("agents.id"), nullable=False),
         sa.Column(
@@ -212,18 +192,18 @@ def upgrade() -> None:
         ),
         sa.Column("source_provenance", sa.Uuid(), sa.ForeignKey("sources.id"), nullable=True),
         sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
-        sa.UniqueConstraint("source_id", "target_id", "edge_type", "created_by"),
+        sa.UniqueConstraint("source_id", "target_id", "relation_type", "created_by"),
         sa.CheckConstraint(
             "strength >= 0.0 AND strength <= 1.0",
-            name="ck_edges_strength",
+            name="ck_relations_strength",
         ),
     )
-    op.create_index("idx_edges_source", "edges", ["source_id"])
-    op.create_index("idx_edges_target", "edges", ["target_id"])
-    op.create_index("idx_edges_type", "edges", ["edge_type"])
+    op.create_index("idx_relations_source", "relations", ["source_id"])
+    op.create_index("idx_relations_target", "relations", ["target_id"])
+    op.create_index("idx_relations_type", "relations", ["relation_type"])
 
     # ------------------------------------------------------------------
-    # 7. provenance (depends on claims, sources, agents)
+    # 6. provenance (depends on claims, sources, agents)
     # ------------------------------------------------------------------
     op.create_table(
         "provenance",
@@ -251,7 +231,7 @@ def upgrade() -> None:
     op.create_index("idx_provenance_source", "provenance", ["source_id"])
 
     # ------------------------------------------------------------------
-    # 8. reviews (depends on claims, agents)
+    # 7. reviews (depends on claims, agents)
     # ------------------------------------------------------------------
     op.create_table(
         "reviews",
@@ -275,10 +255,6 @@ def upgrade() -> None:
         ),
         sa.UniqueConstraint("claim_id", "reviewer_id"),
         sa.CheckConstraint(
-            "verdict IN ('endorse', 'dispute', 'request_revision', 'retract')",
-            name="ck_reviews_verdict",
-        ),
-        sa.CheckConstraint(
             "confidence >= 0.0 AND confidence <= 1.0",
             name="ck_reviews_confidence",
         ),
@@ -287,7 +263,7 @@ def upgrade() -> None:
     op.create_index("idx_reviews_reviewer", "reviews", ["reviewer_id"])
 
     # ------------------------------------------------------------------
-    # 9. bundles (depends on agents)
+    # 8. bundles (depends on agents)
     # ------------------------------------------------------------------
     op.create_table(
         "bundles",
@@ -297,7 +273,7 @@ def upgrade() -> None:
         sa.Column("extension_id", sa.Text(), nullable=False),
         sa.Column("status", sa.Text(), nullable=False, server_default="accepted"),
         sa.Column("claim_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("edge_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("relation_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("artifact_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column(
             "submitted_at",
@@ -313,7 +289,7 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 10. artifacts (depends on bundles)
+    # 9. artifacts (depends on bundles)
     # ------------------------------------------------------------------
     op.create_table(
         "artifacts",
@@ -334,7 +310,7 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 11. artifact_claims (depends on artifacts, claims)
+    # 10. artifact_claims (depends on artifacts, claims)
     # ------------------------------------------------------------------
     op.create_table(
         "artifact_claims",
@@ -343,14 +319,14 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 12. pending_references (depends on claims, edge_types)
+    # 11. pending_references (depends on claims)
     # ------------------------------------------------------------------
     op.create_table(
         "pending_references",
         sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
         sa.Column("source_claim_id", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=False),
         sa.Column("external_ref", sa.Text(), nullable=False),
-        sa.Column("edge_type", sa.Text(), sa.ForeignKey("edge_types.name"), nullable=False),
+        sa.Column("relation_type", sa.Text(), nullable=False),
         sa.Column("status", sa.Text(), nullable=False, server_default="pending"),
         sa.Column("resolved_to", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=True),
         sa.Column(
@@ -373,31 +349,27 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # Seed initial edge types (15 types from schema-proposal.md section 2)
+    # 12. layers (registry for interpretability layers)
     # ------------------------------------------------------------------
-    op.execute(
-        """
-        INSERT INTO edge_types (name, description, inverse_name, is_transitive, is_symmetric, category) VALUES
-            -- Evidential
-            ('supports',        'Source provides evidence for target',                    'supported_by',      false, false, 'evidential'),
-            ('contradicts',     'Source provides evidence against target',                'contradicts',       false, true,  'evidential'),
-            ('corroborates',    'Independent evidence for the same target',               'corroborated_by',   false, false, 'evidential'),
-            -- Logical
-            ('depends_on',      'Source requires target to hold',                         'depended_on_by',    true,  false, 'logical'),
-            ('assumes',         'Source takes target as given without proof',             'assumed_by',        true,  false, 'logical'),
-            ('derives_from',    'Source is logically derived from target',                'derives',           true,  false, 'logical'),
-            ('implies',         'If source holds, target must hold',                      'implied_by',        true,  false, 'logical'),
-            ('equivalent_to',   'Source and target are logically equivalent',             'equivalent_to',     true,  true,  'logical'),
-            -- Structural
-            ('generalizes',     'Source is a more general form of target',                'specializes',       true,  false, 'structural'),
-            ('refines',         'Source is a more precise version of target',             'refined_by',        false, false, 'structural'),
-            ('part_of',         'Source is a component of target',                        'has_part',          true,  false, 'structural'),
-            ('instantiates',    'Source is a concrete instance of target pattern',        'instantiated_by',   false, false, 'structural'),
-            -- Editorial
-            ('supersedes',      'Source replaces target (versioning)',                    'superseded_by',     true,  false, 'editorial'),
-            ('related_to',      'Weak/untyped association',                              'related_to',        false, true,  'editorial'),
-            ('responds_to',     'Source is a response/reply to target',                  'responded_to_by',   false, false, 'editorial')
-        """
+    op.create_table(
+        "layers",
+        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
+        sa.Column("name", sa.Text(), nullable=False, unique=True),
+        sa.Column("version", sa.Text(), nullable=False),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default="true"),
+        sa.Column("config", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -415,53 +387,20 @@ def upgrade() -> None:
         """
     )
 
-    # Claims with aggregated review stats
-    op.execute(
-        """
-        CREATE VIEW claims_with_confidence AS
-        SELECT
-            c.id,
-            c.lineage_id,
-            c.content,
-            c.claim_type,
-            c.status,
-            c.version,
-            COUNT(r.id) AS review_count,
-            AVG(r.confidence) FILTER (WHERE r.verdict = 'endorse') AS avg_endorsement_confidence,
-            COUNT(*) FILTER (WHERE r.verdict = 'endorse') AS endorsement_count,
-            COUNT(*) FILTER (WHERE r.verdict = 'dispute') AS dispute_count,
-            CASE
-                WHEN COUNT(r.id) = 0 THEN 'unverified'
-                WHEN COUNT(*) FILTER (WHERE r.verdict = 'dispute') > 0
-                     AND COUNT(*) FILTER (WHERE r.verdict = 'endorse') > 0 THEN 'disputed'
-                WHEN c.formal_content IS NOT NULL
-                     AND COUNT(*) FILTER (WHERE r.verdict = 'endorse') > 0 THEN 'formally_verified'
-                WHEN AVG(r.confidence) FILTER (WHERE r.verdict = 'endorse') > 0.7
-                     AND COUNT(*) FILTER (WHERE r.verdict = 'endorse') > COUNT(*) FILTER (WHERE r.verdict = 'dispute')
-                     THEN 'endorsed'
-                ELSE 'under_review'
-            END AS epistemic_status
-        FROM claims c
-        LEFT JOIN reviews r ON r.claim_id = c.id
-        GROUP BY c.id
-        """
-    )
-
 
 def downgrade() -> None:
     # Drop views first
-    op.execute("DROP VIEW IF EXISTS claims_with_confidence")
     op.execute("DROP VIEW IF EXISTS claims_latest")
 
     # Drop tables in reverse dependency order
+    op.drop_table("layers")
     op.drop_table("pending_references")
     op.drop_table("artifact_claims")
     op.drop_table("artifacts")
     op.drop_table("bundles")
     op.drop_table("reviews")
     op.drop_table("provenance")
-    op.drop_table("edges")
-    op.drop_table("edge_types")
+    op.drop_table("relations")
     op.execute("DROP TABLE IF EXISTS claims")
     op.drop_table("sources")
     op.drop_table("namespaces")

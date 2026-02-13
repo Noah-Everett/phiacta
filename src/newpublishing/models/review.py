@@ -44,10 +44,6 @@ class Review(UUIDMixin, TimestampMixin, Base):
 
     __table_args__ = (
         CheckConstraint(
-            "verdict IN ('endorse', 'dispute', 'request_revision', 'retract')",
-            name="ck_reviews_verdict",
-        ),
-        CheckConstraint(
             "confidence >= 0.0 AND confidence <= 1.0",
             name="ck_reviews_confidence",
         ),

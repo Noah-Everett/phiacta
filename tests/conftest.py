@@ -135,20 +135,20 @@ def make_source(
     }
 
 
-def make_edge(
+def make_relation(
     *,
     source_id: object,
     target_id: object,
     created_by: object,
-    edge_type: str = "supports",
+    relation_type: str = "supports",
     strength: float | None = None,
 ) -> dict[str, object]:
-    """Return kwargs suitable for constructing an Edge model instance."""
+    """Return kwargs suitable for constructing a Relation model instance."""
     return {
         "id": uuid4(),
         "source_id": source_id,
         "target_id": target_id,
-        "edge_type": edge_type,
+        "relation_type": relation_type,
         "created_by": created_by,
         "strength": strength,
         "attrs": {},
