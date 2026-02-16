@@ -6,7 +6,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
+from phiacta.models.agent import Agent
 from phiacta.models.source import Source
 from phiacta.repositories.source_repository import SourceRepository
 from phiacta.schemas.common import PaginatedResponse
@@ -30,12 +32,13 @@ async def list_sources(
 @router.post("", response_model=SourceResponse, status_code=201)
 async def create_source(
     body: SourceCreate,
+    agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> SourceResponse:
     repo = SourceRepository(db)
     source = Source(
         source_type=body.source_type,
-        submitted_by=body.submitted_by,
+        submitted_by=agent.id,
         title=body.title,
         external_ref=body.external_ref,
         content_hash=body.content_hash,

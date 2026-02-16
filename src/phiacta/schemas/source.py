@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict
 
 class SourceCreate(BaseModel):
     source_type: str
-    submitted_by: UUID
     title: str | None = None
     external_ref: str | None = None
     content_hash: str | None = None

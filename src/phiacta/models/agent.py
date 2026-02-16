@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Float, Index, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Float, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +15,11 @@ class Agent(UUIDMixin, TimestampMixin, Base):
 
     agent_type: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    email: Mapped[str | None] = mapped_column(Text, default=None)
+    password_hash: Mapped[str | None] = mapped_column(Text, default=None)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
     external_id: Mapped[str | None] = mapped_column(Text, default=None)
     trust_score: Mapped[float] = mapped_column(Float, default=1.0)
     api_key_hash: Mapped[str | None] = mapped_column(Text, default=None)
@@ -39,5 +44,11 @@ class Agent(UUIDMixin, TimestampMixin, Base):
             "idx_agents_external_id",
             "external_id",
             postgresql_where=text("external_id IS NOT NULL"),
+        ),
+        Index(
+            "idx_agents_email_unique",
+            "email",
+            unique=True,
+            postgresql_where=text("email IS NOT NULL"),
         ),
     )

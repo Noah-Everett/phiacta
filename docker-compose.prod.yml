@@ -22,6 +22,7 @@ services:
     environment:
       DATABASE_URL: "postgresql+asyncpg://newpub:${POSTGRES_PASSWORD}@db:5432/phiacta"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY}"
       ENVIRONMENT: "production"
       LOG_LEVEL: "info"
       LOG_FORMAT: "json"

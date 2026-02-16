@@ -3,6 +3,7 @@
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -22,7 +23,17 @@ class Settings(BaseSettings):
     max_traversal_depth: int = 10
     auto_install_layers: bool = True
 
+    # Auth
+    jwt_secret_key: str
+    access_token_expire_minutes: int = 1440
+
     model_config = {"env_file": ".env"}
+
+    @model_validator(mode="after")
+    def _validate_jwt_secret(self) -> "Settings":
+        if len(self.jwt_secret_key) < 32:
+            raise ValueError("jwt_secret_key must be at least 32 characters")
+        return self
 
 
 @lru_cache

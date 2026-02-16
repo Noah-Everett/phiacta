@@ -15,7 +15,6 @@ from phiacta.schemas.source import SourceCreate, SourceResponse
 
 class BundleSubmit(BaseModel):
     idempotency_key: str
-    submitted_by: UUID
     extension_id: str | None = None
     claims: list[ClaimCreate] = []
     relations: list[RelationCreate] = []

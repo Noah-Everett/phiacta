@@ -23,8 +23,10 @@ services:
     environment:
       DATABASE_URL: "postgresql+asyncpg://newpub:devpassword@db:5432/phiacta"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      JWT_SECRET_KEY: "dev-secret-not-for-production-use-only"
       LOG_LEVEL: "debug"
       ENVIRONMENT: "development"
+      CORS_ORIGINS: '["http://localhost:3001"]'
     ports:
       - "8000:8000"
     volumes:

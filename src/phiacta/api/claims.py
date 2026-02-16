@@ -6,11 +6,12 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import func
-
+from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
+from phiacta.models.agent import Agent
 from phiacta.models.claim import Claim
 from phiacta.repositories.claim_repository import ClaimRepository
 from phiacta.repositories.relation_repository import RelationRepository
@@ -59,6 +60,7 @@ async def get_claim(
 @router.post("", response_model=ClaimResponse, status_code=201)
 async def create_claim(
     body: ClaimCreate,
+    agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> ClaimResponse:
     repo = ClaimRepository(db)
@@ -68,7 +70,7 @@ async def create_claim(
         content=body.content,
         claim_type=body.claim_type,
         namespace_id=body.namespace_id,
-        created_by=body.created_by,
+        created_by=agent.id,
         formal_content=body.formal_content,
         supersedes=body.supersedes,
         status=body.status,

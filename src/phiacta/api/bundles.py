@@ -8,7 +8,9 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
+from phiacta.models.agent import Agent
 from phiacta.models.bundle import Bundle
 from phiacta.models.claim import Claim
 from phiacta.models.relation import Relation
@@ -25,6 +27,7 @@ router = APIRouter(prefix="/bundles", tags=["bundles"])
 @router.post("", response_model=BundleDetailResponse, status_code=201)
 async def submit_bundle(
     body: BundleSubmit,
+    agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> BundleDetailResponse:
     repo = BundleRepository(db)
@@ -39,7 +42,7 @@ async def submit_bundle(
     for src_data in body.sources:
         source = Source(
             source_type=src_data.source_type,
-            submitted_by=src_data.submitted_by,
+            submitted_by=agent.id,
             title=src_data.title,
             external_ref=src_data.external_ref,
             content_hash=src_data.content_hash,
@@ -57,7 +60,7 @@ async def submit_bundle(
             content=claim_data.content,
             claim_type=claim_data.claim_type,
             namespace_id=claim_data.namespace_id,
-            created_by=claim_data.created_by,
+            created_by=agent.id,
             formal_content=claim_data.formal_content,
             supersedes=claim_data.supersedes,
             status=claim_data.status,
@@ -75,7 +78,7 @@ async def submit_bundle(
             source_id=rel_data.source_id,
             target_id=rel_data.target_id,
             relation_type=rel_data.relation_type,
-            created_by=rel_data.created_by,
+            created_by=agent.id,
             strength=rel_data.strength,
             source_provenance=rel_data.source_provenance,
             attrs=rel_data.attrs,
@@ -86,7 +89,7 @@ async def submit_bundle(
     # Create the bundle record
     bundle = Bundle(
         idempotency_key=body.idempotency_key,
-        submitted_by=body.submitted_by,
+        submitted_by=agent.id,
         extension_id=body.extension_id,
         status="accepted",
         claim_count=len(created_claims),

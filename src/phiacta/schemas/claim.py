@@ -13,7 +13,6 @@ class ClaimCreate(BaseModel):
     content: str
     claim_type: str
     namespace_id: UUID
-    created_by: UUID
     formal_content: str | None = None
     supersedes: UUID | None = None
     status: str = "active"
