@@ -11,13 +11,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from phiacta.api.router import v1_router
+from phiacta.config import get_settings
 from phiacta.db.session import get_engine
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown hooks."""
-    from phiacta.config import get_settings
     from phiacta.layers.registry import LayerRegistry, discover_builtin_layers
 
     settings = get_settings()
@@ -62,7 +62,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=get_settings().cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

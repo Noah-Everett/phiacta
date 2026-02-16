@@ -47,14 +47,16 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir uv
 COPY pyproject.toml .
-RUN uv pip install --system --no-cache -e .
 COPY src/ src/
+RUN uv pip install --system --no-cache .
 COPY extensions/ extensions/
 COPY alembic.ini .
+COPY scripts/entrypoint.prod.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Non-root user for production
 RUN groupadd -r newpub && useradd -r -g newpub newpub
 USER newpub
 
 EXPOSE 8000
-CMD ["uvicorn", "phiacta.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+ENTRYPOINT ["/entrypoint.sh"]

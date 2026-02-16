@@ -1,0 +1,9 @@
+tunnel: 0d842363-9f9a-467c-bcbc-980b804fa2c8
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: phiacta.com
+    service: http://web:3000
+  - hostname: api.phiacta.com
+    service: http://backend:8000
+  - service: http_status:404

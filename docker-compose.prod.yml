@@ -1,0 +1,58 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: phiacta
+      POSTGRES_USER: newpub
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U newpub -d phiacta"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://newpub:${POSTGRES_PASSWORD}@db:5432/phiacta"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      ENVIRONMENT: "production"
+      LOG_LEVEL: "info"
+      LOG_FORMAT: "json"
+      CORS_ORIGINS: '["https://phiacta.com"]'
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../phiacta-web
+      dockerfile: Dockerfile
+      target: production
+      args:
+        NEXT_PUBLIC_API_URL: "https://api.phiacta.com"
+    environment:
+      API_URL_INTERNAL: "http://backend:8000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - web
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
