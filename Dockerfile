@@ -11,6 +11,7 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir uv
 COPY pyproject.toml .
+COPY src/ src/
 RUN uv pip install --system --no-cache -e ".[all]"
 
 
@@ -56,4 +57,4 @@ RUN groupadd -r newpub && useradd -r -g newpub newpub
 USER newpub
 
 EXPOSE 8000
-CMD ["uvicorn", "newpublishing.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "phiacta.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

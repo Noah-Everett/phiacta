@@ -1,6 +1,6 @@
 # API Design Specification
 
-*Complete REST API design for the NewPublishing knowledge backend. Read `docs/design/synthesis.md` for schema design and `docs/implementation/architecture.md` for the technical foundation this document builds on.*
+*Complete REST API design for the Phiacta knowledge backend. Read `docs/design/synthesis.md` for schema design and `docs/implementation/architecture.md` for the technical foundation this document builds on.*
 
 ---
 
@@ -11,9 +11,9 @@
 All API endpoints are prefixed with the API version: `/v1/`. This is a URL path segment, not a header or query parameter. Path-based versioning is explicit, discoverable, and works with all HTTP clients without special configuration.
 
 ```
-https://api.newpublishing.example.com/v1/claims
-https://api.newpublishing.example.com/v1/bundles
-https://api.newpublishing.example.com/v1/query/search
+https://api.phiacta.example.com/v1/claims
+https://api.phiacta.example.com/v1/bundles
+https://api.phiacta.example.com/v1/query/search
 ```
 
 ### Versioning Rules
@@ -43,7 +43,7 @@ When a new API version is released:
    ```
    Deprecation: true
    Sunset: Sat, 08 Aug 2026 00:00:00 GMT
-   Link: <https://api.newpublishing.example.com/v2/claims>; rel="successor-version"
+   Link: <https://api.phiacta.example.com/v2/claims>; rel="successor-version"
    ```
 3. **Documentation update.** The API reference marks deprecated endpoints with clear migration guidance.
 4. **Monitoring.** Usage of deprecated endpoints is logged. High-traffic extensions receive direct outreach before sunset.
@@ -1556,7 +1556,7 @@ WS /v1/subscribe
 
 **Connection:**
 ```
-wss://api.newpublishing.example.com/v1/subscribe?token=ext_key_live_abc123...
+wss://api.phiacta.example.com/v1/subscribe?token=ext_key_live_abc123...
 ```
 
 **Subscribe message:**
@@ -1585,10 +1585,10 @@ wss://api.newpublishing.example.com/v1/subscribe?token=ext_key_live_abc123...
 Extensions use the same REST API as any client, authenticated with their API key. The SDK provides a typed client wrapper:
 
 ```python
-from newpublishing.extensions.client import NewPublishingClient
+from phiacta.extensions.client import PhiactaClient
 
-client = NewPublishingClient(
-    base_url="https://api.newpublishing.example.com",
+client = PhiactaClient(
+    base_url="https://api.phiacta.example.com",
     api_key="ext_key_live_abc123...",
 )
 
@@ -1632,13 +1632,13 @@ Clients can generate SDKs from the OpenAPI spec:
 
 ```bash
 # TypeScript
-npx openapi-generator-cli generate -i https://api.newpublishing.example.com/openapi.json -g typescript-fetch -o ./client
+npx openapi-generator-cli generate -i https://api.phiacta.example.com/openapi.json -g typescript-fetch -o ./client
 
 # Python
-openapi-python-client generate --url https://api.newpublishing.example.com/openapi.json
+openapi-python-client generate --url https://api.phiacta.example.com/openapi.json
 ```
 
-The official Python SDK (`newpublishing-sdk`) is hand-written with async/await support and is the recommended client for Python extensions.
+The official Python SDK (`phiacta-sdk`) is hand-written with async/await support and is the recommended client for Python extensions.
 
 ### 10.3 Schema Versioning
 
@@ -1648,7 +1648,7 @@ The OpenAPI spec includes the API version:
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "NewPublishing Knowledge Backend",
+    "title": "Phiacta Knowledge Backend",
     "version": "1.0.0"
   }
 }

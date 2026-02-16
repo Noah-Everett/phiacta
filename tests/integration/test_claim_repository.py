@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 NewPublishing Contributors
+# Copyright (C) 2026 Phiacta Contributors
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from newpublishing.models.agent import Agent
-from newpublishing.models.claim import Claim
-from newpublishing.models.namespace import Namespace
-from newpublishing.repositories.claim_repository import ClaimRepository
+from phiacta.models.agent import Agent
+from phiacta.models.claim import Claim
+from phiacta.models.namespace import Namespace
+from phiacta.repositories.claim_repository import ClaimRepository
 from tests.conftest import make_agent, make_claim, make_namespace
 
 needs_db = pytest.mark.skipif(

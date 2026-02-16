@@ -2,15 +2,15 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: newpublishing
+      POSTGRES_DB: phiacta
       POSTGRES_USER: newpub
       POSTGRES_PASSWORD: devpassword
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U newpub -d newpublishing"]
+      test: ["CMD-SHELL", "pg_isready -U newpub -d phiacta"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,7 +21,7 @@ services:
       dockerfile: Dockerfile
       target: development
     environment:
-      DATABASE_URL: "postgresql+asyncpg://newpub:devpassword@db:5432/newpublishing"
+      DATABASE_URL: "postgresql+asyncpg://newpub:devpassword@db:5432/phiacta"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
       LOG_LEVEL: "debug"
       ENVIRONMENT: "development"
@@ -34,17 +34,33 @@ services:
       db:
         condition: service_healthy
     command: >
-      uvicorn newpublishing.main:app
+      uvicorn phiacta.main:app
       --host 0.0.0.0
       --port 8000
       --reload
       --reload-dir /app/src
 
+  web:
+    build:
+      context: ../phiacta-web
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+      API_URL_INTERNAL: "http://backend:8000"
+    ports:
+      - "3001:3000"
+    volumes:
+      - ../phiacta-web/src:/app/src
+      - ../phiacta-web/public:/app/public
+    depends_on:
+      - backend
+
   pgadmin:
     image: dpage/pgadmin4:latest
     profiles: ["debug"]
     environment:
-      PGADMIN_DEFAULT_EMAIL: dev@newpublishing.local
+      PGADMIN_DEFAULT_EMAIL: dev@phiacta.local
       PGADMIN_DEFAULT_PASSWORD: devpassword
     ports:
       - "5050:80"

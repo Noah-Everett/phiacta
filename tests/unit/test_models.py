@@ -1,17 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 NewPublishing Contributors
+# Copyright (C) 2026 Phiacta Contributors
 
 from __future__ import annotations
 
 from uuid import uuid4
 
-from newpublishing.models.agent import Agent
-from newpublishing.models.artifact import Artifact
-from newpublishing.models.base import Base, TimestampMixin, UUIDMixin
-from newpublishing.models.bundle import Bundle
-from newpublishing.models.claim import Claim
-from newpublishing.models.layer_registry import LayerRecord
-from newpublishing.models.relation import Relation
+from phiacta.models.agent import Agent
+from phiacta.models.artifact import Artifact
+from phiacta.models.base import Base, TimestampMixin, UUIDMixin
+from phiacta.models.bundle import Bundle
+from phiacta.models.claim import Claim
+from phiacta.models.layer_registry import LayerRecord
+from phiacta.models.relation import Relation
 
 
 class TestClaimDefaults:

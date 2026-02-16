@@ -21,3 +21,9 @@ venv/
 htmlcov/
 
 *.log
+
+node_modules/
+.DS_Store
+
+# Old repo snapshot (should not be tracked)
+NewPublishing/

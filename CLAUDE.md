@@ -1,4 +1,4 @@
-# NewPublishing - Implementation Context
+# Phiacta - Implementation Context
 
 ## Project Vision
 Replace academic papers with a queryable knowledge backend. One canonical database storing semantic knowledge (claims, proofs, evidence, relationships). All interfaces are extensions.
@@ -54,7 +54,7 @@ Decision made: PostgreSQL + pgvector (see schema-proposal.md for DDL).
 
 ### Structure
 ```
-newpublishing/
+phiacta/
 ├── core/                 # Schema, models, base classes
 │   ├── models/          # SQLAlchemy/Pydantic models
 │   ├── extensions/      # Base classes for extensions

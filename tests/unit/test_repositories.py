@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 NewPublishing Contributors
+# Copyright (C) 2026 Phiacta Contributors
 
 from __future__ import annotations
 
@@ -7,17 +7,17 @@ from unittest.mock import MagicMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from newpublishing.models.agent import Agent
-from newpublishing.models.bundle import Bundle
-from newpublishing.models.claim import Claim
-from newpublishing.models.relation import Relation
-from newpublishing.models.source import Source
-from newpublishing.repositories.agent_repository import AgentRepository
-from newpublishing.repositories.base import BaseRepository
-from newpublishing.repositories.bundle_repository import BundleRepository
-from newpublishing.repositories.claim_repository import ClaimRepository
-from newpublishing.repositories.relation_repository import RelationRepository
-from newpublishing.repositories.source_repository import SourceRepository
+from phiacta.models.agent import Agent
+from phiacta.models.bundle import Bundle
+from phiacta.models.claim import Claim
+from phiacta.models.relation import Relation
+from phiacta.models.source import Source
+from phiacta.repositories.agent_repository import AgentRepository
+from phiacta.repositories.base import BaseRepository
+from phiacta.repositories.bundle_repository import BundleRepository
+from phiacta.repositories.claim_repository import ClaimRepository
+from phiacta.repositories.relation_repository import RelationRepository
+from phiacta.repositories.source_repository import SourceRepository
 
 
 class TestBaseRepositoryInstantiation:

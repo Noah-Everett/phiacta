@@ -1,4 +1,4 @@
-# NewPublishing Implementation Plan
+# Phiacta Implementation Plan
 
 *Actionable roadmap for building the knowledge backend. Total estimated time: 11-15 days.*
 
@@ -42,7 +42,7 @@ Establish the development environment, tooling, and CI pipeline. Every subsequen
 Create the repository structure:
 
 ```
-newpublishing/
+phiacta/
 ├── pyproject.toml
 ├── alembic.ini
 ├── docker-compose.yml
@@ -54,7 +54,7 @@ newpublishing/
 ├── CLAUDE.md
 ├── README.md
 ├── src/
-│   └── newpublishing/
+│   └── phiacta/
 │       ├── __init__.py
 │       ├── main.py
 │       └── config.py
@@ -68,7 +68,7 @@ newpublishing/
 
 ```toml
 [project]
-name = "newpublishing"
+name = "phiacta"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -114,7 +114,7 @@ dev = [
 extensions = [
     "pymupdf>=1.25",  # PDF parsing for paper ingestion
 ]
-all = ["newpublishing[dev,extensions]"]
+all = ["phiacta[dev,extensions]"]
 
 [build-system]
 requires = ["hatchling"]
@@ -200,7 +200,7 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_DB: test_newpublishing
+          POSTGRES_DB: test_phiacta
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
         ports:
@@ -218,7 +218,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest --cov=src/ --cov-report=term-missing
         env:
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_newpublishing
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_phiacta
 ```
 
 ### 0.5 Docker Development Environment
@@ -230,7 +230,7 @@ jobs:
 
 ### 0.6 Initial Application Skeleton
 
-`src/newpublishing/config.py`:
+`src/phiacta/config.py`:
 
 ```python
 from pydantic_settings import BaseSettings
@@ -254,12 +254,12 @@ class Settings(BaseSettings):
 settings = Settings()
 ```
 
-`src/newpublishing/main.py`:
+`src/phiacta/main.py`:
 
 ```python
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from newpublishing.config import settings
+from phiacta.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -273,7 +273,7 @@ async def lifespan(app: FastAPI):
     # Shutdown: cleanup
 
 app = FastAPI(
-    title="NewPublishing Knowledge Backend",
+    title="Phiacta Knowledge Backend",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -298,9 +298,9 @@ async def ready():
 | `docker-compose.yml` | Local development stack |
 | `Dockerfile` | Multi-stage container build |
 | `alembic.ini` | Migration configuration |
-| `src/newpublishing/__init__.py` | Package marker |
-| `src/newpublishing/config.py` | Settings via pydantic-settings |
-| `src/newpublishing/main.py` | FastAPI app factory |
+| `src/phiacta/__init__.py` | Package marker |
+| `src/phiacta/config.py` | Settings via pydantic-settings |
+| `src/phiacta/main.py` | FastAPI app factory |
 | `tests/conftest.py` | Pytest fixtures |
 | `CLAUDE.md` | AI assistant context |
 | `README.md` | Project documentation |
@@ -328,7 +328,7 @@ Implement SQLAlchemy models for all 11 tables, create the initial Alembic migrat
 
 ### 1.1 SQLAlchemy Base and Mixins
 
-`src/newpublishing/models/base.py`:
+`src/phiacta/models/base.py`:
 
 ```python
 from datetime import datetime
@@ -456,11 +456,11 @@ edge_types = [
 
 ### 1.5 Database Session Management
 
-`src/newpublishing/db/session.py`:
+`src/phiacta/db/session.py`:
 
 ```python
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from newpublishing.config import settings
+from phiacta.config import settings
 
 engine = create_async_engine(
     settings.database_url,
@@ -485,11 +485,11 @@ async def get_db() -> AsyncSession:
 Create repositories for clean data access:
 
 ```python
-# src/newpublishing/repositories/claim_repository.py
+# src/phiacta/repositories/claim_repository.py
 from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from newpublishing.models.claim import Claim
+from phiacta.models.claim import Claim
 
 class ClaimRepository:
     def __init__(self, session: AsyncSession):
@@ -528,7 +528,7 @@ class ClaimRepository:
 ```python
 import pytest
 from uuid import uuid4
-from newpublishing.models.claim import Claim
+from phiacta.models.claim import Claim
 
 @pytest.fixture
 def sample_claim():
@@ -556,7 +556,7 @@ from uuid import uuid4
 async def test_create_and_get_claim(db_session, claim_factory):
     claim = await claim_factory.create(content="Integration test claim")
     
-    from newpublishing.repositories.claim_repository import ClaimRepository
+    from phiacta.repositories.claim_repository import ClaimRepository
     repo = ClaimRepository(db_session)
     
     retrieved = await repo.get_by_id(claim.id)
@@ -568,26 +568,26 @@ async def test_create_and_get_claim(db_session, claim_factory):
 
 | File | Purpose |
 |------|---------|
-| `src/newpublishing/models/__init__.py` | Model exports |
-| `src/newpublishing/models/base.py` | DeclarativeBase, mixins |
-| `src/newpublishing/models/agent.py` | Agent model |
-| `src/newpublishing/models/namespace.py` | Namespace model |
-| `src/newpublishing/models/source.py` | Source model |
-| `src/newpublishing/models/claim.py` | Claim model with embedding |
-| `src/newpublishing/models/edge.py` | Edge + EdgeType models |
-| `src/newpublishing/models/provenance.py` | Provenance model |
-| `src/newpublishing/models/review.py` | Review model |
-| `src/newpublishing/models/bundle.py` | Bundle model |
-| `src/newpublishing/models/artifact.py` | Artifact + ArtifactClaim |
-| `src/newpublishing/models/pending_reference.py` | PendingReference model |
-| `src/newpublishing/db/__init__.py` | DB utilities package |
-| `src/newpublishing/db/session.py` | Async session factory |
-| `src/newpublishing/db/migrations/env.py` | Alembic environment |
-| `src/newpublishing/db/migrations/versions/001_initial.py` | Initial schema |
-| `src/newpublishing/repositories/__init__.py` | Repository exports |
-| `src/newpublishing/repositories/claim_repository.py` | Claim CRUD |
-| `src/newpublishing/repositories/agent_repository.py` | Agent CRUD |
-| `src/newpublishing/repositories/bundle_repository.py` | Bundle CRUD |
+| `src/phiacta/models/__init__.py` | Model exports |
+| `src/phiacta/models/base.py` | DeclarativeBase, mixins |
+| `src/phiacta/models/agent.py` | Agent model |
+| `src/phiacta/models/namespace.py` | Namespace model |
+| `src/phiacta/models/source.py` | Source model |
+| `src/phiacta/models/claim.py` | Claim model with embedding |
+| `src/phiacta/models/edge.py` | Edge + EdgeType models |
+| `src/phiacta/models/provenance.py` | Provenance model |
+| `src/phiacta/models/review.py` | Review model |
+| `src/phiacta/models/bundle.py` | Bundle model |
+| `src/phiacta/models/artifact.py` | Artifact + ArtifactClaim |
+| `src/phiacta/models/pending_reference.py` | PendingReference model |
+| `src/phiacta/db/__init__.py` | DB utilities package |
+| `src/phiacta/db/session.py` | Async session factory |
+| `src/phiacta/db/migrations/env.py` | Alembic environment |
+| `src/phiacta/db/migrations/versions/001_initial.py` | Initial schema |
+| `src/phiacta/repositories/__init__.py` | Repository exports |
+| `src/phiacta/repositories/claim_repository.py` | Claim CRUD |
+| `src/phiacta/repositories/agent_repository.py` | Agent CRUD |
+| `src/phiacta/repositories/bundle_repository.py` | Bundle CRUD |
 | `tests/unit/test_models.py` | Model unit tests |
 | `tests/integration/test_claim_repository.py` | Repository integration tests |
 | `tests/conftest.py` | Fixtures: test DB, factories |
@@ -620,7 +620,7 @@ Implement FastAPI routes for bundle submission and claim retrieval. This is the 
 
 ### 2.1 Pydantic Schemas
 
-`src/newpublishing/schemas/claims.py`:
+`src/phiacta/schemas/claims.py`:
 
 ```python
 from datetime import datetime
@@ -653,7 +653,7 @@ class ClaimListParams(BaseModel):
     namespace_id: UUID | None = None
 ```
 
-`src/newpublishing/schemas/bundles.py`:
+`src/phiacta/schemas/bundles.py`:
 
 ```python
 from uuid import UUID
@@ -712,15 +712,15 @@ class BundleResponse(BaseModel):
 
 ### 2.2 Dependency Injection
 
-`src/newpublishing/api/deps.py`:
+`src/phiacta/api/deps.py`:
 
 ```python
 from typing import Annotated
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from newpublishing.db.session import get_db
-from newpublishing.models.agent import Agent
-from newpublishing.services.auth_service import verify_api_key
+from phiacta.db.session import get_db
+from phiacta.models.agent import Agent
+from phiacta.services.auth_service import verify_api_key
 
 async def get_current_agent(
     authorization: Annotated[str, Header()],
@@ -746,14 +746,14 @@ CurrentAgent = Annotated[Agent, Depends(get_current_agent)]
 
 ### 2.3 Bundle Service
 
-`src/newpublishing/services/bundle_service.py`:
+`src/phiacta/services/bundle_service.py`:
 
 ```python
 from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
-from newpublishing.models import Claim, Edge, Source, Bundle, Provenance
-from newpublishing.schemas.bundles import BundleSubmit, BundleResponse
-from newpublishing.services.embedding_service import generate_embedding
+from phiacta.models import Claim, Edge, Source, Bundle, Provenance
+from phiacta.schemas.bundles import BundleSubmit, BundleResponse
+from phiacta.services.embedding_service import generate_embedding
 
 class BundleService:
     def __init__(self, session: AsyncSession):
@@ -851,13 +851,13 @@ class BundleService:
 
 ### 2.4 API Routes
 
-`src/newpublishing/api/v1/bundles.py`:
+`src/phiacta/api/v1/bundles.py`:
 
 ```python
 from fastapi import APIRouter, HTTPException, status
-from newpublishing.api.deps import DBSession, CurrentAgent
-from newpublishing.schemas.bundles import BundleSubmit, BundleResponse
-from newpublishing.services.bundle_service import BundleService
+from phiacta.api.deps import DBSession, CurrentAgent
+from phiacta.schemas.bundles import BundleSubmit, BundleResponse
+from phiacta.services.bundle_service import BundleService
 
 router = APIRouter(prefix="/bundles", tags=["bundles"])
 
@@ -878,14 +878,14 @@ async def submit_bundle(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 ```
 
-`src/newpublishing/api/v1/claims.py`:
+`src/phiacta/api/v1/claims.py`:
 
 ```python
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
-from newpublishing.api.deps import DBSession, CurrentAgent
-from newpublishing.schemas.claims import ClaimRead, ClaimListParams
-from newpublishing.repositories.claim_repository import ClaimRepository
+from phiacta.api.deps import DBSession, CurrentAgent
+from phiacta.schemas.claims import ClaimRead, ClaimListParams
+from phiacta.repositories.claim_repository import ClaimRepository
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -914,11 +914,11 @@ async def list_claims(
 
 ### 2.5 Router Aggregation
 
-`src/newpublishing/api/v1/__init__.py`:
+`src/phiacta/api/v1/__init__.py`:
 
 ```python
 from fastapi import APIRouter
-from newpublishing.api.v1 import bundles, claims, agents, reviews
+from phiacta.api.v1 import bundles, claims, agents, reviews
 
 router = APIRouter(prefix="/v1")
 router.include_router(bundles.router)
@@ -930,21 +930,21 @@ router.include_router(reviews.router)
 Update `main.py`:
 
 ```python
-from newpublishing.api.v1 import router as v1_router
+from phiacta.api.v1 import router as v1_router
 
 app.include_router(v1_router)
 ```
 
 ### 2.6 Auth Middleware (API Keys)
 
-`src/newpublishing/services/auth_service.py`:
+`src/phiacta/services/auth_service.py`:
 
 ```python
 from uuid import UUID
 from passlib.hash import bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from newpublishing.models.agent import Agent
+from phiacta.models.agent import Agent
 
 async def verify_api_key(session: AsyncSession, api_key: str) -> Agent | None:
     # API keys are stored as bcrypt hashes
@@ -971,25 +971,25 @@ FastAPI auto-generates OpenAPI docs. Enhance with docstrings and response models
 
 | File | Purpose |
 |------|---------|
-| `src/newpublishing/schemas/__init__.py` | Schema exports |
-| `src/newpublishing/schemas/claims.py` | Claim schemas |
-| `src/newpublishing/schemas/bundles.py` | Bundle schemas |
-| `src/newpublishing/schemas/agents.py` | Agent schemas |
-| `src/newpublishing/schemas/reviews.py` | Review schemas |
-| `src/newpublishing/schemas/common.py` | Pagination, errors |
-| `src/newpublishing/api/__init__.py` | API package |
-| `src/newpublishing/api/deps.py` | Dependency injection |
-| `src/newpublishing/api/v1/__init__.py` | v1 router aggregation |
-| `src/newpublishing/api/v1/bundles.py` | Bundle endpoints |
-| `src/newpublishing/api/v1/claims.py` | Claim endpoints |
-| `src/newpublishing/api/v1/agents.py` | Agent endpoints |
-| `src/newpublishing/api/v1/reviews.py` | Review endpoints |
-| `src/newpublishing/api/health.py` | Health/ready endpoints |
-| `src/newpublishing/services/__init__.py` | Service exports |
-| `src/newpublishing/services/bundle_service.py` | Bundle processing |
-| `src/newpublishing/services/claim_service.py` | Claim operations |
-| `src/newpublishing/services/auth_service.py` | API key verification |
-| `src/newpublishing/services/embedding_service.py` | OpenAI embeddings |
+| `src/phiacta/schemas/__init__.py` | Schema exports |
+| `src/phiacta/schemas/claims.py` | Claim schemas |
+| `src/phiacta/schemas/bundles.py` | Bundle schemas |
+| `src/phiacta/schemas/agents.py` | Agent schemas |
+| `src/phiacta/schemas/reviews.py` | Review schemas |
+| `src/phiacta/schemas/common.py` | Pagination, errors |
+| `src/phiacta/api/__init__.py` | API package |
+| `src/phiacta/api/deps.py` | Dependency injection |
+| `src/phiacta/api/v1/__init__.py` | v1 router aggregation |
+| `src/phiacta/api/v1/bundles.py` | Bundle endpoints |
+| `src/phiacta/api/v1/claims.py` | Claim endpoints |
+| `src/phiacta/api/v1/agents.py` | Agent endpoints |
+| `src/phiacta/api/v1/reviews.py` | Review endpoints |
+| `src/phiacta/api/health.py` | Health/ready endpoints |
+| `src/phiacta/services/__init__.py` | Service exports |
+| `src/phiacta/services/bundle_service.py` | Bundle processing |
+| `src/phiacta/services/claim_service.py` | Claim operations |
+| `src/phiacta/services/auth_service.py` | API key verification |
+| `src/phiacta/services/embedding_service.py` | OpenAI embeddings |
 | `tests/integration/test_bundle_api.py` | Bundle API tests |
 | `tests/integration/test_claim_api.py` | Claim API tests |
 
@@ -1017,14 +1017,14 @@ Implement semantic search (pgvector), graph traversal (recursive CTEs), and the 
 
 ### 3.1 Semantic Search Service
 
-`src/newpublishing/services/search_service.py`:
+`src/phiacta/services/search_service.py`:
 
 ```python
 from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from newpublishing.models.claim import Claim
-from newpublishing.services.embedding_service import generate_embedding
+from phiacta.models.claim import Claim
+from phiacta.services.embedding_service import generate_embedding
 
 class SearchService:
     def __init__(self, session: AsyncSession):
@@ -1078,7 +1078,7 @@ class SearchService:
 
 ### 3.2 Graph Traversal Service
 
-`src/newpublishing/services/traversal_service.py`:
+`src/phiacta/services/traversal_service.py`:
 
 ```python
 from uuid import UUID
@@ -1196,14 +1196,14 @@ class TraversalService:
 
 ### 3.3 Confidence Propagation
 
-`src/newpublishing/services/confidence_service.py`:
+`src/phiacta/services/confidence_service.py`:
 
 ```python
 from uuid import UUID
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from newpublishing.models.review import Review
-from newpublishing.models.agent import Agent
+from phiacta.models.review import Review
+from phiacta.models.agent import Agent
 
 class ConfidenceService:
     def __init__(self, session: AsyncSession):
@@ -1272,7 +1272,7 @@ class ConfidenceService:
         direct = await self.compute_confidence(claim_id)
         
         # Evidence chain confidence
-        from newpublishing.services.traversal_service import TraversalService
+        from phiacta.services.traversal_service import TraversalService
         traversal = TraversalService(self.session)
         evidence = await traversal.get_evidence_chain(claim_id)
         
@@ -1307,16 +1307,16 @@ class ConfidenceService:
 
 ### 3.4 Query API Endpoints
 
-`src/newpublishing/api/v1/query.py`:
+`src/phiacta/api/v1/query.py`:
 
 ```python
 from uuid import UUID
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from newpublishing.api.deps import DBSession, CurrentAgent
-from newpublishing.services.search_service import SearchService
-from newpublishing.services.traversal_service import TraversalService
-from newpublishing.services.confidence_service import ConfidenceService
+from phiacta.api.deps import DBSession, CurrentAgent
+from phiacta.services.search_service import SearchService
+from phiacta.services.traversal_service import TraversalService
+from phiacta.services.confidence_service import ConfidenceService
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -1360,7 +1360,7 @@ async def get_confidence(claim_id: UUID, db: DBSession, agent: CurrentAgent):
 
 ### 3.5 Duplicate Detection
 
-`src/newpublishing/services/duplicate_service.py`:
+`src/phiacta/services/duplicate_service.py`:
 
 ```python
 async def find_duplicates(
@@ -1401,11 +1401,11 @@ async def find_duplicates(
 
 | File | Purpose |
 |------|---------|
-| `src/newpublishing/services/search_service.py` | Semantic search via pgvector |
-| `src/newpublishing/services/traversal_service.py` | Graph traversal with CTEs |
-| `src/newpublishing/services/confidence_service.py` | Confidence aggregation |
-| `src/newpublishing/services/duplicate_service.py` | Duplicate detection |
-| `src/newpublishing/api/v1/query.py` | Query endpoints |
+| `src/phiacta/services/search_service.py` | Semantic search via pgvector |
+| `src/phiacta/services/traversal_service.py` | Graph traversal with CTEs |
+| `src/phiacta/services/confidence_service.py` | Confidence aggregation |
+| `src/phiacta/services/duplicate_service.py` | Duplicate detection |
+| `src/phiacta/api/v1/query.py` | Query endpoints |
 | `tests/integration/test_search_api.py` | Search tests |
 | `tests/integration/test_traversal_api.py` | Traversal tests |
 
@@ -1436,7 +1436,7 @@ Implement the extension base classes, SDK client, plugin discovery, and a workin
 
 ### 4.1 Extension Base Classes
 
-`src/newpublishing/extensions/base.py`:
+`src/phiacta/extensions/base.py`:
 
 As specified in `extension-protocol.md`, implement:
 - `Source`, `ExtractedClaim`, `ExtractedEdge`, `ExtractedArtifact`, `ExtractionResult`
@@ -1446,13 +1446,13 @@ As specified in `extension-protocol.md`, implement:
 
 ### 4.2 SDK Client
 
-`src/newpublishing/extensions/client.py`:
+`src/phiacta/extensions/client.py`:
 
 ```python
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-class NewPublishingClient:
+class PhiactaClient:
     def __init__(self, base_url: str, api_key: str, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
         self.headers = {"Authorization": f"Bearer {api_key}"}
@@ -1496,7 +1496,7 @@ class NewPublishingClient:
 
 ### 4.3 Extension Registry
 
-`src/newpublishing/extensions/registry.py`:
+`src/phiacta/extensions/registry.py`:
 
 ```python
 from datetime import datetime
@@ -1504,7 +1504,7 @@ from typing import Any
 from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from newpublishing.models.agent import Agent
+from phiacta.models.agent import Agent
 
 class ExtensionRegistry:
     def __init__(self, session: AsyncSession):
@@ -1512,7 +1512,7 @@ class ExtensionRegistry:
     
     async def register(self, manifest: dict) -> dict:
         """Register a new extension and provision API credentials."""
-        from newpublishing.services.auth_service import generate_api_key
+        from phiacta.services.auth_service import generate_api_key
         
         raw_key, hashed_key = generate_api_key(manifest["extension_id"])
         
@@ -1567,7 +1567,7 @@ This is the **critical path**. If this doesn't work well enough, pause and wait 
 
 ```python
 import hashlib
-from newpublishing.extensions.base import (
+from phiacta.extensions.base import (
     InputExtension, Source, ExtractionResult,
     ExtractedClaim, ExtractedEdge,
 )
@@ -1638,7 +1638,7 @@ class PaperIngestionExtension(InputExtension):
 
 ```python
 from openai import AsyncOpenAI
-from newpublishing.config import settings
+from phiacta.config import settings
 
 client = AsyncOpenAI(api_key=settings.openai_api_key)
 
@@ -1684,13 +1684,13 @@ async def extract_claims_with_llm(sections: list[dict]) -> list[dict]:
 
 ### 4.5 Extension API Endpoints
 
-`src/newpublishing/api/v1/extensions.py`:
+`src/phiacta/api/v1/extensions.py`:
 
 ```python
 from fastapi import APIRouter, HTTPException
-from newpublishing.api.deps import DBSession, CurrentAgent
-from newpublishing.extensions.registry import ExtensionRegistry
-from newpublishing.schemas.extensions import ExtensionManifest
+from phiacta.api.deps import DBSession, CurrentAgent
+from phiacta.extensions.registry import ExtensionRegistry
+from phiacta.schemas.extensions import ExtensionManifest
 
 router = APIRouter(prefix="/extensions", tags=["extensions"])
 
@@ -1721,13 +1721,13 @@ async def list_extensions(
 
 | File | Purpose |
 |------|---------|
-| `src/newpublishing/extensions/__init__.py` | Extension package |
-| `src/newpublishing/extensions/base.py` | Base classes and data types |
-| `src/newpublishing/extensions/client.py` | SDK HTTP client |
-| `src/newpublishing/extensions/registry.py` | Extension registration |
-| `src/newpublishing/extensions/runner.py` | Extension runner/server |
-| `src/newpublishing/api/v1/extensions.py` | Extension API |
-| `src/newpublishing/schemas/extensions.py` | Extension manifest schema |
+| `src/phiacta/extensions/__init__.py` | Extension package |
+| `src/phiacta/extensions/base.py` | Base classes and data types |
+| `src/phiacta/extensions/client.py` | SDK HTTP client |
+| `src/phiacta/extensions/registry.py` | Extension registration |
+| `src/phiacta/extensions/runner.py` | Extension runner/server |
+| `src/phiacta/api/v1/extensions.py` | Extension API |
+| `src/phiacta/schemas/extensions.py` | Extension manifest schema |
 | `extensions/__init__.py` | Built-in extensions package |
 | `extensions/paper_ingestion/__init__.py` | Paper ingestion package |
 | `extensions/paper_ingestion/extension.py` | Main extension class |
@@ -1784,22 +1784,22 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: newpublishing
+      POSTGRES_DB: phiacta
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d newpublishing"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d phiacta"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   backend:
-    image: newpublishing:${VERSION:-latest}
+    image: phiacta:${VERSION:-latest}
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/newpublishing
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/phiacta
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ENVIRONMENT: production
       LOG_LEVEL: info
@@ -1839,7 +1839,7 @@ As specified in `deployment.md`.
 
 ### 5.3 Rate Limiting
 
-`src/newpublishing/middleware/rate_limit.py`:
+`src/phiacta/middleware/rate_limit.py`:
 
 ```python
 from fastapi import Request, HTTPException
@@ -1890,11 +1890,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 ### 5.4 Structured Logging
 
-`src/newpublishing/logging.py`:
+`src/phiacta/logging.py`:
 
 ```python
 import structlog
-from newpublishing.config import settings
+from phiacta.config import settings
 
 def configure_logging():
     processors = [
@@ -1970,10 +1970,10 @@ async def ready(db: DBSession):
 |------|---------|
 | `docker-compose.prod.yml` | Production compose file |
 | `deploy/k8s/*.yaml` | Kubernetes manifests |
-| `src/newpublishing/middleware/__init__.py` | Middleware package |
-| `src/newpublishing/middleware/rate_limit.py` | Rate limiting |
-| `src/newpublishing/middleware/request_id.py` | Request ID injection |
-| `src/newpublishing/logging.py` | Structured logging config |
+| `src/phiacta/middleware/__init__.py` | Middleware package |
+| `src/phiacta/middleware/rate_limit.py` | Rate limiting |
+| `src/phiacta/middleware/request_id.py` | Request ID injection |
+| `src/phiacta/logging.py` | Structured logging config |
 | `docs/api/*.md` | API documentation |
 | `docs/extensions/*.md` | Extension developer docs |
 | `docs/deployment/*.md` | Deployment guides |

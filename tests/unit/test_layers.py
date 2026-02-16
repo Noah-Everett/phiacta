@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 NewPublishing Contributors
+# Copyright (C) 2026 Phiacta Contributors
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ import pytest
 from fastapi import APIRouter, FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from newpublishing.layers.base import Layer
-from newpublishing.layers.confidence.layer import ConfidenceLayer
-from newpublishing.layers.graph.layer import GraphLayer
-from newpublishing.layers.registry import LayerRegistry
+from phiacta.layers.base import Layer
+from phiacta.layers.confidence.layer import ConfidenceLayer
+from phiacta.layers.graph.layer import GraphLayer
+from phiacta.layers.registry import LayerRegistry
 
 # -- Stub layer for testing --------------------------------------------------
 

@@ -1,6 +1,6 @@
 # Extension Protocol Specification
 
-*How to build, test, and distribute extensions for the NewPublishing knowledge backend.*
+*How to build, test, and distribute extensions for the Phiacta knowledge backend.*
 
 *Depends on: `docs/design/synthesis.md` (schema), `docs/implementation/architecture.md` (system architecture), `docs/design/extension-design.md` (API spec).*
 
@@ -8,14 +8,14 @@
 
 ## 1. Base Class Design
 
-Extensions interact with the backend exclusively through HTTP and WebSocket. They never import backend internals. The `newpublishing-sdk` package provides two abstract base classes — `InputExtension` and `OutputExtension` — plus data classes for the objects they produce and consume.
+Extensions interact with the backend exclusively through HTTP and WebSocket. They never import backend internals. The `phiacta-sdk` package provides two abstract base classes — `InputExtension` and `OutputExtension` — plus data classes for the objects they produce and consume.
 
 ### InputExtension
 
 An input extension converts real-world artifacts (papers, audio recordings, photos, manual forms) into structured knowledge bundles. The only method you must implement is `ingest()`.
 
 ```python
-from newpublishing.extensions.base import (
+from phiacta.extensions.base import (
     InputExtension, Source, ExtractionResult,
     ExtractedClaim, ExtractedEdge, ExtractedArtifact,
 )
@@ -65,7 +65,7 @@ The SDK calls `validate()` before submission. Returning warnings does not block 
 An output extension queries the knowledge graph and presents results. The only method you must implement is `query()`.
 
 ```python
-from newpublishing.extensions.base import (
+from phiacta.extensions.base import (
     OutputExtension, QueryRequest, QueryResponse,
 )
 
@@ -87,7 +87,7 @@ class MyOutputExtension(OutputExtension):
 
 - `query()` receives a `QueryRequest` with a natural language query string, `top_k`, filters, and an `include` list specifying which optional fields to return (provenance, evidence summaries, etc.).
 - `query()` returns a `QueryResponse` with a list of result dicts, a total match count, and an arbitrary metadata dict.
-- Output extensions use `self.client` (a `NewPublishingClient` instance, injected by the SDK runner) to call the backend's search, traverse, and view endpoints. They do not hit the database directly.
+- Output extensions use `self.client` (a `PhiactaClient` instance, injected by the SDK runner) to call the backend's search, traverse, and view endpoints. They do not hit the database directly.
 
 ### Data Classes Reference
 
@@ -150,7 +150,7 @@ The raw API key is shown exactly once. Store it in your extension's environment 
 The SDK provides a runner that handles the extension startup sequence:
 
 ```python
-from newpublishing.extensions.runner import run_extension
+from phiacta.extensions.runner import run_extension
 
 from my_extension import MyInputExtension
 
@@ -161,7 +161,7 @@ if __name__ == "__main__":
 `run_extension()` performs:
 
 1. **Configuration loading.** Reads `NEWPUB_BACKEND_URL` and `NEWPUB_API_KEY` from environment variables (or from a `.env` file).
-2. **Client initialization.** Creates a `NewPublishingClient` instance and attaches it to the extension as `self.client`.
+2. **Client initialization.** Creates a `PhiactaClient` instance and attaches it to the extension as `self.client`.
 3. **Health check registration.** If the extension declares a `health_check_url`, the runner starts a lightweight HTTP server responding to `GET /health`.
 4. **Event loop startup.** For event-driven extensions, the runner opens a WebSocket connection to `/v1/subscribe` and routes events to the extension's handler methods.
 5. **Ready signal.** Logs "Extension {name} v{version} ready" and begins accepting work.
@@ -199,16 +199,16 @@ This revokes the API key immediately. In-flight requests from the extension will
 
 ## 3. SDK / Client Interface
 
-The `newpublishing-sdk` package (installable via `pip install newpublishing-sdk`) provides everything an extension developer needs. It is intentionally thin — it handles auth, HTTP, and serialization so you focus on domain logic.
+The `phiacta-sdk` package (installable via `pip install phiacta-sdk`) provides everything an extension developer needs. It is intentionally thin — it handles auth, HTTP, and serialization so you focus on domain logic.
 
-### NewPublishingClient
+### PhiactaClient
 
 The client wraps all backend API calls:
 
 ```python
-from newpublishing.extensions.client import NewPublishingClient
+from phiacta.extensions.client import PhiactaClient
 
-client = NewPublishingClient(
+client = PhiactaClient(
     base_url="https://api.knowledge-backend.example.com",
     api_key="ext_key_live_abc123def456",
 )
@@ -248,14 +248,14 @@ async for event in client.subscribe(event_types=["claim_created"]):
 
 All exceptions include `request_id` for debugging.
 
-**Retry behavior.** The client automatically retries on `429` and `5xx` errors using exponential backoff (via `tenacity`). Default: 3 retries, 1s/2s/4s delays. Configurable via `NewPublishingClient(max_retries=5, base_delay=0.5)`.
+**Retry behavior.** The client automatically retries on `429` and `5xx` errors using exponential backoff (via `tenacity`). Default: 3 retries, 1s/2s/4s delays. Configurable via `PhiactaClient(max_retries=5, base_delay=0.5)`.
 
 ### Extension Runner
 
 The runner is the entry point for deployed extensions. It wraps your extension class with HTTP serving and lifecycle management:
 
 ```python
-from newpublishing.extensions.runner import run_extension, RunnerConfig
+from phiacta.extensions.runner import run_extension, RunnerConfig
 
 config = RunnerConfig(
     host="0.0.0.0",
@@ -287,9 +287,9 @@ Every extension declares its identity and capabilities in a manifest. The manife
   "version": "2.0.0",
   "type": "input",
   "description": "Extracts claims, evidence, and relationships from academic papers (PDF)",
-  "author": "NewPublishing Core Team",
+  "author": "Phiacta Core Team",
   "license": "GPL-3.0",
-  "repository": "https://github.com/newpublishing/ext-paper-ingestion",
+  "repository": "https://github.com/phiacta/ext-paper-ingestion",
 
   "capabilities": {
     "can_write": true,
@@ -375,7 +375,7 @@ This walkthrough builds a complete input extension that ingests Markdown notes i
 ```bash
 mkdir ext-markdown-notes && cd ext-markdown-notes
 python -m venv .venv && source .venv/bin/activate
-pip install newpublishing-sdk
+pip install phiacta-sdk
 ```
 
 Create the project structure:
@@ -400,7 +400,7 @@ name = "ext-markdown-notes"
 version = "1.0.0"
 requires-python = ">=3.12"
 dependencies = [
-    "newpublishing-sdk>=0.3.0",
+    "phiacta-sdk>=0.3.0",
 ]
 
 [project.optional-dependencies]
@@ -436,7 +436,7 @@ dev = ["pytest", "pytest-asyncio"]
 
 ```python
 import re
-from newpublishing.extensions.base import (
+from phiacta.extensions.base import (
     InputExtension,
     Source,
     ExtractionResult,
@@ -522,7 +522,7 @@ class MarkdownNotesExtension(InputExtension):
 `src/markdown_notes/__main__.py`:
 
 ```python
-from newpublishing.extensions.runner import run_extension
+from phiacta.extensions.runner import run_extension
 from markdown_notes.extension import MarkdownNotesExtension
 
 run_extension(MarkdownNotesExtension())
@@ -563,7 +563,7 @@ Test the core logic in isolation — no HTTP, no backend:
 ```python
 import pytest
 from markdown_notes.extension import MarkdownNotesExtension
-from newpublishing.extensions.base import Source
+from phiacta.extensions.base import Source
 
 
 @pytest.fixture
@@ -629,14 +629,14 @@ Run with: `pytest tests/ -v`
 
 ### 6.2 Integration Testing with a Mock Backend
 
-The SDK provides `MockNewPublishingClient` for testing the full submission flow without a real backend:
+The SDK provides `MockPhiactaClient` for testing the full submission flow without a real backend:
 
 ```python
-from newpublishing.extensions.testing import MockNewPublishingClient
+from phiacta.extensions.testing import MockPhiactaClient
 
 @pytest.mark.asyncio
 async def test_bundle_submission(ext):
-    mock_client = MockNewPublishingClient()
+    mock_client = MockPhiactaClient()
     ext.client = mock_client
 
     source = Source(
@@ -655,7 +655,7 @@ async def test_bundle_submission(ext):
     assert mock_client.submitted_bundles == 1
 ```
 
-`MockNewPublishingClient` records all calls so you can assert on what was submitted without network I/O.
+`MockPhiactaClient` records all calls so you can assert on what was submitted without network I/O.
 
 ### 6.3 End-to-End Testing Against a Live Backend
 
@@ -706,8 +706,8 @@ build-backend = "hatchling.build"
 name = "newpub-ext-markdown-notes"
 version = "1.0.0"
 requires-python = ">=3.12"
-dependencies = ["newpublishing-sdk>=0.3.0"]
-description = "Markdown notes input extension for NewPublishing"
+dependencies = ["phiacta-sdk>=0.3.0"]
+description = "Markdown notes input extension for Phiacta"
 license = "MIT"
 ```
 
@@ -746,7 +746,7 @@ pip install git+https://github.com/yourname/ext-markdown-notes.git
 
 ### 7.3 The Extension Registry
 
-The NewPublishing project maintains a curated extension registry at `github.com/newpublishing/extension-registry` (planned). The registry is a JSON file listing vetted extensions with metadata:
+The Phiacta project maintains a curated extension registry at `github.com/phiacta/extension-registry` (planned). The registry is a JSON file listing vetted extensions with metadata:
 
 ```json
 {
@@ -755,7 +755,7 @@ The NewPublishing project maintains a curated extension registry at `github.com/
       "extension_id": "ext-paper-ingest-v2",
       "name": "Paper Ingestion",
       "pypi_package": "newpub-ext-paper-ingestion",
-      "docker_image": "ghcr.io/newpublishing/ext-paper-ingestion:2.0.0",
+      "docker_image": "ghcr.io/phiacta/ext-paper-ingestion:2.0.0",
       "verified": true,
       "category": "input",
       "tags": ["papers", "pdf", "ai-extraction"]
@@ -802,7 +802,7 @@ Extensions follow semver independently of the backend:
 
 When the backend releases a new API version (`/v2/`), extensions continue working on `/v1/` until they choose to migrate. The backend serves both versions simultaneously for at least 6 months. The SDK documents migration guides for each API version bump.
 
-Extensions should pin their `newpublishing-sdk` dependency to a compatible range (e.g., `>=0.3.0,<1.0.0`) to avoid breaking on SDK major version changes.
+Extensions should pin their `phiacta-sdk` dependency to a compatible range (e.g., `>=0.3.0,<1.0.0`) to avoid breaking on SDK major version changes.
 
 ### 7.6 Security Considerations
 
@@ -840,4 +840,4 @@ Before publishing your extension:
 - [ ] Conformance test suite passes (`newpub-test-conformance`)
 - [ ] API key stored in environment variable, not in code
 - [ ] README documents required `attrs` keys and expected source format
-- [ ] `pyproject.toml` declares `newpublishing-sdk` dependency with version range
+- [ ] `pyproject.toml` declares `phiacta-sdk` dependency with version range

@@ -33,7 +33,7 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_DB: test_newpublishing
+          POSTGRES_DB: test_phiacta
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
         ports:
@@ -51,4 +51,4 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest --cov=src/ --cov-report=term-missing
         env:
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_newpublishing
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_phiacta

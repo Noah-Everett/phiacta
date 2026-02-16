@@ -1,4 +1,4 @@
-# NewPublishing
+# Phiacta
 
 A new standard for sharing scientific knowledge — replacing papers with a queryable knowledge backend.
 

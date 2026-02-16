@@ -1,4 +1,4 @@
-# NewPublishing Architecture Plan
+# Phiacta Architecture Plan
 
 *Implementation blueprint for the knowledge backend. Read `docs/design/synthesis.md` for the schema design and rationale that this document builds on.*
 
@@ -42,7 +42,7 @@ All code uses strict type annotations. `mypy --strict` is enforced in CI. This i
 ## 2. Project Structure
 
 ```
-newpublishing/
+phiacta/
 ├── pyproject.toml                    # Project metadata, dependencies, tool config
 ├── alembic.ini                       # Database migration config
 ├── docker-compose.yml                # Local dev: postgres + backend + workers
@@ -52,7 +52,7 @@ newpublishing/
 ├── README.md
 │
 ├── src/
-│   └── newpublishing/
+│   └── phiacta/
 │       ├── __init__.py
 │       ├── main.py                   # FastAPI app factory, lifespan, middleware
 │       ├── config.py                 # Settings via pydantic-settings (env vars)
@@ -159,7 +159,7 @@ newpublishing/
 
 ### Key Structural Decisions
 
-**`src/` layout with `pyproject.toml`.** The `src/newpublishing/` layout prevents accidental imports of the local directory during development and is the modern Python packaging standard. The project is installable via `pip install -e .` for local dev.
+**`src/` layout with `pyproject.toml`.** The `src/phiacta/` layout prevents accidental imports of the local directory during development and is the modern Python packaging standard. The project is installable via `pip install -e .` for local dev.
 
 **Models vs. Schemas separation.** SQLAlchemy models (`models/`) define database structure. Pydantic schemas (`schemas/`) define API shapes. These are intentionally separate because:
 - API responses often include computed fields not in the database (e.g., `epistemic_status`).
@@ -168,7 +168,7 @@ newpublishing/
 
 **Services layer.** All business logic lives in `services/`. API routes are thin: validate input (Pydantic handles this), call the appropriate service, return the result. Services are stateless functions that take a database session and parameters. This makes them independently testable without HTTP overhead.
 
-**Built-in extensions as separate packages.** Extensions under `extensions/` follow the same protocol as third-party extensions. They import from `newpublishing.extensions.base` and submit bundles through the API. This dogfooding ensures the extension protocol is actually usable.
+**Built-in extensions as separate packages.** Extensions under `extensions/` follow the same protocol as third-party extensions. They import from `phiacta.extensions.base` and submit bundles through the API. This dogfooding ensures the extension protocol is actually usable.
 
 ---
 
@@ -316,7 +316,7 @@ CREATE INDEX idx_pending_refs_external ON pending_references(external_ref)
 
 ```python
 # config.py (via pydantic-settings, all from environment variables)
-DATABASE_URL = "postgresql+asyncpg://newpub:password@localhost:5432/newpublishing"
+DATABASE_URL = "postgresql+asyncpg://newpub:password@localhost:5432/phiacta"
 DATABASE_POOL_SIZE = 20        # max concurrent connections
 DATABASE_MAX_OVERFLOW = 10     # burst capacity
 DATABASE_POOL_TIMEOUT = 30     # seconds to wait for a connection
@@ -340,14 +340,14 @@ The extension protocol is the most important API surface in the project. Extensi
 
 ### Design Principles
 
-1. **Extensions are standalone processes.** They communicate with the backend exclusively via HTTP/WebSocket. They do not import backend internals. They CAN import the base classes and schema types from a published `newpublishing-sdk` package.
+1. **Extensions are standalone processes.** They communicate with the backend exclusively via HTTP/WebSocket. They do not import backend internals. They CAN import the base classes and schema types from a published `phiacta-sdk` package.
 2. **Base classes define the contract, not the implementation.** `InputExtension` says "you must implement `ingest()`." It does not dictate how you parse PDFs or transcribe audio.
 3. **The SDK is a thin wrapper.** It handles auth, HTTP client setup, bundle submission, and error handling. Extension developers focus only on their domain logic.
 
 ### Base Class Definitions
 
 ```python
-# newpublishing/extensions/base.py
+# phiacta/extensions/base.py
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -511,9 +511,9 @@ class OutputExtension(ABC):
 Extensions don't call the REST API directly. They use a client that wraps the HTTP calls:
 
 ```python
-# newpublishing/extensions/client.py
+# phiacta/extensions/client.py
 
-class NewPublishingClient:
+class PhiactaClient:
     """HTTP client for extensions to communicate with the backend."""
 
     def __init__(self, base_url: str, api_key: str):
@@ -542,7 +542,7 @@ class NewPublishingClient:
 A complete input extension in ~30 lines:
 
 ```python
-from newpublishing.extensions.base import InputExtension, Source, ExtractionResult, ExtractedClaim
+from phiacta.extensions.base import InputExtension, Source, ExtractionResult, ExtractedClaim
 
 class ManualEntry(InputExtension):
     name = "manual-entry"
@@ -574,7 +574,7 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: newpublishing
+      POSTGRES_DB: phiacta
       POSTGRES_USER: newpub
       POSTGRES_PASSWORD: devpassword
     ports:
@@ -582,7 +582,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U newpub -d newpublishing"]
+      test: ["CMD-SHELL", "pg_isready -U newpub -d phiacta"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -593,7 +593,7 @@ services:
       dockerfile: Dockerfile
       target: development
     environment:
-      DATABASE_URL: "postgresql+asyncpg://newpub:devpassword@db:5432/newpublishing"
+      DATABASE_URL: "postgresql+asyncpg://newpub:devpassword@db:5432/phiacta"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
       LOG_LEVEL: "debug"
       ENVIRONMENT: "development"
@@ -606,7 +606,7 @@ services:
       db:
         condition: service_healthy
     command: >
-      uvicorn newpublishing.main:app
+      uvicorn phiacta.main:app
       --host 0.0.0.0
       --port 8000
       --reload
@@ -639,7 +639,7 @@ COPY extensions/ extensions/
 COPY alembic.ini .
 RUN uv pip install --system --no-cache -e .
 EXPOSE 8000
-CMD ["uvicorn", "newpublishing.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "phiacta.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 ```
 
 ### Startup Sequence

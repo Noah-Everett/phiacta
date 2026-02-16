@@ -1,4 +1,4 @@
-# NewPublishing Deployment Guide
+# Phiacta Deployment Guide
 
 *Covers local development, testing, production deployment, operations, and security. Read `architecture.md` first for project structure and dependency context.*
 
@@ -21,7 +21,7 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: newpublishing
+      POSTGRES_DB: phiacta
       POSTGRES_USER: newpub
       POSTGRES_PASSWORD: devpassword
     ports:
@@ -29,7 +29,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U newpub -d newpublishing"]
+      test: ["CMD-SHELL", "pg_isready -U newpub -d phiacta"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -40,7 +40,7 @@ services:
       dockerfile: Dockerfile
       target: development
     environment:
-      DATABASE_URL: "postgresql+asyncpg://newpub:devpassword@db:5432/newpublishing"
+      DATABASE_URL: "postgresql+asyncpg://newpub:devpassword@db:5432/phiacta"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
       LOG_LEVEL: "debug"
       ENVIRONMENT: "development"
@@ -53,7 +53,7 @@ services:
       db:
         condition: service_healthy
     command: >
-      uvicorn newpublishing.main:app
+      uvicorn phiacta.main:app
       --host 0.0.0.0
       --port 8000
       --reload
@@ -63,7 +63,7 @@ services:
     image: dpage/pgadmin4:latest
     profiles: ["debug"]
     environment:
-      PGADMIN_DEFAULT_EMAIL: dev@newpublishing.local
+      PGADMIN_DEFAULT_EMAIL: dev@phiacta.local
       PGADMIN_DEFAULT_PASSWORD: devpassword
     ports:
       - "5050:80"
@@ -101,7 +101,7 @@ docker compose up db
 uv pip install -e ".[dev]"
 
 # Set environment variables
-export DATABASE_URL="postgresql+asyncpg://newpub:devpassword@localhost:5432/newpublishing"
+export DATABASE_URL="postgresql+asyncpg://newpub:devpassword@localhost:5432/phiacta"
 export OPENAI_API_KEY="sk-..."
 export ENVIRONMENT="development"
 
@@ -109,7 +109,7 @@ export ENVIRONMENT="development"
 alembic upgrade head
 
 # Start the dev server
-uvicorn newpublishing.main:app --reload --reload-dir src
+uvicorn phiacta.main:app --reload --reload-dir src
 ```
 
 ---
@@ -177,21 +177,21 @@ RUN groupadd -r newpub && useradd -r -g newpub newpub
 USER newpub
 
 EXPOSE 8000
-CMD ["uvicorn", "newpublishing.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "phiacta.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 ```
 
 ### Building Specific Stages
 
 ```bash
 # Development image (used by docker-compose)
-docker build --target development -t newpublishing:dev .
+docker build --target development -t phiacta:dev .
 
 # Run the CI test suite
-docker build --target test -t newpublishing:test .
-docker run --rm newpublishing:test
+docker build --target test -t phiacta:test .
+docker run --rm phiacta:test
 
 # Production image
-docker build --target production -t newpublishing:latest .
+docker build --target production -t phiacta:latest .
 ```
 
 The production stage drops all dev dependencies, build tools, and the gcc compiler. It runs as a non-root user (`newpub`). The final image is ~250MB compared to ~800MB for the development stage.
@@ -206,7 +206,7 @@ All configuration is loaded from environment variables via `pydantic-settings`. 
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `postgresql+asyncpg://user:pass@host:5432/newpublishing` | Full async connection string |
+| `DATABASE_URL` | `postgresql+asyncpg://user:pass@host:5432/phiacta` | Full async connection string |
 | `OPENAI_API_KEY` | `sk-...` | Used by the embedding service and paper ingestion extension |
 
 ### Optional Variables
@@ -245,7 +245,7 @@ In production mode (`ENVIRONMENT=production`):
 For convenience, create a `.env` file in the project root (git-ignored):
 
 ```bash
-DATABASE_URL=postgresql+asyncpg://newpub:devpassword@localhost:5432/newpublishing
+DATABASE_URL=postgresql+asyncpg://newpub:devpassword@localhost:5432/phiacta
 OPENAI_API_KEY=sk-your-key-here
 ENVIRONMENT=development
 LOG_LEVEL=debug
@@ -260,7 +260,7 @@ Docker Compose reads `.env` automatically. For running outside Docker, use `expo
 
 ### Alembic Setup
 
-Alembic manages all schema changes. The migration environment is configured in `alembic.ini` and `src/newpublishing/db/migrations/env.py`. The connection string is read from the `DATABASE_URL` environment variable -- never hardcoded.
+Alembic manages all schema changes. The migration environment is configured in `alembic.ini` and `src/phiacta/db/migrations/env.py`. The connection string is read from the `DATABASE_URL` environment variable -- never hardcoded.
 
 ### Initial Migration
 
@@ -307,7 +307,7 @@ alembic history --verbose
 # Production migration command (run once, before deploying new app version)
 docker run --rm \
   -e DATABASE_URL="$PROD_DATABASE_URL" \
-  newpublishing:latest \
+  phiacta:latest \
   alembic upgrade head
 ```
 
@@ -332,27 +332,27 @@ For teams running Kubernetes, the deployment requires three manifests: a Deploym
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: newpublishing-api
+  name: phiacta-api
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: newpublishing-api
+      app: phiacta-api
   template:
     metadata:
       labels:
-        app: newpublishing-api
+        app: phiacta-api
     spec:
       containers:
         - name: api
-          image: newpublishing:latest
+          image: phiacta:latest
           ports:
             - containerPort: 8000
           envFrom:
             - secretRef:
-                name: newpublishing-secrets
+                name: phiacta-secrets
             - configMapRef:
-                name: newpublishing-config
+                name: phiacta-config
           resources:
             requests:
               memory: "512Mi"
@@ -377,10 +377,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: newpublishing-api
+  name: phiacta-api
 spec:
   selector:
-    app: newpublishing-api
+    app: phiacta-api
   ports:
     - port: 80
       targetPort: 8000
@@ -390,17 +390,17 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: newpublishing-migrate
+  name: phiacta-migrate
 spec:
   template:
     spec:
       containers:
         - name: migrate
-          image: newpublishing:latest
+          image: phiacta:latest
           command: ["alembic", "upgrade", "head"]
           envFrom:
             - secretRef:
-                name: newpublishing-secrets
+                name: phiacta-secrets
       restartPolicy: Never
   backoffLimit: 3
 ```
@@ -412,7 +412,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: newpublishing-config
+  name: phiacta-config
 data:
   ENVIRONMENT: "production"
   LOG_LEVEL: "info"
@@ -426,10 +426,10 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: newpublishing-secrets
+  name: phiacta-secrets
 type: Opaque
 stringData:
-  DATABASE_URL: "postgresql+asyncpg://newpub:PRODPASSWORD@db-host:5432/newpublishing"
+  DATABASE_URL: "postgresql+asyncpg://newpub:PRODPASSWORD@db-host:5432/phiacta"
   OPENAI_API_KEY: "sk-..."
   API_KEY_SALT: "random-64-char-string"
 ```
@@ -507,10 +507,10 @@ PostgreSQL is the single source of truth. Protect it accordingly.
 
 ```bash
 # Full logical backup (portable, slower)
-pg_dump -Fc -U newpub -d newpublishing > backup_$(date +%Y%m%d_%H%M%S).dump
+pg_dump -Fc -U newpub -d phiacta > backup_$(date +%Y%m%d_%H%M%S).dump
 
 # Restore from logical backup
-pg_restore -U newpub -d newpublishing --clean --if-exists backup_20260208_143000.dump
+pg_restore -U newpub -d phiacta --clean --if-exists backup_20260208_143000.dump
 
 # Continuous archiving for point-in-time recovery
 # Configure in postgresql.conf:
@@ -582,7 +582,7 @@ Backups that are never tested are not backups. Schedule a monthly restore test:
 - **Non-root user.** The production image runs as user `newpub`, not root. This limits the blast radius of container escape vulnerabilities.
 - **Minimal base image.** The production stage uses `python:3.12-slim` and installs only runtime dependencies (`libpq5`). No compiler, no build tools, no dev packages.
 - **No secrets in images.** The Docker image contains no credentials. All secrets are injected at runtime via environment variables.
-- **Image scanning.** Run `trivy image newpublishing:latest` or equivalent in CI to catch known vulnerabilities in base images and dependencies. Rebuild images when upstream security patches are released.
+- **Image scanning.** Run `trivy image phiacta:latest` or equivalent in CI to catch known vulnerabilities in base images and dependencies. Rebuild images when upstream security patches are released.
 
 ### Rate Limiting
 
@@ -613,12 +613,12 @@ Every write operation (bundle submission, claim update, review creation) is logg
 | Start with pgAdmin | `docker compose --profile debug up` |
 | Rebuild after dependency changes | `docker compose build backend` |
 | Run migrations (local) | `alembic upgrade head` |
-| Run migrations (production) | `docker run --rm -e DATABASE_URL=... newpublishing:latest alembic upgrade head` |
+| Run migrations (production) | `docker run --rm -e DATABASE_URL=... phiacta:latest alembic upgrade head` |
 | Run tests in Docker | `docker build --target test -t test . && docker run --rm test` |
 | Run tests locally | `pytest` |
 | Check types | `mypy --strict src/` |
 | Lint and format | `ruff check . && ruff format --check .` |
-| Create database backup | `pg_dump -Fc -U newpub -d newpublishing > backup.dump` |
-| Restore database backup | `pg_restore -U newpub -d newpublishing --clean --if-exists backup.dump` |
-| Build production image | `docker build --target production -t newpublishing:latest .` |
-| Scan image for vulnerabilities | `trivy image newpublishing:latest` |
+| Create database backup | `pg_dump -Fc -U newpub -d phiacta > backup.dump` |
+| Restore database backup | `pg_restore -U newpub -d phiacta --clean --if-exists backup.dump` |
+| Build production image | `docker build --target production -t phiacta:latest .` |
+| Scan image for vulnerabilities | `trivy image phiacta:latest` |

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 NewPublishing Contributors
+# Copyright (C) 2026 Phiacta Contributors
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from newpublishing.models.base import Base
+from phiacta.models.base import Base
 
 
 def _get_test_database_url() -> str:
