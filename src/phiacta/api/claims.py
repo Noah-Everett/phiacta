@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
+from phiacta.extensions.dispatcher import dispatch_event
 from phiacta.models.agent import Agent
 from phiacta.models.claim import Claim
 from phiacta.repositories.claim_repository import ClaimRepository
@@ -79,6 +80,9 @@ async def create_claim(
     )
     claim = await repo.create(claim)
     await db.commit()
+    await dispatch_event(
+        db, "claim.created", {"claim_ids": [str(claim.id)]}
+    )
     return ClaimResponse.model_validate(claim)
 
 

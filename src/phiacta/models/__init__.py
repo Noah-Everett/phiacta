@@ -6,6 +6,7 @@ from phiacta.models.artifact import Artifact, artifact_claims
 from phiacta.models.base import Base, TimestampMixin, UUIDMixin
 from phiacta.models.bundle import Bundle
 from phiacta.models.claim import Claim
+from phiacta.models.extension import Extension
 from phiacta.models.layer_registry import LayerRecord
 from phiacta.models.namespace import Namespace
 from phiacta.models.pending_reference import PendingReference
@@ -20,6 +21,7 @@ __all__ = [
     "Base",
     "Bundle",
     "Claim",
+    "Extension",
     "LayerRecord",
     "Namespace",
     "PendingReference",

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
+from phiacta.extensions.dispatcher import dispatch_event
 from phiacta.models.agent import Agent
 from phiacta.models.bundle import Bundle
 from phiacta.models.claim import Claim
@@ -101,6 +102,21 @@ async def submit_bundle(
     await db.flush()
 
     await db.commit()
+
+    claim_ids = [str(c.id) for c in created_claims]
+    if claim_ids:
+        await dispatch_event(
+            db,
+            "claim.created",
+            {"claim_ids": claim_ids},
+            source_extension_id=body.extension_id,
+        )
+    await dispatch_event(
+        db,
+        "bundle.submitted",
+        {"bundle_id": str(bundle.id), "claim_ids": claim_ids},
+        source_extension_id=body.extension_id,
+    )
 
     return BundleDetailResponse(
         id=bundle.id,

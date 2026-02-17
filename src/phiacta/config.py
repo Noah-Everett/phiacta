@@ -23,6 +23,19 @@ class Settings(BaseSettings):
     max_traversal_depth: int = 10
     auto_install_layers: bool = True
 
+    # Extensions
+    max_extensions: int = 100
+    extension_dispatch_timeout: float = 10.0
+    extension_health_check_timeout: float = 5.0
+    extension_register_rate_limit: int = 10  # per minute
+    extension_heartbeat_rate_limit: int = 60  # per minute
+    # Hostnames and CIDR ranges that extensions are allowed to register with.
+    # In development mode private IPs are allowed by default so Docker
+    # Compose service names (which resolve to 172.x.x.x) work out of the box.
+    # In production mode only explicitly listed hosts/CIDRs are permitted.
+    # Example: '["ext-arxiv","ext-nlp","10.0.5.0/24"]'
+    extension_allowed_hosts: list[str] = []
+
     # Auth
     jwt_secret_key: str
     access_token_expire_minutes: int = 1440
