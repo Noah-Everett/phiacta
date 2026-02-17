@@ -16,7 +16,12 @@ from phiacta.models.agent import Agent
 from phiacta.models.claim import Claim
 from phiacta.repositories.claim_repository import ClaimRepository
 from phiacta.repositories.relation_repository import RelationRepository
-from phiacta.schemas.claim import ClaimCreate, ClaimResponse, ClaimVerifyRequest
+from phiacta.schemas.claim import (
+    ClaimCreate,
+    ClaimResponse,
+    ClaimVerificationResultUpdate,
+    ClaimVerifyRequest,
+)
 from phiacta.schemas.common import PaginatedResponse
 from phiacta.schemas.relation import RelationResponse
 
@@ -119,6 +124,12 @@ async def verify_claim(
     if claim is None:
         raise HTTPException(status_code=404, detail="Claim not found")
 
+    if claim.created_by != agent.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the claim author can submit verification code",
+        )
+
     # Store verification code in attrs.
     updated_attrs = dict(claim.attrs)
     updated_attrs["verification_code"] = body.code_content
@@ -157,6 +168,32 @@ async def get_verification_status(
         "verification_status": attrs.get("verification_status"),
         "verification_result": attrs.get("verification_result"),
     }
+
+
+@router.put("/{claim_id}/verification", response_model=ClaimResponse)
+async def update_verification_result(
+    claim_id: UUID,
+    body: ClaimVerificationResultUpdate,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+) -> ClaimResponse:
+    """Called by the verify service to report verification results.
+
+    This does NOT re-dispatch a verification event (unlike POST /verify).
+    """
+    repo = ClaimRepository(db)
+    claim = await repo.get_by_id(claim_id)
+    if claim is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    updated_attrs = dict(claim.attrs)
+    updated_attrs["verification_level"] = body.verification_level
+    updated_attrs["verification_status"] = body.verification_status
+    updated_attrs["verification_result"] = body.verification_result
+    claim.attrs = updated_attrs
+    await db.commit()
+
+    return ClaimResponse.model_validate(claim)
 
 
 @router.get("/{claim_id}/relations", response_model=list[RelationResponse])

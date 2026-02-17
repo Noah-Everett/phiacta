@@ -6,10 +6,29 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-_VERIFICATION_CLAIM_TYPES = {"empirical", "mechanistic", "computational"}
+# Claim types where verification code is strongly encouraged.
+# "evidence" often involves data analysis; "proof" / "theorem" may have
+# formal or computational backing.  Other types can still attach code
+# voluntarily.
+_VERIFICATION_CLAIM_TYPES = {"evidence", "proof", "theorem"}
+
+_ALLOWED_RUNNER_TYPES = Literal[
+    "python_script",
+    "python_notebook",
+    "r_script",
+    "r_markdown",
+    "julia",
+    "lean4",
+    "sympy",
+]
+
+# 500 KiB -- generous for scripts, prevents multi-GB abuse.
+_MAX_CODE_LENGTH = 512_000
 
 
 class ClaimCreate(BaseModel):
@@ -20,8 +39,8 @@ class ClaimCreate(BaseModel):
     supersedes: UUID | None = None
     status: str = "active"
     attrs: dict[str, object] = {}
-    verification_code: str | None = None
-    verification_runner_type: str | None = None
+    verification_code: str | None = Field(None, max_length=_MAX_CODE_LENGTH)
+    verification_runner_type: _ALLOWED_RUNNER_TYPES | None = None
 
     @model_validator(mode="after")
     def _flag_verification_required(self) -> ClaimCreate:
@@ -41,8 +60,15 @@ class ClaimUpdate(BaseModel):
 
 
 class ClaimVerifyRequest(BaseModel):
-    code_content: str
-    runner_type: str
+    code_content: str = Field(..., max_length=_MAX_CODE_LENGTH)
+    runner_type: _ALLOWED_RUNNER_TYPES
+
+
+class ClaimVerificationResultUpdate(BaseModel):
+    """Used by the verify service to report results back -- not user-facing."""
+    verification_level: str
+    verification_status: str
+    verification_result: dict[str, object] = {}
 
 
 class ClaimResponse(BaseModel):
@@ -70,4 +96,6 @@ class ClaimResponse(BaseModel):
             self.verification_level = self.attrs.get("verification_level")  # type: ignore[assignment]
         if self.verification_status is None:
             self.verification_status = self.attrs.get("verification_status")  # type: ignore[assignment]
+        # Strip raw verification code from public responses to avoid data exposure.
+        self.attrs.pop("verification_code", None)
         return self
