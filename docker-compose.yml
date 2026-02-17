@@ -42,22 +42,6 @@ services:
       --reload
       --reload-dir /app/src
 
-  web:
-    build:
-      context: ../phiacta-web
-      dockerfile: Dockerfile
-      target: development
-    environment:
-      NEXT_PUBLIC_API_URL: "http://localhost:8000"
-      API_URL_INTERNAL: "http://backend:8000"
-    ports:
-      - "3001:3000"
-    volumes:
-      - ../phiacta-web/src:/app/src
-      - ../phiacta-web/public:/app/public
-    depends_on:
-      - backend
-
   pgadmin:
     image: dpage/pgadmin4:latest
     profiles: ["debug"]

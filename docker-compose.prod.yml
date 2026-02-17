@@ -32,28 +32,5 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  web:
-    build:
-      context: ../phiacta-web
-      dockerfile: Dockerfile
-      target: production
-      args:
-        NEXT_PUBLIC_API_URL: "https://api.phiacta.com"
-    environment:
-      API_URL_INTERNAL: "http://backend:8000"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    command: tunnel --config /etc/cloudflared/config.yml run
-    volumes:
-      - ./cloudflared:/etc/cloudflared:ro
-    depends_on:
-      - web
-      - backend
-    restart: unless-stopped
-
 volumes:
   pgdata:
