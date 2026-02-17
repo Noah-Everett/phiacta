@@ -6,7 +6,10 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
+
+
+_VERIFICATION_CLAIM_TYPES = {"empirical", "mechanistic", "computational"}
 
 
 class ClaimCreate(BaseModel):
@@ -17,6 +20,17 @@ class ClaimCreate(BaseModel):
     supersedes: UUID | None = None
     status: str = "active"
     attrs: dict[str, object] = {}
+    verification_code: str | None = None
+    verification_runner_type: str | None = None
+
+    @model_validator(mode="after")
+    def _flag_verification_required(self) -> ClaimCreate:
+        if (
+            self.claim_type in _VERIFICATION_CLAIM_TYPES
+            and self.verification_code is None
+        ):
+            self.attrs = {**self.attrs, "verification_required": True}
+        return self
 
 
 class ClaimUpdate(BaseModel):
@@ -24,6 +38,11 @@ class ClaimUpdate(BaseModel):
     status: str | None = None
     formal_content: str | None = None
     attrs: dict[str, object] | None = None
+
+
+class ClaimVerifyRequest(BaseModel):
+    code_content: str
+    runner_type: str
 
 
 class ClaimResponse(BaseModel):
@@ -42,3 +61,13 @@ class ClaimResponse(BaseModel):
     attrs: dict[str, object]
     created_at: datetime
     updated_at: datetime
+    verification_level: str | None = None
+    verification_status: str | None = None
+
+    @model_validator(mode="after")
+    def _populate_verification_fields(self) -> ClaimResponse:
+        if self.verification_level is None:
+            self.verification_level = self.attrs.get("verification_level")  # type: ignore[assignment]
+        if self.verification_status is None:
+            self.verification_status = self.attrs.get("verification_status")  # type: ignore[assignment]
+        return self

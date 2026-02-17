@@ -16,7 +16,7 @@ from phiacta.models.agent import Agent
 from phiacta.models.claim import Claim
 from phiacta.repositories.claim_repository import ClaimRepository
 from phiacta.repositories.relation_repository import RelationRepository
-from phiacta.schemas.claim import ClaimCreate, ClaimResponse
+from phiacta.schemas.claim import ClaimCreate, ClaimResponse, ClaimVerifyRequest
 from phiacta.schemas.common import PaginatedResponse
 from phiacta.schemas.relation import RelationResponse
 
@@ -65,6 +65,14 @@ async def create_claim(
     db: AsyncSession = Depends(get_db),
 ) -> ClaimResponse:
     repo = ClaimRepository(db)
+
+    # Store verification code in attrs if provided.
+    attrs = dict(body.attrs)
+    if body.verification_code is not None:
+        attrs["verification_code"] = body.verification_code
+        attrs["verification_runner_type"] = body.verification_runner_type
+        attrs["verification_status"] = "pending"
+
     claim = Claim(
         lineage_id=uuid4(),
         version=1,
@@ -75,7 +83,7 @@ async def create_claim(
         formal_content=body.formal_content,
         supersedes=body.supersedes,
         status=body.status,
-        attrs=body.attrs,
+        attrs=attrs,
         search_tsv=func.to_tsvector("english", body.content),
     )
     claim = await repo.create(claim)
@@ -83,7 +91,72 @@ async def create_claim(
     await dispatch_event(
         db, "claim.created", {"claim_ids": [str(claim.id)]}
     )
+
+    # Dispatch verification event if code was provided.
+    if body.verification_code is not None:
+        await dispatch_event(
+            db,
+            "claim.verification_requested",
+            {
+                "claim_id": str(claim.id),
+                "code": body.verification_code,
+                "runner_type": body.verification_runner_type,
+            },
+        )
+
     return ClaimResponse.model_validate(claim)
+
+
+@router.post("/{claim_id}/verify", response_model=ClaimResponse)
+async def verify_claim(
+    claim_id: UUID,
+    body: ClaimVerifyRequest,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+) -> ClaimResponse:
+    repo = ClaimRepository(db)
+    claim = await repo.get_by_id(claim_id)
+    if claim is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    # Store verification code in attrs.
+    updated_attrs = dict(claim.attrs)
+    updated_attrs["verification_code"] = body.code_content
+    updated_attrs["verification_runner_type"] = body.runner_type
+    updated_attrs["verification_status"] = "pending"
+    claim.attrs = updated_attrs
+    await db.commit()
+
+    await dispatch_event(
+        db,
+        "claim.verification_requested",
+        {
+            "claim_id": str(claim.id),
+            "code": body.code_content,
+            "runner_type": body.runner_type,
+        },
+    )
+
+    return ClaimResponse.model_validate(claim)
+
+
+@router.get("/{claim_id}/verification")
+async def get_verification_status(
+    claim_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    repo = ClaimRepository(db)
+    claim = await repo.get_by_id(claim_id)
+    if claim is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    attrs = claim.attrs or {}
+    return {
+        "claim_id": str(claim.id),
+        "verification_level": attrs.get("verification_level"),
+        "verification_status": attrs.get("verification_status"),
+        "verification_result": attrs.get("verification_result"),
+    }
 
 
 @router.get("/{claim_id}/relations", response_model=list[RelationResponse])
