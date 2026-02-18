@@ -52,11 +52,11 @@ class ClaimCreate(BaseModel):
         return self
 
 
-class ClaimUpdate(BaseModel):
-    content: str | None = None
-    status: str | None = None
+class ClaimNewVersion(BaseModel):
+    content: str
     formal_content: str | None = None
-    attrs: dict[str, object] | None = None
+    status: str = "active"
+    attrs: dict[str, object] = {}
 
 
 class ClaimVerifyRequest(BaseModel):

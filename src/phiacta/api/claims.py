@@ -18,6 +18,7 @@ from phiacta.repositories.claim_repository import ClaimRepository
 from phiacta.repositories.relation_repository import RelationRepository
 from phiacta.schemas.claim import (
     ClaimCreate,
+    ClaimNewVersion,
     ClaimResponse,
     ClaimVerificationResultUpdate,
     ClaimVerifyRequest,
@@ -110,6 +111,49 @@ async def create_claim(
         )
 
     return ClaimResponse.model_validate(claim)
+
+
+@router.post("/{claim_id}/versions", response_model=ClaimResponse, status_code=201)
+async def create_claim_version(
+    claim_id: UUID,
+    body: ClaimNewVersion,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+) -> ClaimResponse:
+    repo = ClaimRepository(db)
+    parent = await repo.get_by_id(claim_id)
+    if parent is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    if parent.created_by != agent.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the claim author can create new versions",
+        )
+
+    latest = await repo.get_latest_version(parent.lineage_id)
+    next_version = (latest.version if latest else parent.version) + 1
+
+    new_claim = Claim(
+        lineage_id=parent.lineage_id,
+        version=next_version,
+        content=body.content,
+        claim_type=parent.claim_type,
+        namespace_id=parent.namespace_id,
+        created_by=agent.id,
+        formal_content=body.formal_content,
+        supersedes=parent.id,
+        status=body.status,
+        attrs=body.attrs,
+        search_tsv=func.to_tsvector("english", body.content),
+    )
+    new_claim = await repo.create(new_claim)
+    await db.commit()
+    await dispatch_event(
+        db, "claim.created", {"claim_ids": [str(new_claim.id)]}
+    )
+
+    return ClaimResponse.model_validate(new_claim)
 
 
 @router.post("/{claim_id}/verify", response_model=ClaimResponse)
