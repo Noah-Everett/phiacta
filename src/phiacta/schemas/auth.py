@@ -31,6 +31,18 @@ class AgentResponse(BaseModel):
     created_at: datetime
 
 
+class PublicAgentResponse(BaseModel):
+    """Public agent info — explicitly excludes email."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    agent_type: str
+    trust_score: float
+    created_at: datetime
+
+
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

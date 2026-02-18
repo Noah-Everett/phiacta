@@ -198,6 +198,19 @@ async def update_verification_result(
     return ClaimResponse.model_validate(claim)
 
 
+@router.get("/{claim_id}/versions", response_model=list[ClaimResponse])
+async def get_claim_versions(
+    claim_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[ClaimResponse]:
+    repo = ClaimRepository(db)
+    claim = await repo.get_by_id(claim_id)
+    if claim is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    versions = await repo.get_by_lineage(claim.lineage_id)
+    return [ClaimResponse.model_validate(v) for v in versions]
+
+
 @router.get("/{claim_id}/relations", response_model=list[RelationResponse])
 async def get_claim_relations(
     claim_id: UUID,
