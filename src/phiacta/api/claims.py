@@ -265,6 +265,17 @@ async def get_claim_relations(
     claim = await claim_repo.get_by_id(claim_id)
     if claim is None:
         raise HTTPException(status_code=404, detail="Claim not found")
+    # Query relations across all versions in the same lineage
+    lineage_claims = await claim_repo.get_by_lineage(claim.lineage_id)
+    lineage_ids = [c.id for c in lineage_claims]
     rel_repo = RelationRepository(db)
-    relations = await rel_repo.get_relations_for_claim(claim_id, direction=direction)
-    return [RelationResponse.model_validate(r) for r in relations]
+    relations = await rel_repo.get_relations_for_claims(lineage_ids, direction=direction)
+    # Deduplicate by (source lineage, target lineage, type) — keep first match
+    seen: set[tuple] = set()
+    unique: list = []
+    for r in relations:
+        key = (r.relation_type, min(r.source_id, r.target_id), max(r.source_id, r.target_id))
+        if key not in seen:
+            seen.add(key)
+            unique.append(r)
+    return [RelationResponse.model_validate(r) for r in unique]

@@ -30,6 +30,22 @@ class RelationRepository(BaseRepository[Relation]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_relations_for_claims(
+        self, claim_ids: list[UUID], direction: str = "both"
+    ) -> list[Relation]:
+        if not claim_ids:
+            return []
+        if direction == "outgoing":
+            stmt = select(Relation).where(Relation.source_id.in_(claim_ids))
+        elif direction == "incoming":
+            stmt = select(Relation).where(Relation.target_id.in_(claim_ids))
+        else:
+            stmt = select(Relation).where(
+                Relation.source_id.in_(claim_ids) | Relation.target_id.in_(claim_ids)
+            )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_relations_by_type(self, relation_type: str) -> list[Relation]:
         result = await self.session.execute(
             select(Relation).where(Relation.relation_type == relation_type)

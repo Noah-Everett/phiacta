@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.db.session import get_db
 from phiacta.layers.graph.models import GraphEdgeType
+from phiacta.models.claim import Claim
 from phiacta.models.relation import Relation
 
 
@@ -75,13 +76,26 @@ def create_graph_router() -> APIRouter:
         db: AsyncSession = Depends(get_db),
     ) -> dict[str, Any]:
         """Get direct relations for a claim with graph type info."""
+        # Resolve lineage so newer versions inherit relations
+        claim_result = await db.execute(
+            select(Claim).where(Claim.id == claim_id)
+        )
+        claim = claim_result.scalar_one_or_none()
+        if claim is None:
+            return {"claim_id": str(claim_id), "neighbors": []}
+
+        lineage_result = await db.execute(
+            select(Claim.id).where(Claim.lineage_id == claim.lineage_id)
+        )
+        lineage_ids = [row[0] for row in lineage_result.all()]
+
         if direction == "outgoing":
-            stmt = select(Relation).where(Relation.source_id == claim_id)
+            stmt = select(Relation).where(Relation.source_id.in_(lineage_ids))
         elif direction == "incoming":
-            stmt = select(Relation).where(Relation.target_id == claim_id)
+            stmt = select(Relation).where(Relation.target_id.in_(lineage_ids))
         else:
             stmt = select(Relation).where(
-                (Relation.source_id == claim_id) | (Relation.target_id == claim_id)
+                Relation.source_id.in_(lineage_ids) | Relation.target_id.in_(lineage_ids)
             )
         result = await db.execute(stmt)
         relations = list(result.scalars().all())
@@ -101,16 +115,23 @@ def create_graph_router() -> APIRouter:
                     "inverse_name": et.inverse_name,
                 }
 
+        lineage_id_set = set(lineage_ids)
+        seen: set[tuple] = set()
         neighbors = []
         for r in relations:
-            neighbor_id = r.target_id if r.source_id == claim_id else r.source_id
+            is_outgoing = r.source_id in lineage_id_set
+            neighbor_id = r.target_id if is_outgoing else r.source_id
+            key = (r.relation_type, min(r.source_id, r.target_id), max(r.source_id, r.target_id))
+            if key in seen:
+                continue
+            seen.add(key)
             neighbors.append(
                 {
                     "relation_id": str(r.id),
                     "neighbor_id": str(neighbor_id),
                     "relation_type": r.relation_type,
                     "strength": r.strength,
-                    "direction": "outgoing" if r.source_id == claim_id else "incoming",
+                    "direction": "outgoing" if is_outgoing else "incoming",
                     "edge_type_info": edge_types_map.get(r.relation_type),
                 }
             )
