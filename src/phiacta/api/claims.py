@@ -167,6 +167,8 @@ async def get_verification_status(
         "verification_level": attrs.get("verification_level"),
         "verification_status": attrs.get("verification_status"),
         "verification_result": attrs.get("verification_result"),
+        "verification_code": attrs.get("verification_code"),
+        "verification_runner_type": attrs.get("verification_runner_type"),
     }
 
 
