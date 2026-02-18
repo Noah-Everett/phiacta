@@ -43,6 +43,6 @@ class ClaimRepository(BaseRepository[Claim]):
             stmt = stmt.where(Claim.claim_type == claim_type)
         if namespace_id is not None:
             stmt = stmt.where(Claim.namespace_id == namespace_id)
-        stmt = stmt.limit(limit).offset(offset)
+        stmt = stmt.order_by(Claim.created_at.desc()).limit(limit).offset(offset)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
