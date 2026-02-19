@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     # Forgejo (git backend)
     forgejo_url: str = "http://forgejo:3000"
     forgejo_token: str = ""
+    forgejo_token_file: str = ""
     forgejo_org: str = "phiacta"
     forgejo_webhook_secret: str = ""
 

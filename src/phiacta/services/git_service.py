@@ -14,6 +14,7 @@ import base64
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
@@ -437,6 +438,12 @@ class ForgejoGitService:
         settings = get_settings()
         self._base_url = (forgejo_url or settings.forgejo_url).rstrip("/")
         self._token = token or settings.forgejo_token
+        # Fall back to reading token from a file (written by forgejo-init)
+        if not self._token and settings.forgejo_token_file:
+            token_path = Path(settings.forgejo_token_file)
+            if token_path.is_file():
+                self._token = token_path.read_text().strip()
+                logger.info("Loaded Forgejo token from %s", token_path)
         self._org = settings.forgejo_org
         self._webhook_secret = settings.forgejo_webhook_secret
 
