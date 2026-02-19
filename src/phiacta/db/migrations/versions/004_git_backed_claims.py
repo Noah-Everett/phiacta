@@ -101,13 +101,7 @@ def upgrade() -> None:
     op.drop_column("claims", "formal_content")
     op.drop_column("claims", "content")
 
-    # Add index for active claims
-    op.create_index(
-        "idx_claims_active",
-        "claims",
-        ["status"],
-        postgresql_where=sa.text("status = 'active'"),
-    )
+    # idx_claims_active already exists from migration 001 — no need to recreate.
 
     # ------------------------------------------------------------------
     # 3. Alter interactions table
