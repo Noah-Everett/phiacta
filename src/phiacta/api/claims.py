@@ -5,15 +5,19 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
 from phiacta.extensions.dispatcher import dispatch_event
 from phiacta.models.agent import Agent
 from phiacta.models.claim import Claim
+from phiacta.models.relation import Relation
 from phiacta.repositories.claim_repository import ClaimRepository
 from phiacta.repositories.relation_repository import RelationRepository
 from phiacta.schemas.claim import (
@@ -25,6 +29,8 @@ from phiacta.schemas.claim import (
 )
 from phiacta.schemas.common import PaginatedResponse
 from phiacta.schemas.relation import RelationResponse
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -279,3 +285,59 @@ async def get_claim_relations(
             seen.add(key)
             unique.append(r)
     return [RelationResponse.model_validate(r) for r in unique]
+
+
+@router.post("/{claim_id}/derive", response_model=ClaimResponse, status_code=201)
+@limiter.limit("10/minute")
+async def derive_claim(
+    request: Request,
+    claim_id: UUID,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+) -> ClaimResponse:
+    """Create a new claim derived from an existing one.
+
+    Copies content, claim_type, namespace_id, and formal_content from the
+    original. Creates a ``derives_from`` relation linking the new claim
+    back to the original.
+    """
+    repo = ClaimRepository(db)
+    original = await repo.get_by_id(claim_id)
+    if original is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    new_claim = Claim(
+        lineage_id=uuid4(),
+        version=1,
+        content=original.content,
+        claim_type=original.claim_type,
+        namespace_id=original.namespace_id,
+        created_by=agent.id,
+        formal_content=original.formal_content,
+        status="active",
+        attrs={},
+        search_tsv=func.to_tsvector("english", original.content),
+    )
+    new_claim = await repo.create(new_claim)
+
+    rel_repo = RelationRepository(db)
+    relation = Relation(
+        source_id=new_claim.id,
+        target_id=original.id,
+        relation_type="derives_from",
+        created_by=agent.id,
+        attrs={},
+    )
+    await rel_repo.create(relation)
+    await db.commit()
+
+    await dispatch_event(
+        db,
+        "claim.derived",
+        {
+            "claim_id": str(new_claim.id),
+            "derived_from_id": str(original.id),
+        },
+    )
+
+    return ClaimResponse.model_validate(new_claim)

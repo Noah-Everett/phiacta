@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 class Layer(ABC):
     """Base class for interpretability layers.
 
-    A layer reads core data (claims, relations, reviews, etc.) and provides
+    A layer reads core data (claims, relations, interactions, etc.) and provides
     its own tables, views, and API endpoints for interpreted queries.
     """
 

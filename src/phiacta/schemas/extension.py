@@ -16,9 +16,16 @@ ALLOWED_EVENT_TYPES = frozenset(
     {
         "claim.created",
         "claim.updated",
+        "claim.derived",
         "relation.created",
         "bundle.submitted",
-        "review.added",
+        "interaction.created",
+        "interaction.updated",
+        "interaction.deleted",
+        "interaction.suggestion_accepted",
+        "interaction.suggestion_rejected",
+        "interaction.issue_resolved",
+        "interaction.issue_reopened",
     }
 )
 

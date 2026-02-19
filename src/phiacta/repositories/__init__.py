@@ -6,8 +6,8 @@ from phiacta.repositories.base import BaseRepository
 from phiacta.repositories.bundle_repository import BundleRepository
 from phiacta.repositories.claim_repository import ClaimRepository
 from phiacta.repositories.extension_repository import ExtensionRepository
+from phiacta.repositories.interaction_repository import InteractionRepository
 from phiacta.repositories.relation_repository import RelationRepository
-from phiacta.repositories.review_repository import ReviewRepository
 from phiacta.repositories.source_repository import SourceRepository
 
 __all__ = [
@@ -16,7 +16,7 @@ __all__ = [
     "BundleRepository",
     "ClaimRepository",
     "ExtensionRepository",
+    "InteractionRepository",
     "RelationRepository",
-    "ReviewRepository",
     "SourceRepository",
 ]

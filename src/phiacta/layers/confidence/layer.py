@@ -19,29 +19,38 @@ SELECT
     c.claim_type,
     c.status,
     c.version,
-    COUNT(r.id) AS review_count,
-    AVG(r.confidence) FILTER (WHERE r.verdict = 'endorse') AS avg_endorsement_confidence,
-    COUNT(*) FILTER (WHERE r.verdict = 'endorse') AS endorsement_count,
-    COUNT(*) FILTER (WHERE r.verdict = 'dispute') AS dispute_count,
+    COUNT(i.id) FILTER (WHERE i.signal IS NOT NULL) AS signal_count,
+    COUNT(i.id) AS interaction_count,
+    SUM(i.weight * i.confidence) FILTER (WHERE i.signal = 'agree')
+        / NULLIF(SUM(i.weight) FILTER (WHERE i.signal = 'agree'), 0)
+        AS weighted_agree_confidence,
+    COUNT(*) FILTER (WHERE i.signal = 'agree') AS agree_count,
+    COUNT(*) FILTER (WHERE i.signal = 'disagree') AS disagree_count,
+    COUNT(*) FILTER (WHERE i.signal = 'neutral') AS neutral_count,
+    COUNT(*) FILTER (WHERE i.kind = 'issue'
+        AND (i.attrs->>'issue_status') IN ('open', 'reopened')) AS open_issue_count,
+    COUNT(*) FILTER (WHERE i.kind = 'suggestion'
+        AND (i.attrs->>'suggestion_status') = 'pending') AS pending_suggestion_count,
     CASE
-        WHEN COUNT(r.id) = 0 THEN 'unverified'
-        WHEN COUNT(*) FILTER (WHERE r.verdict = 'dispute') > 0
-             AND COUNT(*) FILTER (WHERE r.verdict = 'endorse') > 0 THEN 'disputed'
+        WHEN COUNT(i.id) FILTER (WHERE i.signal IS NOT NULL) = 0 THEN 'unverified'
+        WHEN COUNT(*) FILTER (WHERE i.signal = 'disagree') > 0
+             AND COUNT(*) FILTER (WHERE i.signal = 'agree') > 0 THEN 'disputed'
         WHEN c.formal_content IS NOT NULL
-             AND COUNT(*) FILTER (WHERE r.verdict = 'endorse') > 0 THEN 'formally_verified'
-        WHEN AVG(r.confidence) FILTER (WHERE r.verdict = 'endorse') > 0.7
-             AND COUNT(*) FILTER (WHERE r.verdict = 'endorse') > COUNT(*) FILTER (WHERE r.verdict = 'dispute')
-             THEN 'endorsed'
+             AND COUNT(*) FILTER (WHERE i.signal = 'agree') > 0 THEN 'formally_verified'
+        WHEN SUM(i.weight * i.confidence) FILTER (WHERE i.signal = 'agree')
+                 / NULLIF(SUM(i.weight) FILTER (WHERE i.signal = 'agree'), 0) > 0.7
+             AND COUNT(*) FILTER (WHERE i.signal = 'agree')
+                 > COUNT(*) FILTER (WHERE i.signal = 'disagree') THEN 'endorsed'
         ELSE 'under_review'
     END AS epistemic_status
 FROM claims c
-LEFT JOIN reviews r ON r.claim_id = c.id
+LEFT JOIN interactions i ON i.claim_id = c.id AND i.deleted_at IS NULL
 GROUP BY c.id
 """
 
 
 class ConfidenceLayer(Layer):
-    """Computes epistemic status and confidence scores from reviews.
+    """Computes epistemic status and confidence scores from interactions.
 
     Owns the claims_with_confidence view. Different communities can
     swap this layer for alternative confidence/scoring models.
@@ -57,7 +66,7 @@ class ConfidenceLayer(Layer):
 
     @property
     def description(self) -> str:
-        return "Epistemic status scoring from community reviews"
+        return "Epistemic status scoring from community interactions"
 
     def router(self) -> APIRouter:
         return create_confidence_router()

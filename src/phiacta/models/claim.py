@@ -77,7 +77,7 @@ class Claim(UUIDMixin, TimestampMixin, Base):
     provenance_records: Mapped[list[Provenance]] = relationship(  # type: ignore[name-defined]  # noqa: F821
         back_populates="claim",
     )
-    reviews: Mapped[list[Review]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+    interactions: Mapped[list[Interaction]] = relationship(  # type: ignore[name-defined]  # noqa: F821
         back_populates="claim",
     )
     created_by_agent: Mapped[Agent] = relationship(  # type: ignore[name-defined]  # noqa: F821

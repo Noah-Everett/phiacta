@@ -12,6 +12,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.db.session import get_db
 
+_VIEW_COLUMNS = (
+    "id, lineage_id, content, claim_type, status, version, "
+    "signal_count, interaction_count, weighted_agree_confidence, "
+    "agree_count, disagree_count, neutral_count, "
+    "open_issue_count, pending_suggestion_count, epistemic_status"
+)
+
+
+def _row_to_dict(row: Any) -> dict[str, Any]:
+    """Convert a claims_with_confidence row mapping to a response dict."""
+    return {
+        "claim_id": str(row["id"]),
+        "lineage_id": str(row["lineage_id"]),
+        "content": row["content"],
+        "claim_type": row["claim_type"],
+        "status": row["status"],
+        "version": row["version"],
+        "signal_count": row["signal_count"],
+        "interaction_count": row["interaction_count"],
+        "weighted_agree_confidence": (
+            float(row["weighted_agree_confidence"])
+            if row["weighted_agree_confidence"] is not None
+            else None
+        ),
+        "agree_count": row["agree_count"],
+        "disagree_count": row["disagree_count"],
+        "neutral_count": row["neutral_count"],
+        "open_issue_count": row["open_issue_count"],
+        "pending_suggestion_count": row["pending_suggestion_count"],
+        "epistemic_status": row["epistemic_status"],
+    }
+
 
 def create_confidence_router() -> APIRouter:
     """Create the confidence layer's API router."""
@@ -25,9 +57,7 @@ def create_confidence_router() -> APIRouter:
         """Get the epistemic status and confidence scores for a claim."""
         result = await db.execute(
             text(
-                "SELECT id, lineage_id, content, claim_type, status, version, "
-                "review_count, avg_endorsement_confidence, endorsement_count, "
-                "dispute_count, epistemic_status "
+                f"SELECT {_VIEW_COLUMNS} "
                 "FROM claims_with_confidence WHERE id = :claim_id"
             ),
             {"claim_id": claim_id},
@@ -35,23 +65,7 @@ def create_confidence_router() -> APIRouter:
         row = result.mappings().first()
         if row is None:
             raise HTTPException(status_code=404, detail="Claim not found")
-        return {
-            "claim_id": str(row["id"]),
-            "lineage_id": str(row["lineage_id"]),
-            "content": row["content"],
-            "claim_type": row["claim_type"],
-            "status": row["status"],
-            "version": row["version"],
-            "review_count": row["review_count"],
-            "avg_endorsement_confidence": (
-                float(row["avg_endorsement_confidence"])
-                if row["avg_endorsement_confidence"] is not None
-                else None
-            ),
-            "endorsement_count": row["endorsement_count"],
-            "dispute_count": row["dispute_count"],
-            "epistemic_status": row["epistemic_status"],
-        }
+        return _row_to_dict(row)
 
     @router.get("/claims")
     async def list_claims_with_confidence(
@@ -61,12 +75,7 @@ def create_confidence_router() -> APIRouter:
         db: AsyncSession = Depends(get_db),
     ) -> list[dict[str, Any]]:
         """List claims with their aggregated confidence scores."""
-        query = (
-            "SELECT id, lineage_id, content, claim_type, status, version, "
-            "review_count, avg_endorsement_confidence, endorsement_count, "
-            "dispute_count, epistemic_status "
-            "FROM claims_with_confidence"
-        )
+        query = f"SELECT {_VIEW_COLUMNS} FROM claims_with_confidence"
         params: dict[str, Any] = {"limit": limit, "offset": offset}
 
         if epistemic_status is not None:
@@ -77,25 +86,6 @@ def create_confidence_router() -> APIRouter:
 
         result = await db.execute(text(query), params)
         rows = result.mappings().all()
-        return [
-            {
-                "claim_id": str(row["id"]),
-                "lineage_id": str(row["lineage_id"]),
-                "content": row["content"],
-                "claim_type": row["claim_type"],
-                "status": row["status"],
-                "version": row["version"],
-                "review_count": row["review_count"],
-                "avg_endorsement_confidence": (
-                    float(row["avg_endorsement_confidence"])
-                    if row["avg_endorsement_confidence"] is not None
-                    else None
-                ),
-                "endorsement_count": row["endorsement_count"],
-                "dispute_count": row["dispute_count"],
-                "epistemic_status": row["epistemic_status"],
-            }
-            for row in rows
-        ]
+        return [_row_to_dict(row) for row in rows]
 
     return router
