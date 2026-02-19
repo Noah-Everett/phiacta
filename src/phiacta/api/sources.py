@@ -24,9 +24,10 @@ async def list_sources(
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[SourceResponse]:
     repo = SourceRepository(db)
+    total = await repo.count_all()
     sources = await repo.list_all(limit=limit, offset=offset)
     items = [SourceResponse.model_validate(s) for s in sources]
-    return PaginatedResponse(items=items, total=len(items), limit=limit, offset=offset)
+    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post("", response_model=SourceResponse, status_code=201)

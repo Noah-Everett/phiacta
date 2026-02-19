@@ -7,12 +7,12 @@ from phiacta.models.base import Base, TimestampMixin, UUIDMixin
 from phiacta.models.bundle import Bundle
 from phiacta.models.claim import Claim
 from phiacta.models.extension import Extension
-from phiacta.models.interaction import Interaction, InteractionReference
+from phiacta.models.interaction import Interaction
 from phiacta.models.layer_registry import LayerRecord
 from phiacta.models.namespace import Namespace
-from phiacta.models.pending_reference import PendingReference
+from phiacta.models.outbox import Outbox, OutboxOperation, OutboxStatus
 from phiacta.models.provenance import Provenance
-from phiacta.models.relation import Relation
+from phiacta.models.reference import Reference, ReferenceRole
 from phiacta.models.source import Source
 
 __all__ = [
@@ -23,12 +23,14 @@ __all__ = [
     "Claim",
     "Extension",
     "Interaction",
-    "InteractionReference",
     "LayerRecord",
     "Namespace",
-    "PendingReference",
+    "Outbox",
+    "OutboxOperation",
+    "OutboxStatus",
     "Provenance",
-    "Relation",
+    "Reference",
+    "ReferenceRole",
     "Source",
     "TimestampMixin",
     "UUIDMixin",

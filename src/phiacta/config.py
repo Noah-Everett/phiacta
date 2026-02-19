@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     jwt_secret_key: str
     access_token_expire_minutes: int = 1440
 
+    # Forgejo (git backend)
+    forgejo_url: str = "http://forgejo:3000"
+    forgejo_token: str = ""
+    forgejo_org: str = "phiacta"
+    forgejo_webhook_secret: str = ""
+
     model_config = {"env_file": ".env"}
 
     @model_validator(mode="after")

@@ -10,13 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from phiacta.models.agent import Agent
 from phiacta.models.bundle import Bundle
 from phiacta.models.claim import Claim
-from phiacta.models.relation import Relation
+from phiacta.models.reference import Reference
 from phiacta.models.source import Source
 from phiacta.repositories.agent_repository import AgentRepository
 from phiacta.repositories.base import BaseRepository
 from phiacta.repositories.bundle_repository import BundleRepository
 from phiacta.repositories.claim_repository import ClaimRepository
-from phiacta.repositories.relation_repository import RelationRepository
+from phiacta.repositories.interaction_repository import InteractionRepository
+from phiacta.repositories.reference_repository import ReferenceRepository
 from phiacta.repositories.source_repository import SourceRepository
 
 
@@ -37,9 +38,9 @@ class TestClaimRepositoryInstantiation:
     def test_claim_repository_has_custom_methods(self) -> None:
         mock_session = MagicMock(spec=AsyncSession)
         repo = ClaimRepository(mock_session)
-        assert callable(getattr(repo, "get_by_lineage", None))
-        assert callable(getattr(repo, "get_latest_version", None))
         assert callable(getattr(repo, "list_claims", None))
+        assert callable(getattr(repo, "count_claims", None))
+        assert callable(getattr(repo, "update_repo_status", None))
 
 
 class TestAgentRepositoryInstantiation:
@@ -67,17 +68,29 @@ class TestBundleRepositoryInstantiation:
         assert callable(getattr(repo, "get_by_idempotency_key", None))
 
 
-class TestRelationRepositoryInstantiation:
-    def test_relation_repository_sets_model(self) -> None:
+class TestReferenceRepositoryInstantiation:
+    def test_reference_repository_sets_model(self) -> None:
         mock_session = MagicMock(spec=AsyncSession)
-        repo = RelationRepository(mock_session)
-        assert repo.model is Relation
+        repo = ReferenceRepository(mock_session)
+        assert repo.model is Reference
 
-    def test_relation_repository_has_custom_methods(self) -> None:
+    def test_reference_repository_has_custom_methods(self) -> None:
         mock_session = MagicMock(spec=AsyncSession)
-        repo = RelationRepository(mock_session)
-        assert callable(getattr(repo, "get_relations_for_claim", None))
-        assert callable(getattr(repo, "get_relations_by_type", None))
+        repo = ReferenceRepository(mock_session)
+        assert callable(getattr(repo, "list_by_source_uri", None))
+        assert callable(getattr(repo, "list_by_target_uri", None))
+        assert callable(getattr(repo, "list_by_claim", None))
+        assert callable(getattr(repo, "list_by_role", None))
+
+
+class TestInteractionRepositoryInstantiation:
+    def test_interaction_repository_has_custom_methods(self) -> None:
+        mock_session = MagicMock(spec=AsyncSession)
+        repo = InteractionRepository(mock_session)
+        assert callable(getattr(repo, "list_by_claim", None))
+        assert callable(getattr(repo, "get_signal_by_agent", None))
+        assert callable(getattr(repo, "get_with_author", None))
+        assert callable(getattr(repo, "soft_delete", None))
 
 
 class TestSourceRepositoryInstantiation:

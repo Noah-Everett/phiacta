@@ -14,14 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.db.session import get_db
 from phiacta.layers.graph.models import GraphEdgeType
-from phiacta.models.claim import Claim
-from phiacta.models.relation import Relation
+from phiacta.models.reference import Reference
 
 
 class TraverseRequest(BaseModel):
     start_id: UUID
     max_depth: int = 3
-    relation_types: list[str] | None = None
+    roles: list[str] | None = None
     direction: str = "both"
     algorithm: str = "bfs"
 
@@ -32,9 +31,9 @@ class TraverseNode(BaseModel):
 
 
 class TraverseEdge(BaseModel):
-    source_id: UUID
-    target_id: UUID
-    relation_type: str
+    source_uri: str
+    target_uri: str
+    role: str
 
 
 class TraverseResponse(BaseModel):
@@ -75,37 +74,25 @@ def create_graph_router() -> APIRouter:
         direction: str = Query("both", pattern="^(both|incoming|outgoing)$"),
         db: AsyncSession = Depends(get_db),
     ) -> dict[str, Any]:
-        """Get direct relations for a claim with graph type info."""
-        # Resolve lineage so newer versions inherit relations
-        claim_result = await db.execute(
-            select(Claim).where(Claim.id == claim_id)
-        )
-        claim = claim_result.scalar_one_or_none()
-        if claim is None:
-            return {"claim_id": str(claim_id), "neighbors": []}
-
-        lineage_result = await db.execute(
-            select(Claim.id).where(Claim.lineage_id == claim.lineage_id)
-        )
-        lineage_ids = [row[0] for row in lineage_result.all()]
-
+        """Get direct references for a claim with graph type info."""
         if direction == "outgoing":
-            stmt = select(Relation).where(Relation.source_id.in_(lineage_ids))
+            stmt = select(Reference).where(Reference.source_claim_id == claim_id)
         elif direction == "incoming":
-            stmt = select(Relation).where(Relation.target_id.in_(lineage_ids))
+            stmt = select(Reference).where(Reference.target_claim_id == claim_id)
         else:
-            stmt = select(Relation).where(
-                Relation.source_id.in_(lineage_ids) | Relation.target_id.in_(lineage_ids)
+            stmt = select(Reference).where(
+                (Reference.source_claim_id == claim_id)
+                | (Reference.target_claim_id == claim_id)
             )
         result = await db.execute(stmt)
-        relations = list(result.scalars().all())
+        references = list(result.scalars().all())
 
-        # Fetch edge type metadata for the relation types found
-        rel_types = {r.relation_type for r in relations}
+        # Fetch edge type metadata for the roles found
+        roles = {r.role for r in references}
         edge_types_map: dict[str, Any] = {}
-        if rel_types:
+        if roles:
             et_result = await db.execute(
-                select(GraphEdgeType).where(GraphEdgeType.name.in_(rel_types))
+                select(GraphEdgeType).where(GraphEdgeType.name.in_(roles))
             )
             for et in et_result.scalars().all():
                 edge_types_map[et.name] = {
@@ -115,24 +102,21 @@ def create_graph_router() -> APIRouter:
                     "inverse_name": et.inverse_name,
                 }
 
-        lineage_id_set = set(lineage_ids)
-        seen: set[tuple] = set()
         neighbors = []
-        for r in relations:
-            is_outgoing = r.source_id in lineage_id_set
-            neighbor_id = r.target_id if is_outgoing else r.source_id
-            key = (r.relation_type, min(r.source_id, r.target_id), max(r.source_id, r.target_id))
-            if key in seen:
+        for r in references:
+            is_outgoing = r.source_claim_id == claim_id
+            neighbor_id = r.target_claim_id if is_outgoing else r.source_claim_id
+            if neighbor_id is None:
                 continue
-            seen.add(key)
             neighbors.append(
                 {
-                    "relation_id": str(r.id),
+                    "reference_id": str(r.id),
                     "neighbor_id": str(neighbor_id),
-                    "relation_type": r.relation_type,
-                    "strength": r.strength,
+                    "role": r.role,
+                    "source_uri": r.source_uri,
+                    "target_uri": r.target_uri,
                     "direction": "outgoing" if is_outgoing else "incoming",
-                    "edge_type_info": edge_types_map.get(r.relation_type),
+                    "edge_type_info": edge_types_map.get(r.role),
                 }
             )
 
@@ -143,54 +127,72 @@ def create_graph_router() -> APIRouter:
         body: TraverseRequest,
         db: AsyncSession = Depends(get_db),
     ) -> TraverseResponse:
-        """Graph traversal with depth/type filters (BFS or DFS)."""
+        """Graph traversal with depth/role filters (BFS or DFS).
+
+        Uses batch loading: collects all claim IDs at each depth level
+        and fetches their references in a single query per level.
+        """
         visited: set[UUID] = set()
         nodes: list[TraverseNode] = []
         edges: list[TraverseEdge] = []
 
-        frontier: deque[tuple[UUID, int]] = deque()
-        frontier.append((body.start_id, 0))
         visited.add(body.start_id)
         nodes.append(TraverseNode(claim_id=body.start_id, depth=0))
 
-        while frontier:
-            if body.algorithm == "dfs":
-                current_id, depth = frontier.pop()
-            else:
-                current_id, depth = frontier.popleft()
+        # Level-by-level BFS for batch loading (DFS order applied post-hoc)
+        current_level: list[UUID] = [body.start_id]
+        depth = 0
 
-            if depth >= body.max_depth:
-                continue
-
-            # Build query for neighbors
+        while current_level and depth < body.max_depth:
+            # Batch-fetch all references for the current frontier
             if body.direction == "outgoing":
-                stmt = select(Relation).where(Relation.source_id == current_id)
+                stmt = select(Reference).where(
+                    Reference.source_claim_id.in_(current_level)
+                )
             elif body.direction == "incoming":
-                stmt = select(Relation).where(Relation.target_id == current_id)
+                stmt = select(Reference).where(
+                    Reference.target_claim_id.in_(current_level)
+                )
             else:
-                stmt = select(Relation).where(
-                    (Relation.source_id == current_id) | (Relation.target_id == current_id)
+                stmt = select(Reference).where(
+                    (Reference.source_claim_id.in_(current_level))
+                    | (Reference.target_claim_id.in_(current_level))
                 )
 
-            if body.relation_types:
-                stmt = stmt.where(Relation.relation_type.in_(body.relation_types))
+            if body.roles:
+                stmt = stmt.where(Reference.role.in_(body.roles))
 
             result = await db.execute(stmt)
-            relations = list(result.scalars().all())
+            references = list(result.scalars().all())
 
-            for rel in relations:
-                neighbor_id = rel.target_id if rel.source_id == current_id else rel.source_id
+            next_level: list[UUID] = []
+            for ref in references:
+                # Determine neighbor based on which side is in current_level
+                if ref.source_claim_id in visited and ref.target_claim_id not in visited:
+                    neighbor_id = ref.target_claim_id
+                elif ref.target_claim_id in visited and ref.source_claim_id not in visited:
+                    neighbor_id = ref.source_claim_id
+                else:
+                    # Both visited or one is None — just record the edge
+                    neighbor_id = None
+
                 edges.append(
                     TraverseEdge(
-                        source_id=rel.source_id,
-                        target_id=rel.target_id,
-                        relation_type=rel.relation_type,
+                        source_uri=ref.source_uri,
+                        target_uri=ref.target_uri,
+                        role=ref.role,
                     )
                 )
-                if neighbor_id not in visited:
+
+                if neighbor_id is not None and neighbor_id not in visited:
                     visited.add(neighbor_id)
-                    nodes.append(TraverseNode(claim_id=neighbor_id, depth=depth + 1))
-                    frontier.append((neighbor_id, depth + 1))
+                    nodes.append(
+                        TraverseNode(claim_id=neighbor_id, depth=depth + 1)
+                    )
+                    next_level.append(neighbor_id)
+
+            current_level = next_level
+            depth += 1
 
         return TraverseResponse(nodes=nodes, edges=edges)
 

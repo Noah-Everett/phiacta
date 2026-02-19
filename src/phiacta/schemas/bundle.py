@@ -6,18 +6,18 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from phiacta.schemas.claim import ClaimCreate, ClaimResponse
-from phiacta.schemas.relation import RelationCreate, RelationResponse
+from phiacta.schemas.reference import ReferenceCreate, ReferenceResponse
 from phiacta.schemas.source import SourceCreate, SourceResponse
 
 
 class BundleSubmit(BaseModel):
-    idempotency_key: str
+    idempotency_key: str = Field(max_length=256)
     extension_id: str | None = None
     claims: list[ClaimCreate] = []
-    relations: list[RelationCreate] = []
+    references: list[ReferenceCreate] = []
     sources: list[SourceCreate] = []
     attrs: dict[str, object] = {}
 
@@ -31,7 +31,7 @@ class BundleResponse(BaseModel):
     extension_id: str | None
     status: str
     claim_count: int
-    relation_count: int
+    reference_count: int
     artifact_count: int
     submitted_at: datetime
     attrs: dict[str, object]
@@ -39,5 +39,5 @@ class BundleResponse(BaseModel):
 
 class BundleDetailResponse(BundleResponse):
     claims: list[ClaimResponse] = []
-    relations: list[RelationResponse] = []
+    references: list[ReferenceResponse] = []
     sources: list[SourceResponse] = []

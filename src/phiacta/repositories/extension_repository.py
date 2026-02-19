@@ -60,9 +60,14 @@ class ExtensionRepository(BaseRepository[Extension]):
         )
         return list(result.scalars().all())
 
-    async def list_healthy(self) -> list[Extension]:
+    async def list_healthy(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[Extension]:
         result = await self.session.execute(
-            select(Extension).where(Extension.health_status == "healthy")
+            select(Extension)
+            .where(Extension.health_status == "healthy")
+            .limit(limit)
+            .offset(offset)
         )
         return list(result.scalars().all())
 

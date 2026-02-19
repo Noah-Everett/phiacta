@@ -136,14 +136,15 @@ async def list_extensions(
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[ExtensionResponse]:
     repo = ExtensionRepository(db)
+    total = await repo.count_all()
     if healthy_only:
-        extensions = await repo.list_healthy()
+        extensions = await repo.list_healthy(limit=limit, offset=offset)
     elif extension_type is not None:
         extensions = await repo.list_by_type(extension_type, limit=limit, offset=offset)
     else:
         extensions = await repo.list_all(limit=limit, offset=offset)
     items = [ExtensionResponse.model_validate(e) for e in extensions]
-    return PaginatedResponse(items=items, total=len(items), limit=limit, offset=offset)
+    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{extension_id}", response_model=ExtensionResponse)

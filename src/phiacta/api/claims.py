@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
@@ -17,18 +17,14 @@ from phiacta.db.session import get_db
 from phiacta.extensions.dispatcher import dispatch_event
 from phiacta.models.agent import Agent
 from phiacta.models.claim import Claim
-from phiacta.models.relation import Relation
+from phiacta.models.outbox import Outbox
+from phiacta.models.reference import Reference
 from phiacta.repositories.claim_repository import ClaimRepository
-from phiacta.repositories.relation_repository import RelationRepository
-from phiacta.schemas.claim import (
-    ClaimCreate,
-    ClaimNewVersion,
-    ClaimResponse,
-    ClaimVerificationResultUpdate,
-    ClaimVerifyRequest,
-)
+from phiacta.repositories.reference_repository import ReferenceRepository
+from phiacta.schemas.claim import ClaimCreate, ClaimResponse, ClaimUpdate
 from phiacta.schemas.common import PaginatedResponse
-from phiacta.schemas.relation import RelationResponse
+from phiacta.schemas.reference import ReferenceResponse
+from phiacta.schemas.uri import PhiactaURI
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -50,12 +46,13 @@ async def list_claims(
         offset=offset,
         claim_type=claim_type,
         namespace_id=namespace_id,
+        status=status,
     )
-    # Apply status filter if provided (not in repo method)
-    if status is not None:
-        claims = [c for c in claims if c.status == status]
+    total = await repo.count_claims(
+        claim_type=claim_type, namespace_id=namespace_id, status=status,
+    )
     items = [ClaimResponse.model_validate(c) for c in claims]
-    return PaginatedResponse(items=items, total=len(items), limit=limit, offset=offset)
+    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{claim_id}", response_model=ClaimResponse)
@@ -71,101 +68,54 @@ async def get_claim(
 
 
 @router.post("", response_model=ClaimResponse, status_code=201)
+@limiter.limit("30/minute")
 async def create_claim(
+    request: Request,
     body: ClaimCreate,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> ClaimResponse:
     repo = ClaimRepository(db)
 
-    # Store verification code in attrs if provided.
-    attrs = dict(body.attrs)
-    if body.verification_code is not None:
-        attrs["verification_code"] = body.verification_code
-        attrs["verification_runner_type"] = body.verification_runner_type
-        attrs["verification_status"] = "pending"
-
     claim = Claim(
-        lineage_id=uuid4(),
-        version=1,
-        content=body.content,
+        title=body.title,
         claim_type=body.claim_type,
+        format=body.format,
+        content_cache=body.content,
         namespace_id=body.namespace_id,
         created_by=agent.id,
-        formal_content=body.formal_content,
-        supersedes=body.supersedes,
         status=body.status,
-        attrs=attrs,
+        attrs=body.attrs,
         search_tsv=func.to_tsvector("english", body.content),
     )
     claim = await repo.create(claim)
+
+    # Enqueue Forgejo repo creation via outbox
+    outbox_entry = Outbox(
+        operation="create_repo",
+        payload={
+            "claim_id": str(claim.id),
+            "title": body.title,
+            "content": body.content,
+            "format": body.format,
+            "author_id": str(agent.id),
+            "author_name": agent.name,
+        },
+    )
+    db.add(outbox_entry)
+
     await db.commit()
     await dispatch_event(
         db, "claim.created", {"claim_ids": [str(claim.id)]}
     )
 
-    # Dispatch verification event if code was provided.
-    if body.verification_code is not None:
-        await dispatch_event(
-            db,
-            "claim.verification_requested",
-            {
-                "claim_id": str(claim.id),
-                "code": body.verification_code,
-                "runner_type": body.verification_runner_type,
-            },
-        )
-
     return ClaimResponse.model_validate(claim)
 
 
-@router.post("/{claim_id}/versions", response_model=ClaimResponse, status_code=201)
-async def create_claim_version(
+@router.patch("/{claim_id}", response_model=ClaimResponse)
+async def update_claim(
     claim_id: UUID,
-    body: ClaimNewVersion,
-    agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
-) -> ClaimResponse:
-    repo = ClaimRepository(db)
-    parent = await repo.get_by_id(claim_id)
-    if parent is None:
-        raise HTTPException(status_code=404, detail="Claim not found")
-
-    if parent.created_by != agent.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Only the claim author can create new versions",
-        )
-
-    latest = await repo.get_latest_version(parent.lineage_id)
-    next_version = (latest.version if latest else parent.version) + 1
-
-    new_claim = Claim(
-        lineage_id=parent.lineage_id,
-        version=next_version,
-        content=body.content,
-        claim_type=parent.claim_type,
-        namespace_id=parent.namespace_id,
-        created_by=agent.id,
-        formal_content=body.formal_content,
-        supersedes=parent.id,
-        status=body.status,
-        attrs=body.attrs,
-        search_tsv=func.to_tsvector("english", body.content),
-    )
-    new_claim = await repo.create(new_claim)
-    await db.commit()
-    await dispatch_event(
-        db, "claim.created", {"claim_ids": [str(new_claim.id)]}
-    )
-
-    return ClaimResponse.model_validate(new_claim)
-
-
-@router.post("/{claim_id}/verify", response_model=ClaimResponse)
-async def verify_claim(
-    claim_id: UUID,
-    body: ClaimVerifyRequest,
+    body: ClaimUpdate,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> ClaimResponse:
@@ -177,114 +127,36 @@ async def verify_claim(
     if claim.created_by != agent.id:
         raise HTTPException(
             status_code=403,
-            detail="Only the claim author can submit verification code",
+            detail="Only the claim author can update this claim",
         )
 
-    # Store verification code in attrs.
-    updated_attrs = dict(claim.attrs)
-    updated_attrs["verification_code"] = body.code_content
-    updated_attrs["verification_runner_type"] = body.runner_type
-    updated_attrs["verification_status"] = "pending"
-    claim.attrs = updated_attrs
+    if body.title is not None:
+        claim.title = body.title
+    if body.status is not None:
+        claim.status = body.status
+    if body.attrs is not None:
+        claim.attrs = body.attrs
+    if body.content is not None:
+        claim.content_cache = body.content
+        claim.search_tsv = func.to_tsvector("english", body.content)
+        # Enqueue content update to Forgejo
+        outbox_entry = Outbox(
+            operation="commit_files",
+            payload={
+                "claim_id": str(claim.id),
+                "content": body.content,
+                "format": body.format or claim.format,
+                "author_id": str(agent.id),
+                "author_name": agent.name,
+                "message": f"Update claim content",
+            },
+        )
+        db.add(outbox_entry)
+    if body.format is not None:
+        claim.format = body.format
+
     await db.commit()
-
-    await dispatch_event(
-        db,
-        "claim.verification_requested",
-        {
-            "claim_id": str(claim.id),
-            "code": body.code_content,
-            "runner_type": body.runner_type,
-        },
-    )
-
     return ClaimResponse.model_validate(claim)
-
-
-@router.get("/{claim_id}/verification")
-async def get_verification_status(
-    claim_id: UUID,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    repo = ClaimRepository(db)
-    claim = await repo.get_by_id(claim_id)
-    if claim is None:
-        raise HTTPException(status_code=404, detail="Claim not found")
-
-    attrs = claim.attrs or {}
-    return {
-        "claim_id": str(claim.id),
-        "verification_level": attrs.get("verification_level"),
-        "verification_status": attrs.get("verification_status"),
-        "verification_result": attrs.get("verification_result"),
-        "verification_code": attrs.get("verification_code"),
-        "verification_runner_type": attrs.get("verification_runner_type"),
-    }
-
-
-@router.put("/{claim_id}/verification", response_model=ClaimResponse)
-async def update_verification_result(
-    claim_id: UUID,
-    body: ClaimVerificationResultUpdate,
-    agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
-) -> ClaimResponse:
-    """Called by the verify service to report verification results.
-
-    This does NOT re-dispatch a verification event (unlike POST /verify).
-    """
-    repo = ClaimRepository(db)
-    claim = await repo.get_by_id(claim_id)
-    if claim is None:
-        raise HTTPException(status_code=404, detail="Claim not found")
-
-    updated_attrs = dict(claim.attrs)
-    updated_attrs["verification_level"] = body.verification_level
-    updated_attrs["verification_status"] = body.verification_status
-    updated_attrs["verification_result"] = body.verification_result
-    claim.attrs = updated_attrs
-    await db.commit()
-
-    return ClaimResponse.model_validate(claim)
-
-
-@router.get("/{claim_id}/versions", response_model=list[ClaimResponse])
-async def get_claim_versions(
-    claim_id: UUID,
-    db: AsyncSession = Depends(get_db),
-) -> list[ClaimResponse]:
-    repo = ClaimRepository(db)
-    claim = await repo.get_by_id(claim_id)
-    if claim is None:
-        raise HTTPException(status_code=404, detail="Claim not found")
-    versions = await repo.get_by_lineage(claim.lineage_id)
-    return [ClaimResponse.model_validate(v) for v in versions]
-
-
-@router.get("/{claim_id}/relations", response_model=list[RelationResponse])
-async def get_claim_relations(
-    claim_id: UUID,
-    direction: str = Query("both", pattern="^(both|incoming|outgoing)$"),
-    db: AsyncSession = Depends(get_db),
-) -> list[RelationResponse]:
-    claim_repo = ClaimRepository(db)
-    claim = await claim_repo.get_by_id(claim_id)
-    if claim is None:
-        raise HTTPException(status_code=404, detail="Claim not found")
-    # Query relations across all versions in the same lineage
-    lineage_claims = await claim_repo.get_by_lineage(claim.lineage_id)
-    lineage_ids = [c.id for c in lineage_claims]
-    rel_repo = RelationRepository(db)
-    relations = await rel_repo.get_relations_for_claims(lineage_ids, direction=direction)
-    # Deduplicate by (source lineage, target lineage, type) — keep first match
-    seen: set[tuple] = set()
-    unique: list = []
-    for r in relations:
-        key = (r.relation_type, min(r.source_id, r.target_id), max(r.source_id, r.target_id))
-        if key not in seen:
-            seen.add(key)
-            unique.append(r)
-    return [RelationResponse.model_validate(r) for r in unique]
 
 
 @router.post("/{claim_id}/derive", response_model=ClaimResponse, status_code=201)
@@ -292,14 +164,14 @@ async def get_claim_relations(
 async def derive_claim(
     request: Request,
     claim_id: UUID,
+    body: ClaimCreate,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> ClaimResponse:
     """Create a new claim derived from an existing one.
 
-    Copies content, claim_type, namespace_id, and formal_content from the
-    original. Creates a ``derives_from`` relation linking the new claim
-    back to the original.
+    Creates a ``derives_from`` reference linking the new claim back to the
+    original.
     """
     repo = ClaimRepository(db)
     original = await repo.get_by_id(claim_id)
@@ -307,28 +179,47 @@ async def derive_claim(
         raise HTTPException(status_code=404, detail="Claim not found")
 
     new_claim = Claim(
-        lineage_id=uuid4(),
-        version=1,
-        content=original.content,
-        claim_type=original.claim_type,
-        namespace_id=original.namespace_id,
+        title=body.title,
+        claim_type=body.claim_type,
+        format=body.format,
+        content_cache=body.content,
+        namespace_id=body.namespace_id,
         created_by=agent.id,
-        formal_content=original.formal_content,
         status="active",
-        attrs={},
-        search_tsv=func.to_tsvector("english", original.content),
+        attrs=body.attrs,
+        search_tsv=func.to_tsvector("english", body.content),
     )
     new_claim = await repo.create(new_claim)
 
-    rel_repo = RelationRepository(db)
-    relation = Relation(
-        source_id=new_claim.id,
-        target_id=original.id,
-        relation_type="derives_from",
-        created_by=agent.id,
-        attrs={},
+    # Enqueue Forgejo repo creation
+    outbox_entry = Outbox(
+        operation="create_repo",
+        payload={
+            "claim_id": str(new_claim.id),
+            "title": body.title,
+            "content": body.content,
+            "format": body.format,
+            "author_id": str(agent.id),
+            "author_name": agent.name,
+        },
     )
-    await rel_repo.create(relation)
+    db.add(outbox_entry)
+
+    # Create derives_from reference
+    source_uri = PhiactaURI(f"claim:{new_claim.id}")
+    target_uri = PhiactaURI(f"claim:{original.id}")
+    reference = Reference(
+        source_uri=str(source_uri),
+        target_uri=str(target_uri),
+        role="derives_from",
+        created_by=agent.id,
+        source_type=source_uri.resource_type,
+        target_type=target_uri.resource_type,
+        source_claim_id=new_claim.id,
+        target_claim_id=original.id,
+    )
+    db.add(reference)
+
     await db.commit()
 
     await dispatch_event(
@@ -341,3 +232,18 @@ async def derive_claim(
     )
 
     return ClaimResponse.model_validate(new_claim)
+
+
+@router.get("/{claim_id}/references", response_model=list[ReferenceResponse])
+async def get_claim_references(
+    claim_id: UUID,
+    direction: str = Query("both", pattern="^(both|incoming|outgoing)$"),
+    db: AsyncSession = Depends(get_db),
+) -> list[ReferenceResponse]:
+    claim_repo = ClaimRepository(db)
+    claim = await claim_repo.get_by_id(claim_id)
+    if claim is None:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    ref_repo = ReferenceRepository(db)
+    references = await ref_repo.list_by_claim(claim_id, direction=direction)
+    return [ReferenceResponse.model_validate(r) for r in references]

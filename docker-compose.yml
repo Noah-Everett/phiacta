@@ -15,6 +15,25 @@ services:
       timeout: 5s
       retries: 5
 
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:10
+    environment:
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__server__ROOT_URL: http://forgejo:3000
+      FORGEJO__server__HTTP_PORT: "3000"
+      FORGEJO__service__DISABLE_REGISTRATION: "false"
+      FORGEJO__security__INSTALL_LOCK: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - forgejo_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   backend:
     build:
       context: .
@@ -27,6 +46,10 @@ services:
       LOG_LEVEL: "debug"
       ENVIRONMENT: "development"
       CORS_ORIGINS: '["http://localhost:3001"]'
+      FORGEJO_URL: "http://forgejo:3000"
+      FORGEJO_TOKEN: ""
+      FORGEJO_ORG: "phiacta"
+      FORGEJO_WEBHOOK_SECRET: "dev-webhook-secret-not-for-production"
     ports:
       - "8000:8000"
     volumes:
@@ -34,6 +57,8 @@ services:
       - ./extensions:/app/extensions
     depends_on:
       db:
+        condition: service_healthy
+      forgejo:
         condition: service_healthy
     command: >
       uvicorn phiacta.main:app
@@ -55,3 +80,4 @@ services:
 
 volumes:
   pgdata:
+  forgejo_data:

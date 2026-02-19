@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.models.source import Source
@@ -23,3 +23,9 @@ class SourceRepository(BaseRepository[Source]):
             select(Source).where(Source.content_hash == content_hash)
         )
         return result.scalar_one_or_none()
+
+    async def count_all(self) -> int:
+        result = await self.session.execute(
+            select(func.count()).select_from(Source)
+        )
+        return result.scalar_one()

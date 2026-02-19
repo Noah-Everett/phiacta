@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.db.session import get_db
@@ -21,10 +21,12 @@ async def list_namespaces(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[NamespaceResponse]:
+    count_result = await db.execute(select(func.count()).select_from(Namespace))
+    total = count_result.scalar_one()
     result = await db.execute(select(Namespace).limit(limit).offset(offset))
     namespaces = list(result.scalars().all())
     items = [NamespaceResponse.model_validate(ns) for ns in namespaces]
-    return PaginatedResponse(items=items, total=len(items), limit=limit, offset=offset)
+    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post("", response_model=NamespaceResponse, status_code=201)

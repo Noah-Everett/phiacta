@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.auth.dependencies import get_current_agent
@@ -14,19 +17,25 @@ from phiacta.extensions.dispatcher import dispatch_event
 from phiacta.models.agent import Agent
 from phiacta.models.bundle import Bundle
 from phiacta.models.claim import Claim
-from phiacta.models.relation import Relation
+from phiacta.models.outbox import Outbox
+from phiacta.models.reference import Reference
 from phiacta.models.source import Source
 from phiacta.repositories.bundle_repository import BundleRepository
 from phiacta.schemas.bundle import BundleDetailResponse, BundleResponse, BundleSubmit
 from phiacta.schemas.claim import ClaimResponse
-from phiacta.schemas.relation import RelationResponse
+from phiacta.schemas.reference import ReferenceResponse
 from phiacta.schemas.source import SourceResponse
+from phiacta.schemas.uri import PhiactaURI
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/bundles", tags=["bundles"])
 
 
 @router.post("", response_model=BundleDetailResponse, status_code=201)
+@limiter.limit("10/minute")
 async def submit_bundle(
+    request: Request,
     body: BundleSubmit,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
@@ -56,36 +65,53 @@ async def submit_bundle(
     created_claims: list[Claim] = []
     for claim_data in body.claims:
         claim = Claim(
-            lineage_id=uuid4(),
-            version=1,
-            content=claim_data.content,
+            title=claim_data.title,
             claim_type=claim_data.claim_type,
+            format=claim_data.format,
+            content_cache=claim_data.content,
             namespace_id=claim_data.namespace_id,
             created_by=agent.id,
-            formal_content=claim_data.formal_content,
-            supersedes=claim_data.supersedes,
             status=claim_data.status,
             attrs=claim_data.attrs,
+            search_tsv=func.to_tsvector("english", claim_data.content),
         )
         db.add(claim)
         created_claims.append(claim)
 
     await db.flush()
 
-    # Create relations
-    created_relations: list[Relation] = []
-    for rel_data in body.relations:
-        relation = Relation(
-            source_id=rel_data.source_id,
-            target_id=rel_data.target_id,
-            relation_type=rel_data.relation_type,
-            created_by=agent.id,
-            strength=rel_data.strength,
-            source_provenance=rel_data.source_provenance,
-            attrs=rel_data.attrs,
+    # Enqueue Forgejo repo creation for each claim
+    for claim in created_claims:
+        outbox_entry = Outbox(
+            operation="create_repo",
+            payload={
+                "claim_id": str(claim.id),
+                "title": claim.title,
+                "content": claim.content_cache or "",
+                "format": claim.format,
+                "author_id": str(agent.id),
+                "author_name": agent.name,
+            },
         )
-        db.add(relation)
-        created_relations.append(relation)
+        db.add(outbox_entry)
+
+    # Create references
+    created_references: list[Reference] = []
+    for ref_data in body.references:
+        source_uri = PhiactaURI(str(ref_data.source_uri))
+        target_uri = PhiactaURI(str(ref_data.target_uri))
+        reference = Reference(
+            source_uri=str(source_uri),
+            target_uri=str(target_uri),
+            role=ref_data.role,
+            created_by=agent.id,
+            source_type=source_uri.resource_type,
+            target_type=target_uri.resource_type,
+            source_claim_id=source_uri.claim_id,
+            target_claim_id=target_uri.claim_id,
+        )
+        db.add(reference)
+        created_references.append(reference)
 
     # Create the bundle record
     bundle = Bundle(
@@ -94,7 +120,7 @@ async def submit_bundle(
         extension_id=body.extension_id,
         status="accepted",
         claim_count=len(created_claims),
-        relation_count=len(created_relations),
+        reference_count=len(created_references),
         artifact_count=0,
         attrs=body.attrs,
     )
@@ -125,12 +151,12 @@ async def submit_bundle(
         extension_id=bundle.extension_id,
         status=bundle.status,
         claim_count=bundle.claim_count,
-        relation_count=bundle.relation_count,
+        reference_count=bundle.reference_count,
         artifact_count=bundle.artifact_count,
         submitted_at=bundle.submitted_at,
         attrs=bundle.attrs,
         claims=[ClaimResponse.model_validate(c) for c in created_claims],
-        relations=[RelationResponse.model_validate(r) for r in created_relations],
+        references=[ReferenceResponse.model_validate(r) for r in created_references],
         sources=[SourceResponse.model_validate(s) for s in created_sources],
     )
 

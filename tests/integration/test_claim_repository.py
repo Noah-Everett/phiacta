@@ -24,7 +24,6 @@ needs_db = pytest.mark.skipif(
 @needs_db
 class TestCreateAndGetClaim:
     async def test_create_and_get_claim(self, db_session: AsyncSession) -> None:
-        # Set up prerequisites
         agent_kwargs = make_agent()
         agent = Agent(**agent_kwargs)
         db_session.add(agent)
@@ -40,7 +39,7 @@ class TestCreateAndGetClaim:
         created = await repo.create(claim)
 
         assert created.id == claim.id
-        assert created.content == "Test claim content"
+        assert created.content_cache == "Test claim content"
 
         fetched = await repo.get_by_id(claim.id)
         assert fetched is not None
@@ -50,87 +49,6 @@ class TestCreateAndGetClaim:
     async def test_get_nonexistent_returns_none(self, db_session: AsyncSession) -> None:
         repo = ClaimRepository(db_session)
         result = await repo.get_by_id(uuid4())
-        assert result is None
-
-
-@needs_db
-class TestGetByLineage:
-    async def test_get_by_lineage(self, db_session: AsyncSession) -> None:
-        agent = Agent(**make_agent())
-        ns = Namespace(**make_namespace())
-        db_session.add(agent)
-        db_session.add(ns)
-        await db_session.flush()
-
-        repo = ClaimRepository(db_session)
-        lineage_id = uuid4()
-
-        claim_v1 = Claim(
-            **make_claim(
-                namespace_id=ns.id,
-                created_by=agent.id,
-                lineage_id=lineage_id,
-                version=1,
-                content="Version 1",
-            )
-        )
-        claim_v2 = Claim(
-            **make_claim(
-                namespace_id=ns.id,
-                created_by=agent.id,
-                lineage_id=lineage_id,
-                version=2,
-                content="Version 2",
-            )
-        )
-        await repo.create(claim_v1)
-        await repo.create(claim_v2)
-
-        results = await repo.get_by_lineage(lineage_id)
-        assert len(results) == 2
-        # Should be ordered by version DESC
-        assert results[0].version == 2
-        assert results[1].version == 1
-
-
-@needs_db
-class TestGetLatestVersion:
-    async def test_get_latest_version(self, db_session: AsyncSession) -> None:
-        agent = Agent(**make_agent())
-        ns = Namespace(**make_namespace())
-        db_session.add(agent)
-        db_session.add(ns)
-        await db_session.flush()
-
-        repo = ClaimRepository(db_session)
-        lineage_id = uuid4()
-
-        claim_v1 = Claim(
-            **make_claim(
-                namespace_id=ns.id,
-                created_by=agent.id,
-                lineage_id=lineage_id,
-                version=1,
-            )
-        )
-        claim_v3 = Claim(
-            **make_claim(
-                namespace_id=ns.id,
-                created_by=agent.id,
-                lineage_id=lineage_id,
-                version=3,
-            )
-        )
-        await repo.create(claim_v1)
-        await repo.create(claim_v3)
-
-        latest = await repo.get_latest_version(lineage_id)
-        assert latest is not None
-        assert latest.version == 3
-
-    async def test_get_latest_version_empty(self, db_session: AsyncSession) -> None:
-        repo = ClaimRepository(db_session)
-        result = await repo.get_latest_version(uuid4())
         assert result is None
 
 
@@ -182,6 +100,30 @@ class TestListClaimsWithFilters:
         assert len(combined) >= 1
         assert all(c.claim_type == "assertion" for c in combined)
 
+    async def test_list_claims_by_status(self, db_session: AsyncSession) -> None:
+        agent = Agent(**make_agent())
+        ns = Namespace(**make_namespace())
+        db_session.add(agent)
+        db_session.add(ns)
+        await db_session.flush()
+
+        repo = ClaimRepository(db_session)
+        claim = Claim(
+            **make_claim(
+                namespace_id=ns.id,
+                created_by=agent.id,
+                status="active",
+            )
+        )
+        await repo.create(claim)
+
+        active = await repo.list_claims(status="active")
+        assert len(active) >= 1
+        assert all(c.status == "active" for c in active)
+
+        archived = await repo.list_claims(status="archived")
+        assert all(c.status == "archived" for c in archived)
+
     async def test_list_claims_pagination(self, db_session: AsyncSession) -> None:
         agent = Agent(**make_agent())
         ns = Namespace(**make_namespace())
@@ -206,3 +148,37 @@ class TestListClaimsWithFilters:
         assert len(page1) == 2
         assert len(page2) == 2
         assert page1[0].id != page2[0].id
+
+
+@needs_db
+class TestUpdateRepoStatus:
+    async def test_update_repo_status(self, db_session: AsyncSession) -> None:
+        agent = Agent(**make_agent())
+        ns = Namespace(**make_namespace())
+        db_session.add(agent)
+        db_session.add(ns)
+        await db_session.flush()
+
+        repo = ClaimRepository(db_session)
+        claim = Claim(
+            **make_claim(namespace_id=ns.id, created_by=agent.id)
+        )
+        await repo.create(claim)
+
+        await repo.update_repo_status(
+            claim.id,
+            repo_status="ready",
+            forgejo_repo_id=42,
+            current_head_sha="abc123",
+        )
+
+        updated = await repo.get_by_id(claim.id)
+        assert updated is not None
+        assert updated.repo_status == "ready"
+        assert updated.forgejo_repo_id == 42
+        assert updated.current_head_sha == "abc123"
+
+    async def test_update_nonexistent_is_noop(self, db_session: AsyncSession) -> None:
+        repo = ClaimRepository(db_session)
+        # Should not raise
+        await repo.update_repo_status(uuid4(), repo_status="ready")

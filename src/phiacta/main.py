@@ -16,6 +16,8 @@ from phiacta.api.auth import limiter
 from phiacta.api.router import v1_router
 from phiacta.config import get_settings
 from phiacta.db.session import get_engine
+from phiacta.services.outbox_worker import start_outbox_worker
+from phiacta.webhooks.forgejo import router as webhook_router
 
 
 @asynccontextmanager
@@ -46,13 +48,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Mount layer routes
     registry.mount_all(app)
 
+    # Start outbox worker for Forgejo sync
+    outbox_worker = await start_outbox_worker(engine)
+
     # Store on app state for access in endpoints
     app.state.layer_registry = registry
     app.state.engine = engine
+    app.state.outbox_worker = outbox_worker
 
     yield
 
     # Shutdown: cleanup
+    await outbox_worker.stop()
     await registry.teardown_all(engine)
     await engine.dispose()
 
@@ -70,11 +77,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "PUT", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 app.include_router(v1_router, prefix="/v1")
+app.include_router(webhook_router)
 
 
 @app.get("/health")

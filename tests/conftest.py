@@ -95,19 +95,19 @@ def make_claim(
     *,
     namespace_id: object,
     created_by: object,
+    title: str = "Test Claim",
     content: str = "Test claim content",
     claim_type: str = "assertion",
-    version: int = 1,
-    lineage_id: object | None = None,
+    format: str = "markdown",
     status: str = "active",
 ) -> dict[str, object]:
     """Return kwargs suitable for constructing a Claim model instance."""
     return {
         "id": uuid4(),
-        "lineage_id": lineage_id or uuid4(),
-        "version": version,
-        "content": content,
+        "title": title,
         "claim_type": claim_type,
+        "format": format,
+        "content_cache": content,
         "namespace_id": namespace_id,
         "created_by": created_by,
         "status": status,
@@ -135,23 +135,28 @@ def make_source(
     }
 
 
-def make_relation(
+def make_reference(
     *,
-    source_id: object,
-    target_id: object,
+    source_uri: str,
+    target_uri: str,
     created_by: object,
-    relation_type: str = "supports",
-    strength: float | None = None,
+    role: str = "evidence",
+    source_type: str = "claim",
+    target_type: str = "claim",
+    source_claim_id: object | None = None,
+    target_claim_id: object | None = None,
 ) -> dict[str, object]:
-    """Return kwargs suitable for constructing a Relation model instance."""
+    """Return kwargs suitable for constructing a Reference model instance."""
     return {
         "id": uuid4(),
-        "source_id": source_id,
-        "target_id": target_id,
-        "relation_type": relation_type,
+        "source_uri": source_uri,
+        "target_uri": target_uri,
+        "role": role,
         "created_by": created_by,
-        "strength": strength,
-        "attrs": {},
+        "source_type": source_type,
+        "target_type": target_type,
+        "source_claim_id": source_claim_id,
+        "target_claim_id": target_claim_id,
     }
 
 

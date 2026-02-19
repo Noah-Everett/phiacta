@@ -14,11 +14,9 @@ _CLAIMS_WITH_CONFIDENCE_VIEW = """
 CREATE OR REPLACE VIEW claims_with_confidence AS
 SELECT
     c.id,
-    c.lineage_id,
-    c.content,
+    c.title,
     c.claim_type,
     c.status,
-    c.version,
     COUNT(i.id) FILTER (WHERE i.signal IS NOT NULL) AS signal_count,
     COUNT(i.id) AS interaction_count,
     SUM(i.weight * i.confidence) FILTER (WHERE i.signal = 'agree')
@@ -27,24 +25,24 @@ SELECT
     COUNT(*) FILTER (WHERE i.signal = 'agree') AS agree_count,
     COUNT(*) FILTER (WHERE i.signal = 'disagree') AS disagree_count,
     COUNT(*) FILTER (WHERE i.signal = 'neutral') AS neutral_count,
-    COUNT(*) FILTER (WHERE i.kind = 'issue'
-        AND (i.attrs->>'issue_status') IN ('open', 'reopened')) AS open_issue_count,
-    COUNT(*) FILTER (WHERE i.kind = 'suggestion'
-        AND (i.attrs->>'suggestion_status') = 'pending') AS pending_suggestion_count,
     CASE
         WHEN COUNT(i.id) FILTER (WHERE i.signal IS NOT NULL) = 0 THEN 'unverified'
         WHEN COUNT(*) FILTER (WHERE i.signal = 'disagree') > 0
              AND COUNT(*) FILTER (WHERE i.signal = 'agree') > 0 THEN 'disputed'
-        WHEN c.formal_content IS NOT NULL
-             AND COUNT(*) FILTER (WHERE i.signal = 'agree') > 0 THEN 'formally_verified'
-        WHEN SUM(i.weight * i.confidence) FILTER (WHERE i.signal = 'agree')
+        -- Note: 'formally_verified' status removed. Formal verification is now
+        -- represented by the verification/ directory in git (with manifest.yaml).
+        WHEN c.status = 'active'
+             AND SUM(i.weight * i.confidence) FILTER (WHERE i.signal = 'agree')
                  / NULLIF(SUM(i.weight) FILTER (WHERE i.signal = 'agree'), 0) > 0.7
              AND COUNT(*) FILTER (WHERE i.signal = 'agree')
                  > COUNT(*) FILTER (WHERE i.signal = 'disagree') THEN 'endorsed'
         ELSE 'under_review'
     END AS epistemic_status
 FROM claims c
-LEFT JOIN interactions i ON i.claim_id = c.id AND i.deleted_at IS NULL
+LEFT JOIN interactions i
+    ON i.claim_id = c.id
+    AND i.deleted_at IS NULL
+    AND i.kind IN ('vote', 'review')
 GROUP BY c.id
 """
 

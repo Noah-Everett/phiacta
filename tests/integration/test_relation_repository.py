@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from phiacta.models.agent import Agent
 from phiacta.models.claim import Claim
 from phiacta.models.namespace import Namespace
-from phiacta.models.relation import Relation
-from phiacta.repositories.relation_repository import RelationRepository
-from tests.conftest import make_agent, make_claim, make_namespace, make_relation
+from phiacta.models.reference import Reference
+from phiacta.repositories.reference_repository import ReferenceRepository
+from tests.conftest import make_agent, make_claim, make_namespace, make_reference
 
 needs_db = pytest.mark.skipif(
     "TEST_DATABASE_URL" not in os.environ,
@@ -40,119 +40,175 @@ async def _setup_claims(
 
 
 @needs_db
-class TestCreateAndGetRelation:
-    async def test_create_and_get_relation(self, db_session: AsyncSession) -> None:
+class TestCreateAndGetReference:
+    async def test_create_and_get_reference(self, db_session: AsyncSession) -> None:
         agent, _ns, claim_a, claim_b = await _setup_claims(db_session)
 
-        repo = RelationRepository(db_session)
-        rel = Relation(
-            **make_relation(
-                source_id=claim_a.id,
-                target_id=claim_b.id,
+        repo = ReferenceRepository(db_session)
+        ref = Reference(
+            **make_reference(
+                source_uri=f"claim:{claim_a.id}",
+                target_uri=f"claim:{claim_b.id}",
                 created_by=agent.id,
-                relation_type="supports",
+                role="evidence",
+                source_claim_id=claim_a.id,
+                target_claim_id=claim_b.id,
             )
         )
-        created = await repo.create(rel)
-        assert created.id == rel.id
+        created = await repo.create(ref)
+        assert created.id == ref.id
 
-        fetched = await repo.get_by_id(rel.id)
+        fetched = await repo.get_by_id(ref.id)
         assert fetched is not None
-        assert fetched.source_id == claim_a.id
-        assert fetched.target_id == claim_b.id
-        assert fetched.relation_type == "supports"
+        assert fetched.source_uri == f"claim:{claim_a.id}"
+        assert fetched.target_uri == f"claim:{claim_b.id}"
+        assert fetched.role == "evidence"
 
 
 @needs_db
-class TestGetRelationsForClaim:
-    async def test_get_relations_for_claim_both(self, db_session: AsyncSession) -> None:
+class TestListByClaimDirection:
+    async def test_list_by_claim_both(self, db_session: AsyncSession) -> None:
         agent, _ns, claim_a, claim_b = await _setup_claims(db_session)
 
-        repo = RelationRepository(db_session)
-        rel = Relation(
-            **make_relation(
-                source_id=claim_a.id,
-                target_id=claim_b.id,
+        repo = ReferenceRepository(db_session)
+        ref = Reference(
+            **make_reference(
+                source_uri=f"claim:{claim_a.id}",
+                target_uri=f"claim:{claim_b.id}",
                 created_by=agent.id,
-                relation_type="supports",
+                role="evidence",
+                source_claim_id=claim_a.id,
+                target_claim_id=claim_b.id,
             )
         )
-        await repo.create(rel)
+        await repo.create(ref)
 
-        # Both directions
-        rels_a = await repo.get_relations_for_claim(claim_a.id, direction="both")
-        assert len(rels_a) >= 1
+        refs_a = await repo.list_by_claim(claim_a.id, direction="both")
+        assert len(refs_a) >= 1
 
-        rels_b = await repo.get_relations_for_claim(claim_b.id, direction="both")
-        assert len(rels_b) >= 1
+        refs_b = await repo.list_by_claim(claim_b.id, direction="both")
+        assert len(refs_b) >= 1
 
-    async def test_get_relations_outgoing(self, db_session: AsyncSession) -> None:
+    async def test_list_by_claim_outgoing(self, db_session: AsyncSession) -> None:
         agent, _ns, claim_a, claim_b = await _setup_claims(db_session)
 
-        repo = RelationRepository(db_session)
-        rel = Relation(
-            **make_relation(
-                source_id=claim_a.id,
-                target_id=claim_b.id,
+        repo = ReferenceRepository(db_session)
+        ref = Reference(
+            **make_reference(
+                source_uri=f"claim:{claim_a.id}",
+                target_uri=f"claim:{claim_b.id}",
                 created_by=agent.id,
-                relation_type="supports",
+                role="evidence",
+                source_claim_id=claim_a.id,
+                target_claim_id=claim_b.id,
             )
         )
-        await repo.create(rel)
+        await repo.create(ref)
 
-        outgoing = await repo.get_relations_for_claim(claim_a.id, direction="outgoing")
+        outgoing = await repo.list_by_claim(claim_a.id, direction="outgoing")
         assert len(outgoing) >= 1
-        assert all(r.source_id == claim_a.id for r in outgoing)
+        assert all(r.source_claim_id == claim_a.id for r in outgoing)
 
-        # claim_b should have no outgoing relations
-        outgoing_b = await repo.get_relations_for_claim(claim_b.id, direction="outgoing")
+        outgoing_b = await repo.list_by_claim(claim_b.id, direction="outgoing")
         assert len(outgoing_b) == 0
 
-    async def test_get_relations_incoming(self, db_session: AsyncSession) -> None:
+    async def test_list_by_claim_incoming(self, db_session: AsyncSession) -> None:
         agent, _ns, claim_a, claim_b = await _setup_claims(db_session)
 
-        repo = RelationRepository(db_session)
-        rel = Relation(
-            **make_relation(
-                source_id=claim_a.id,
-                target_id=claim_b.id,
+        repo = ReferenceRepository(db_session)
+        ref = Reference(
+            **make_reference(
+                source_uri=f"claim:{claim_a.id}",
+                target_uri=f"claim:{claim_b.id}",
                 created_by=agent.id,
-                relation_type="supports",
+                role="evidence",
+                source_claim_id=claim_a.id,
+                target_claim_id=claim_b.id,
             )
         )
-        await repo.create(rel)
+        await repo.create(ref)
 
-        incoming = await repo.get_relations_for_claim(claim_b.id, direction="incoming")
+        incoming = await repo.list_by_claim(claim_b.id, direction="incoming")
         assert len(incoming) >= 1
-        assert all(r.target_id == claim_b.id for r in incoming)
+        assert all(r.target_claim_id == claim_b.id for r in incoming)
 
-    async def test_get_relations_by_type(self, db_session: AsyncSession) -> None:
+
+@needs_db
+class TestListByRole:
+    async def test_list_by_role(self, db_session: AsyncSession) -> None:
         agent, _ns, claim_a, claim_b = await _setup_claims(db_session)
 
-        repo = RelationRepository(db_session)
-        rel1 = Relation(
-            **make_relation(
-                source_id=claim_a.id,
-                target_id=claim_b.id,
+        repo = ReferenceRepository(db_session)
+        ref1 = Reference(
+            **make_reference(
+                source_uri=f"claim:{claim_a.id}",
+                target_uri=f"claim:{claim_b.id}",
                 created_by=agent.id,
-                relation_type="supports",
+                role="evidence",
+                source_claim_id=claim_a.id,
+                target_claim_id=claim_b.id,
             )
         )
-        rel2 = Relation(
-            **make_relation(
-                source_id=claim_b.id,
-                target_id=claim_a.id,
+        ref2 = Reference(
+            **make_reference(
+                source_uri=f"claim:{claim_b.id}",
+                target_uri=f"claim:{claim_a.id}",
                 created_by=agent.id,
-                relation_type="contradicts",
+                role="derives_from",
+                source_claim_id=claim_b.id,
+                target_claim_id=claim_a.id,
             )
         )
-        await repo.create(rel1)
-        await repo.create(rel2)
+        await repo.create(ref1)
+        await repo.create(ref2)
 
-        supports = await repo.get_relations_by_type("supports")
-        assert len(supports) >= 1
-        assert all(r.relation_type == "supports" for r in supports)
+        evidence = await repo.list_by_role("evidence")
+        assert len(evidence) >= 1
+        assert all(r.role == "evidence" for r in evidence)
 
-        contradicts = await repo.get_relations_by_type("contradicts")
-        assert len(contradicts) >= 1
-        assert all(r.relation_type == "contradicts" for r in contradicts)
+        derives = await repo.list_by_role("derives_from")
+        assert len(derives) >= 1
+        assert all(r.role == "derives_from" for r in derives)
+
+
+@needs_db
+class TestListByUri:
+    async def test_list_by_source_uri(self, db_session: AsyncSession) -> None:
+        agent, _ns, claim_a, claim_b = await _setup_claims(db_session)
+
+        repo = ReferenceRepository(db_session)
+        uri = f"claim:{claim_a.id}"
+        ref = Reference(
+            **make_reference(
+                source_uri=uri,
+                target_uri=f"claim:{claim_b.id}",
+                created_by=agent.id,
+                source_claim_id=claim_a.id,
+                target_claim_id=claim_b.id,
+            )
+        )
+        await repo.create(ref)
+
+        results = await repo.list_by_source_uri(uri)
+        assert len(results) >= 1
+        assert all(r.source_uri == uri for r in results)
+
+    async def test_list_by_target_uri(self, db_session: AsyncSession) -> None:
+        agent, _ns, claim_a, claim_b = await _setup_claims(db_session)
+
+        repo = ReferenceRepository(db_session)
+        uri = f"claim:{claim_b.id}"
+        ref = Reference(
+            **make_reference(
+                source_uri=f"claim:{claim_a.id}",
+                target_uri=uri,
+                created_by=agent.id,
+                source_claim_id=claim_a.id,
+                target_claim_id=claim_b.id,
+            )
+        )
+        await repo.create(ref)
+
+        results = await repo.list_by_target_uri(uri)
+        assert len(results) >= 1
+        assert all(r.target_uri == uri for r in results)

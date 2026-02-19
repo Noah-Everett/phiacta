@@ -3,16 +3,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     CheckConstraint,
+    DateTime,
+    Float,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
-    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
@@ -24,13 +27,13 @@ from phiacta.models.base import Base, TimestampMixin, UUIDMixin
 class Claim(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "claims"
 
-    lineage_id: Mapped[UUID] = mapped_column(index=False)
-    version: Mapped[int] = mapped_column(default=1)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    claim_type: Mapped[str] = mapped_column(
-        String,
-        nullable=False,
-    )
+    # Content metadata (denormalized from claim.yaml for queryability)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    claim_type: Mapped[str] = mapped_column(String, nullable=False)
+    format: Mapped[str] = mapped_column(String, default="markdown")
+    content_cache: Mapped[str | None] = mapped_column(Text, default=None)
+
+    # Organization
     namespace_id: Mapped[UUID] = mapped_column(
         ForeignKey("namespaces.id"),
         nullable=False,
@@ -39,40 +42,39 @@ class Claim(UUIDMixin, TimestampMixin, Base):
         ForeignKey("agents.id"),
         nullable=False,
     )
-    formal_content: Mapped[str | None] = mapped_column(Text, default=None)
-    supersedes: Mapped[UUID | None] = mapped_column(
-        ForeignKey("claims.id"),
-        default=None,
+
+    # Status (note: old "deprecated" renamed to "archived")
+    status: Mapped[str] = mapped_column(String, default="active")
+
+    # Git sync
+    forgejo_repo_id: Mapped[int | None] = mapped_column(Integer, default=None)
+    current_head_sha: Mapped[str | None] = mapped_column(
+        String(40), default=None
     )
-    status: Mapped[str] = mapped_column(
-        String,
-        default="active",
-    )
+    repo_status: Mapped[str] = mapped_column(String, default="provisioning")
+
+    # Search
+    search_tsv: Mapped[str | None] = mapped_column(TSVECTOR, default=None)
     embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(1536),
-        default=None,
-    )
-    search_tsv: Mapped[str | None] = mapped_column(
-        TSVECTOR,
-        default=None,
-    )
-    attrs: Mapped[dict[str, object]] = mapped_column(
-        JSONB,
-        nullable=False,
-        server_default="{}",
+        Vector(1536), default=None
     )
 
-    # Relationships (use string references for cross-model forward refs)
+    # Extensible metadata
+    attrs: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+
+    # Cached confidence (refreshed on vote/review changes)
+    cached_confidence: Mapped[float | None] = mapped_column(
+        Float, default=None
+    )
+    confidence_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
+    # Relationships
     namespace: Mapped[Namespace] = relationship(  # type: ignore[name-defined]  # noqa: F821
         back_populates="claims",
-    )
-    outgoing_relations: Mapped[list[Relation]] = relationship(  # type: ignore[name-defined]  # noqa: F821
-        foreign_keys="[Relation.source_id]",
-        back_populates="source_claim",
-    )
-    incoming_relations: Mapped[list[Relation]] = relationship(  # type: ignore[name-defined]  # noqa: F821
-        foreign_keys="[Relation.target_id]",
-        back_populates="target_claim",
     )
     provenance_records: Mapped[list[Provenance]] = relationship(  # type: ignore[name-defined]  # noqa: F821
         back_populates="claim",
@@ -85,12 +87,14 @@ class Claim(UUIDMixin, TimestampMixin, Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("lineage_id", "version"),
         CheckConstraint(
-            "status IN ('draft', 'active', 'deprecated', 'retracted')",
+            "status IN ('draft', 'active', 'archived', 'retracted')",
             name="ck_claims_status",
         ),
-        Index("idx_claims_lineage", "lineage_id", "version", postgresql_using="btree"),
+        CheckConstraint(
+            "repo_status IN ('provisioning', 'ready', 'error')",
+            name="ck_claims_repo_status",
+        ),
         Index("idx_claims_namespace", "namespace_id"),
         Index(
             "idx_claims_embedding",

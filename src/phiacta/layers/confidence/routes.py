@@ -13,10 +13,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from phiacta.db.session import get_db
 
 _VIEW_COLUMNS = (
-    "id, lineage_id, content, claim_type, status, version, "
+    "id, title, claim_type, status, "
     "signal_count, interaction_count, weighted_agree_confidence, "
-    "agree_count, disagree_count, neutral_count, "
-    "open_issue_count, pending_suggestion_count, epistemic_status"
+    "agree_count, disagree_count, neutral_count, epistemic_status"
+)
+
+# Prebuilt SQL strings — no user input touches column names
+_SQL_SINGLE = text(
+    f"SELECT {_VIEW_COLUMNS} FROM claims_with_confidence WHERE id = :claim_id"
+)
+_SQL_LIST = text(
+    f"SELECT {_VIEW_COLUMNS} FROM claims_with_confidence"
+    " LIMIT :limit OFFSET :offset"
+)
+_SQL_LIST_FILTERED = text(
+    f"SELECT {_VIEW_COLUMNS} FROM claims_with_confidence"
+    " WHERE epistemic_status = :epistemic_status"
+    " LIMIT :limit OFFSET :offset"
 )
 
 
@@ -24,11 +37,9 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     """Convert a claims_with_confidence row mapping to a response dict."""
     return {
         "claim_id": str(row["id"]),
-        "lineage_id": str(row["lineage_id"]),
-        "content": row["content"],
+        "title": row["title"],
         "claim_type": row["claim_type"],
         "status": row["status"],
-        "version": row["version"],
         "signal_count": row["signal_count"],
         "interaction_count": row["interaction_count"],
         "weighted_agree_confidence": (
@@ -39,8 +50,6 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "agree_count": row["agree_count"],
         "disagree_count": row["disagree_count"],
         "neutral_count": row["neutral_count"],
-        "open_issue_count": row["open_issue_count"],
-        "pending_suggestion_count": row["pending_suggestion_count"],
         "epistemic_status": row["epistemic_status"],
     }
 
@@ -55,13 +64,7 @@ def create_confidence_router() -> APIRouter:
         db: AsyncSession = Depends(get_db),
     ) -> dict[str, Any]:
         """Get the epistemic status and confidence scores for a claim."""
-        result = await db.execute(
-            text(
-                f"SELECT {_VIEW_COLUMNS} "
-                "FROM claims_with_confidence WHERE id = :claim_id"
-            ),
-            {"claim_id": claim_id},
-        )
+        result = await db.execute(_SQL_SINGLE, {"claim_id": claim_id})
         row = result.mappings().first()
         if row is None:
             raise HTTPException(status_code=404, detail="Claim not found")
@@ -75,16 +78,14 @@ def create_confidence_router() -> APIRouter:
         db: AsyncSession = Depends(get_db),
     ) -> list[dict[str, Any]]:
         """List claims with their aggregated confidence scores."""
-        query = f"SELECT {_VIEW_COLUMNS} FROM claims_with_confidence"
         params: dict[str, Any] = {"limit": limit, "offset": offset}
 
         if epistemic_status is not None:
-            query += " WHERE epistemic_status = :epistemic_status"
             params["epistemic_status"] = epistemic_status
+            result = await db.execute(_SQL_LIST_FILTERED, params)
+        else:
+            result = await db.execute(_SQL_LIST, params)
 
-        query += " LIMIT :limit OFFSET :offset"
-
-        result = await db.execute(text(query), params)
         rows = result.mappings().all()
         return [_row_to_dict(row) for row in rows]
 

@@ -31,5 +31,5 @@ class BaseRepository[T: Base]:
         return list(result.scalars().all())
 
     async def delete(self, entity: T) -> None:
-        await self.session.delete(entity)
+        self.session.delete(entity)
         await self.session.flush()
