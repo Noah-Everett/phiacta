@@ -70,7 +70,9 @@ def upgrade() -> None:
     op.alter_column("claims", "title", nullable=False)
 
     # Update status constraint: replace 'deprecated' with 'archived'
-    op.drop_constraint("ck_claims_status", "claims", type_="check")
+    # The original constraint was created inline via raw SQL in 001 without
+    # an explicit name, so PostgreSQL auto-named it "claims_status_check".
+    op.drop_constraint("claims_status_check", "claims", type_="check")
     op.execute(
         sa.text(
             "UPDATE claims SET status = 'archived' WHERE status = 'deprecated'"
