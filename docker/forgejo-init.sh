@@ -13,14 +13,15 @@ TOKEN_FILE="/run/secrets/forgejo-token"
 FORGEJO_API="http://forgejo:3000/api/v1"
 
 echo "[forgejo-init] Waiting for Forgejo API..."
-until wget -qO- "${FORGEJO_API}/version" >/dev/null 2>&1; do
+until curl -sf "${FORGEJO_API}/version" >/dev/null 2>&1; do
     sleep 2
 done
 echo "[forgejo-init] Forgejo is ready."
 
 # --- Create admin user via CLI (needs /data volume with DB) ---------------
 echo "[forgejo-init] Creating admin user '${ADMIN_USER}'..."
-forgejo admin user create \
+# Forgejo 10+ refuses to run CLI as root; use su-exec to run as git (UID 1000)
+su-exec git forgejo admin user create \
     --admin \
     --username "${ADMIN_USER}" \
     --password "${ADMIN_PASS}" \
@@ -31,9 +32,8 @@ forgejo admin user create \
 
 # --- Create API token via basic auth --------------------------------------
 echo "[forgejo-init] Creating API token..."
-EXISTING_TOKEN=$(wget -qO- \
-    --header "Content-Type: application/json" \
-    --user "${ADMIN_USER}:${ADMIN_PASS}" \
+EXISTING_TOKEN=$(curl -sf \
+    -u "${ADMIN_USER}:${ADMIN_PASS}" \
     "${FORGEJO_API}/users/${ADMIN_USER}/tokens" 2>/dev/null || echo "[]")
 
 # Check if our token already exists
@@ -41,17 +41,17 @@ if echo "${EXISTING_TOKEN}" | grep -q "\"${TOKEN_NAME}\""; then
     echo "[forgejo-init] Token '${TOKEN_NAME}' already exists — deleting to regenerate."
     TOKEN_ID=$(echo "${EXISTING_TOKEN}" | sed -n "s/.*\"id\":\([0-9]*\).*\"name\":\"${TOKEN_NAME}\".*/\1/p")
     if [ -n "${TOKEN_ID}" ]; then
-        wget -qO- --method=DELETE \
-            --user "${ADMIN_USER}:${ADMIN_PASS}" \
-            "${FORGEJO_API}/users/${ADMIN_USER}/tokens/${TOKEN_ID}" 2>/dev/null || true
+        curl -sf -X DELETE \
+            -u "${ADMIN_USER}:${ADMIN_PASS}" \
+            "${FORGEJO_API}/users/${ADMIN_USER}/tokens/${TOKEN_ID}" >/dev/null 2>&1 || true
     fi
 fi
 
 # Create fresh token with all scopes
-TOKEN_RESPONSE=$(wget -qO- \
-    --header "Content-Type: application/json" \
-    --post-data "{\"name\":\"${TOKEN_NAME}\",\"scopes\":[\"all\"]}" \
-    --user "${ADMIN_USER}:${ADMIN_PASS}" \
+TOKEN_RESPONSE=$(curl -sf \
+    -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"${TOKEN_NAME}\",\"scopes\":[\"all\"]}" \
     "${FORGEJO_API}/users/${ADMIN_USER}/tokens" 2>/dev/null || echo "")
 
 # Extract the token SHA — Forgejo returns sha1 field
@@ -66,11 +66,11 @@ echo "[forgejo-init] API token created."
 
 # --- Create organisation ---------------------------------------------------
 echo "[forgejo-init] Creating org '${ORG_NAME}'..."
-wget -qO- \
-    --header "Content-Type: application/json" \
-    --header "Authorization: token ${TOKEN}" \
-    --post-data "{\"username\":\"${ORG_NAME}\",\"visibility\":\"private\"}" \
-    "${FORGEJO_API}/orgs" 2>/dev/null \
+curl -sf \
+    -H "Content-Type: application/json" \
+    -H "Authorization: token ${TOKEN}" \
+    -d "{\"username\":\"${ORG_NAME}\",\"visibility\":\"private\"}" \
+    "${FORGEJO_API}/orgs" >/dev/null 2>&1 \
     && echo "[forgejo-init] Org created." \
     || echo "[forgejo-init] Org already exists (ok)."
 

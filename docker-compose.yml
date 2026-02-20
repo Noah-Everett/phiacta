@@ -23,8 +23,6 @@ services:
       FORGEJO__server__HTTP_PORT: "3000"
       FORGEJO__service__DISABLE_REGISTRATION: "false"
       FORGEJO__security__INSTALL_LOCK: "true"
-    ports:
-      - "3000:3000"
     volumes:
       - forgejo_data:/data
     healthcheck:
