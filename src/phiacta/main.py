@@ -174,17 +174,38 @@ async def debug_claims(request: Request) -> dict[str, Any]:
     }
 
 
-@app.delete("/debug/outbox")
-async def debug_clear_outbox(request: Request) -> dict[str, Any]:
-    """Temporary debug endpoint: delete all failed/stuck outbox entries
-    and reset claims to 'error' so new ones can be created cleanly."""
+@app.post("/debug/backfill-outbox")
+async def debug_backfill_outbox(request: Request) -> dict[str, Any]:
+    """Temporary debug endpoint: create outbox entries for claims stuck
+    in 'provisioning' that have no corresponding outbox entry."""
     engine = request.app.state.engine
     async with engine.begin() as conn:
         result = await conn.execute(
-            text("DELETE FROM outbox WHERE status != 'completed' RETURNING id")
+            text("""
+                INSERT INTO outbox (id, operation, payload, status)
+                SELECT
+                    uuid_generate_v4(),
+                    'create_repo',
+                    jsonb_build_object(
+                        'claim_id', c.id::text,
+                        'title', c.title,
+                        'content', COALESCE(c.content_cache, ''),
+                        'format', COALESCE(c.format, 'markdown'),
+                        'author_id', COALESCE(c.created_by::text, 'service'),
+                        'author_name', COALESCE(a.name, 'phiacta-service')
+                    ),
+                    'pending'
+                FROM claims c
+                LEFT JOIN agents a ON a.id = c.created_by
+                WHERE c.repo_status = 'provisioning'
+                  AND c.forgejo_repo_id IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM outbox o
+                      WHERE o.payload->>'claim_id' = c.id::text
+                        AND o.operation = 'create_repo'
+                  )
+                RETURNING id
+            """)
         )
-        deleted = result.all()
-        await conn.execute(
-            text("UPDATE claims SET repo_status = 'error' WHERE repo_status = 'provisioning'")
-        )
-    return {"deleted_outbox_entries": len(deleted)}
+        created = result.all()
+    return {"created_outbox_entries": len(created)}
