@@ -23,32 +23,20 @@ services:
       FORGEJO__server__HTTP_PORT: "3000"
       FORGEJO__service__DISABLE_REGISTRATION: "false"
       FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO_ADMIN_USER: phiacta-admin
+      FORGEJO_ADMIN_PASSWORD: phiacta-dev-password
+      FORGEJO_ADMIN_EMAIL: admin@phiacta.local
+      FORGEJO_ORG: phiacta
     volumes:
       - forgejo_data:/data
+      - ./docker/forgejo-entrypoint.sh:/forgejo-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/forgejo-entrypoint.sh"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/version"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
-
-  forgejo-init:
-    image: codeberg.org/forgejo/forgejo:10
-    depends_on:
-      forgejo:
-        condition: service_healthy
-    volumes:
-      - forgejo_data:/data
-      - forgejo_token:/run/secrets
-      - ./docker/forgejo-init.sh:/init.sh:ro
-    environment:
-      FORGEJO_WORK_DIR: /data/gitea
-      FORGEJO_CUSTOM: /data/gitea
-      FORGEJO_ADMIN_USER: phiacta-admin
-      FORGEJO_ADMIN_PASSWORD: phiacta-dev-password
-      FORGEJO_ORG: phiacta
-    entrypoint: ["sh", "/init.sh"]
-    restart: "no"
 
   backend:
     build:
@@ -63,8 +51,8 @@ services:
       ENVIRONMENT: "development"
       CORS_ORIGINS: '["http://localhost:3001"]'
       FORGEJO_URL: "http://forgejo:3000"
-      FORGEJO_TOKEN: ""
-      FORGEJO_TOKEN_FILE: "/run/secrets/forgejo-token"
+      FORGEJO_ADMIN_USER: "phiacta-admin"
+      FORGEJO_ADMIN_PASSWORD: "phiacta-dev-password"
       FORGEJO_ORG: "phiacta"
       FORGEJO_WEBHOOK_SECRET: "dev-webhook-secret-not-for-production"
     ports:
@@ -72,12 +60,11 @@ services:
     volumes:
       - ./src:/app/src
       - ./extensions:/app/extensions
-      - forgejo_token:/run/secrets:ro
     depends_on:
       db:
         condition: service_healthy
-      forgejo-init:
-        condition: service_completed_successfully
+      forgejo:
+        condition: service_healthy
     command: >
       uvicorn phiacta.main:app
       --host 0.0.0.0
@@ -99,4 +86,3 @@ services:
 volumes:
   pgdata:
   forgejo_data:
-  forgejo_token:

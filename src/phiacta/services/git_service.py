@@ -14,7 +14,6 @@ import base64
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
@@ -425,32 +424,21 @@ class ForgejoGitService:
     forgejo_url:
         Base URL of the Forgejo instance (e.g. ``http://forgejo:3000``).
         Falls back to ``settings.forgejo_url``.
-    token:
-        API token for the Forgejo service account.  Falls back to
-        ``settings.forgejo_token``.
     """
 
     def __init__(
         self,
         forgejo_url: str | None = None,
-        token: str | None = None,
     ) -> None:
         settings = get_settings()
         self._base_url = (forgejo_url or settings.forgejo_url).rstrip("/")
-        self._token = token or settings.forgejo_token
-        # Fall back to reading token from a file (written by forgejo-init)
-        if not self._token and settings.forgejo_token_file:
-            token_path = Path(settings.forgejo_token_file)
-            if token_path.is_file():
-                self._token = token_path.read_text().strip()
-                logger.info("Loaded Forgejo token from %s", token_path)
         self._org = settings.forgejo_org
         self._webhook_secret = settings.forgejo_webhook_secret
 
         self._client = httpx.AsyncClient(
             base_url=f"{self._base_url}/api/v1",
+            auth=httpx.BasicAuth(settings.forgejo_admin_user, settings.forgejo_admin_password),
             headers={
-                "Authorization": f"token {self._token}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
