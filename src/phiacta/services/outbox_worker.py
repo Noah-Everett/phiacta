@@ -69,9 +69,28 @@ class OutboxWorker:
 
     async def start(self) -> None:
         """Start the polling loop."""
+        # Recover any entries orphaned by a previous crash/restart
+        await self._recover_stale_processing()
         self._running = True
         self._task = asyncio.create_task(self._poll_loop())
         logger.info("Outbox worker started")
+
+    async def _recover_stale_processing(self) -> None:
+        """Reset entries stuck in 'processing' from a previous worker instance."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                update(Outbox)
+                .where(Outbox.status == "processing")
+                .values(status="pending", retry_after=None)
+                .returning(Outbox.id)
+            )
+            rows = result.all()
+            await session.commit()
+            if rows:
+                logger.warning(
+                    "Recovered %d orphaned outbox entries from 'processing' → 'pending'",
+                    len(rows),
+                )
 
     async def stop(self) -> None:
         """Stop the polling loop and close resources."""

@@ -25,10 +25,10 @@ def upgrade() -> None:
         sa.Column("retry_after", sa.DateTime(timezone=True), nullable=True),
     )
 
-    # Reset any stuck failed entries so the new retry logic picks them up
+    # Reset any stuck entries so the new retry logic picks them up
     op.execute(
         "UPDATE outbox SET status = 'pending', attempts = 0, retry_after = NULL "
-        "WHERE status = 'failed'"
+        "WHERE status IN ('failed', 'processing')"
     )
 
 
