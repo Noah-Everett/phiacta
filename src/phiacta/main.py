@@ -112,3 +112,50 @@ async def list_layers(request: Request) -> list[dict[str, Any]]:
         }
         for layer in registry.all_layers()
     ]
+
+
+@app.get("/debug/outbox")
+async def debug_outbox(request: Request) -> dict[str, Any]:
+    """Temporary debug endpoint: show outbox state."""
+    engine = request.app.state.engine
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT id, operation, status, attempts, max_attempts, "
+                "last_error, retry_after, created_at "
+                "FROM outbox ORDER BY created_at"
+            )
+        )
+        rows = result.mappings().all()
+    return {
+        "count": len(rows),
+        "entries": [
+            {
+                "id": str(r["id"]),
+                "operation": r["operation"],
+                "status": r["status"],
+                "attempts": r["attempts"],
+                "max_attempts": r["max_attempts"],
+                "last_error": r["last_error"],
+                "retry_after": str(r["retry_after"]) if r["retry_after"] else None,
+                "created_at": str(r["created_at"]),
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.delete("/debug/outbox")
+async def debug_clear_outbox(request: Request) -> dict[str, Any]:
+    """Temporary debug endpoint: delete all failed/stuck outbox entries
+    and reset claims to 'error' so new ones can be created cleanly."""
+    engine = request.app.state.engine
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text("DELETE FROM outbox WHERE status != 'completed' RETURNING id")
+        )
+        deleted = result.all()
+        await conn.execute(
+            text("UPDATE claims SET repo_status = 'error' WHERE repo_status = 'provisioning'")
+        )
+    return {"deleted_outbox_entries": len(deleted)}
