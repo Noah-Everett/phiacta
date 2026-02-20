@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Initial schema: core tables, indexes, and views.
+"""Initial schema: all tables, indexes, and constraints.
 
 Revision ID: 001
 Revises:
-Create Date: 2026-02-08
+Create Date: 2026-02-20
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-# revision identifiers, used by Alembic.
 revision: str = "001"
 down_revision: str | None = None
 branch_labels: tuple[str, ...] | None = None
@@ -22,27 +21,46 @@ depends_on: tuple[str, ...] | None = None
 
 def upgrade() -> None:
     # ------------------------------------------------------------------
-    # Enable PostgreSQL extensions
+    # PostgreSQL extensions
     # ------------------------------------------------------------------
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
     op.execute('CREATE EXTENSION IF NOT EXISTS "vector"')
 
     # ------------------------------------------------------------------
-    # 1. agents (no deps)
+    # 1. agents
     # ------------------------------------------------------------------
     op.create_table(
         "agents",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
         sa.Column(
-            "agent_type",
-            sa.Text(),
-            nullable=False,
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
         ),
+        sa.Column("agent_type", sa.Text(), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
+        sa.Column("email", sa.Text(), nullable=True),
+        sa.Column("password_hash", sa.Text(), nullable=True),
+        sa.Column(
+            "is_active",
+            sa.Boolean(),
+            nullable=False,
+            server_default="true",
+        ),
         sa.Column("external_id", sa.Text(), nullable=True),
-        sa.Column("trust_score", sa.Float(), nullable=False, server_default="1.0"),
+        sa.Column(
+            "trust_score",
+            sa.Float(),
+            nullable=False,
+            server_default="1.0",
+        ),
         sa.Column("api_key_hash", sa.Text(), nullable=True),
-        sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column(
+            "attrs",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+            server_default="{}",
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -66,17 +84,39 @@ def upgrade() -> None:
         ["external_id"],
         postgresql_where=sa.text("external_id IS NOT NULL"),
     )
+    op.create_index(
+        "idx_agents_email_unique",
+        "agents",
+        ["email"],
+        unique=True,
+        postgresql_where=sa.text("email IS NOT NULL"),
+    )
 
     # ------------------------------------------------------------------
-    # 2. namespaces (self-referential)
+    # 2. namespaces
     # ------------------------------------------------------------------
     op.create_table(
         "namespaces",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
+        sa.Column(
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
         sa.Column("name", sa.Text(), nullable=False),
-        sa.Column("parent_id", sa.Uuid(), sa.ForeignKey("namespaces.id"), nullable=True),
+        sa.Column(
+            "parent_id",
+            sa.Uuid(),
+            sa.ForeignKey("namespaces.id"),
+            nullable=True,
+        ),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column(
+            "attrs",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+            server_default="{}",
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -93,23 +133,38 @@ def upgrade() -> None:
     op.create_index("idx_namespaces_parent", "namespaces", ["parent_id"])
 
     # ------------------------------------------------------------------
-    # 3. sources (depends on agents)
+    # 3. sources
     # ------------------------------------------------------------------
     op.create_table(
         "sources",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
+        sa.Column(
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
         sa.Column("source_type", sa.Text(), nullable=False),
         sa.Column("title", sa.Text(), nullable=True),
         sa.Column("external_ref", sa.Text(), nullable=True),
         sa.Column("content_hash", sa.Text(), nullable=True),
-        sa.Column("submitted_by", sa.Uuid(), sa.ForeignKey("agents.id"), nullable=False),
+        sa.Column(
+            "submitted_by",
+            sa.Uuid(),
+            sa.ForeignKey("agents.id"),
+            nullable=False,
+        ),
         sa.Column(
             "submitted_at",
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.text("now()"),
         ),
-        sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column(
+            "attrs",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+            server_default="{}",
+        ),
         sa.CheckConstraint(
             "source_type IN ("
             "'paper', 'preprint', 'recording', 'photo', 'conversation', "
@@ -131,53 +186,76 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 4. claims (depends on namespaces, agents)
+    # 4. claims (raw SQL for vector/tsvector column types)
     # ------------------------------------------------------------------
     op.execute(
         """
         CREATE TABLE claims (
             id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            title           TEXT NOT NULL,
             claim_type      TEXT NOT NULL,
-            content         TEXT NOT NULL,
-            formal_content  TEXT,
+            format          VARCHAR DEFAULT 'markdown',
+            content_cache   TEXT,
             namespace_id    UUID NOT NULL REFERENCES namespaces(id),
             created_by      UUID NOT NULL REFERENCES agents(id),
+            status          VARCHAR NOT NULL DEFAULT 'active',
+            forgejo_repo_id INTEGER,
+            current_head_sha VARCHAR(40),
+            repo_status     VARCHAR DEFAULT 'provisioning',
+            search_tsv      TSVECTOR,
+            embedding       vector(1536),
+            attrs           JSONB NOT NULL DEFAULT '{}',
+            cached_confidence DOUBLE PRECISION,
+            confidence_updated_at TIMESTAMPTZ,
             created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-            lineage_id      UUID NOT NULL,
-            version         INT NOT NULL DEFAULT 1,
-            supersedes      UUID REFERENCES claims(id),
-            status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN (
-                'draft', 'active', 'deprecated', 'retracted'
-            )),
-            embedding       vector(1536),
-            search_tsv      TSVECTOR,
-            attrs           JSONB NOT NULL DEFAULT '{}',
-            UNIQUE (lineage_id, version)
+            CONSTRAINT ck_claims_status
+                CHECK (status IN ('draft', 'active', 'archived', 'retracted')),
+            CONSTRAINT ck_claims_repo_status
+                CHECK (repo_status IN ('provisioning', 'ready', 'error'))
         )
         """
     )
-    op.execute("CREATE INDEX idx_claims_lineage ON claims(lineage_id, version DESC)")
-    op.execute("CREATE INDEX idx_claims_namespace ON claims(namespace_id)")
-    op.execute("CREATE INDEX idx_claims_created_by ON claims(created_by)")
-    op.execute(
-        "CREATE INDEX idx_claims_embedding ON claims USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+
+    op.create_index("idx_claims_namespace", "claims", ["namespace_id"])
+    op.create_index(
+        "idx_claims_embedding",
+        "claims",
+        ["embedding"],
+        postgresql_using="ivfflat",
+        postgresql_with={"lists": 100},
+        postgresql_ops={"embedding": "vector_cosine_ops"},
     )
-    op.execute("CREATE INDEX idx_claims_search_tsv ON claims USING gin(search_tsv)")
-    op.execute("CREATE INDEX idx_claims_attrs ON claims USING gin(attrs)")
-    op.execute("CREATE INDEX idx_claims_active ON claims(status) WHERE status = 'active'")
+    op.create_index(
+        "idx_claims_search_tsv",
+        "claims",
+        ["search_tsv"],
+        postgresql_using="gin",
+    )
+    op.create_index(
+        "idx_claims_attrs",
+        "claims",
+        ["attrs"],
+        postgresql_using="gin",
+    )
+    op.create_index(
+        "idx_claims_active",
+        "claims",
+        ["status"],
+        postgresql_where=sa.text("status = 'active'"),
+    )
 
     # ------------------------------------------------------------------
-    # 5. relations (depends on claims, agents, sources)
+    # 5. interactions
     # ------------------------------------------------------------------
     op.create_table(
-        "relations",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
-        sa.Column("source_id", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=False),
-        sa.Column("target_id", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=False),
-        sa.Column("relation_type", sa.Text(), nullable=False),
-        sa.Column("strength", sa.Float(), nullable=True),
-        sa.Column("created_by", sa.Uuid(), sa.ForeignKey("agents.id"), nullable=False),
+        "interactions",
+        sa.Column(
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -190,57 +268,99 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("now()"),
         ),
-        sa.Column("source_provenance", sa.Uuid(), sa.ForeignKey("sources.id"), nullable=True),
-        sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
-        sa.UniqueConstraint("source_id", "target_id", "relation_type", "created_by"),
-        sa.CheckConstraint(
-            "strength >= 0.0 AND strength <= 1.0",
-            name="ck_relations_strength",
-        ),
-    )
-    op.create_index("idx_relations_source", "relations", ["source_id"])
-    op.create_index("idx_relations_target", "relations", ["target_id"])
-    op.create_index("idx_relations_type", "relations", ["relation_type"])
-
-    # ------------------------------------------------------------------
-    # 6. provenance (depends on claims, sources, agents)
-    # ------------------------------------------------------------------
-    op.create_table(
-        "provenance",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
-        sa.Column("claim_id", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=False),
-        sa.Column("source_id", sa.Uuid(), sa.ForeignKey("sources.id"), nullable=False),
-        sa.Column("extracted_by", sa.Uuid(), sa.ForeignKey("agents.id"), nullable=False),
-        sa.Column("extraction_method", sa.Text(), nullable=True),
-        sa.Column("location_in_source", sa.Text(), nullable=True),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
-            "extracted_at",
-            sa.DateTime(timezone=True),
+            "claim_id",
+            sa.Uuid(),
+            sa.ForeignKey("claims.id", ondelete="RESTRICT"),
             nullable=False,
-            server_default=sa.text("now()"),
         ),
+        sa.Column(
+            "author_id",
+            sa.Uuid(),
+            sa.ForeignKey("agents.id"),
+            nullable=False,
+        ),
+        sa.Column("kind", sa.String(), nullable=False),
+        sa.Column("signal", sa.String(), nullable=True),
         sa.Column("confidence", sa.Float(), nullable=True),
-        sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
-        sa.UniqueConstraint("claim_id", "source_id", "extracted_by"),
+        sa.Column(
+            "weight",
+            sa.Float(),
+            nullable=False,
+            server_default="1.0",
+        ),
+        sa.Column("author_trust_snapshot", sa.Float(), nullable=True),
+        sa.Column("body", sa.Text(), nullable=True),
+        sa.Column("origin_uri", sa.Text(), nullable=True),
+        sa.Column(
+            "attrs",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+            server_default="{}",
+        ),
         sa.CheckConstraint(
-            "confidence >= 0.0 AND confidence <= 1.0",
-            name="ck_provenance_confidence",
+            "kind IN ('vote', 'review')",
+            name="ck_interactions_kind",
+        ),
+        sa.CheckConstraint(
+            "signal IS NULL OR signal IN ('agree', 'disagree', 'neutral')",
+            name="ck_interactions_signal",
+        ),
+        sa.CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)",
+            name="ck_interactions_confidence",
+        ),
+        sa.CheckConstraint(
+            "(signal IS NULL AND confidence IS NULL)"
+            " OR (signal IS NOT NULL AND confidence IS NOT NULL)",
+            name="ck_interactions_signal_confidence",
+        ),
+        sa.CheckConstraint(
+            "kind != 'vote' OR signal IS NOT NULL",
+            name="ck_interactions_vote_signal",
+        ),
+        sa.CheckConstraint(
+            "kind != 'review' OR body IS NOT NULL",
+            name="ck_interactions_body_required",
         ),
     )
-    op.create_index("idx_provenance_claim", "provenance", ["claim_id"])
-    op.create_index("idx_provenance_source", "provenance", ["source_id"])
+    op.create_index("idx_interactions_claim", "interactions", ["claim_id"])
+    op.create_index("idx_interactions_author", "interactions", ["author_id"])
+    op.create_index(
+        "idx_interactions_claim_signal",
+        "interactions",
+        ["claim_id", "signal", "confidence"],
+        postgresql_where=sa.text(
+            "signal IS NOT NULL AND deleted_at IS NULL"
+        ),
+    )
+    op.create_index(
+        "idx_interactions_claim_kind",
+        "interactions",
+        ["claim_id", "kind"],
+    )
+    op.create_index(
+        "uq_interactions_claim_author_signal",
+        "interactions",
+        ["claim_id", "author_id"],
+        unique=True,
+        postgresql_where=sa.text(
+            "signal IS NOT NULL AND deleted_at IS NULL"
+        ),
+    )
 
     # ------------------------------------------------------------------
-    # 7. reviews (depends on claims, agents)
+    # 6. references
     # ------------------------------------------------------------------
     op.create_table(
-        "reviews",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
-        sa.Column("claim_id", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=False),
-        sa.Column("reviewer_id", sa.Uuid(), sa.ForeignKey("agents.id"), nullable=False),
-        sa.Column("verdict", sa.Text(), nullable=False),
-        sa.Column("confidence", sa.Float(), nullable=False),
-        sa.Column("comment", sa.Text(), nullable=True),
+        "references",
+        sa.Column(
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -253,35 +373,168 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("now()"),
         ),
-        sa.UniqueConstraint("claim_id", "reviewer_id"),
-        sa.CheckConstraint(
-            "confidence >= 0.0 AND confidence <= 1.0",
-            name="ck_reviews_confidence",
+        sa.Column("source_uri", sa.String(), nullable=False),
+        sa.Column("target_uri", sa.String(), nullable=False),
+        sa.Column("role", sa.String(), nullable=False),
+        sa.Column(
+            "created_by",
+            sa.Uuid(),
+            sa.ForeignKey("agents.id"),
+            nullable=False,
+        ),
+        sa.Column("source_type", sa.String(), nullable=False),
+        sa.Column("target_type", sa.String(), nullable=False),
+        sa.Column(
+            "source_claim_id",
+            sa.Uuid(),
+            sa.ForeignKey("claims.id"),
+            nullable=True,
+        ),
+        sa.Column(
+            "target_claim_id",
+            sa.Uuid(),
+            sa.ForeignKey("claims.id"),
+            nullable=True,
         ),
     )
-    op.create_index("idx_reviews_claim", "reviews", ["claim_id"])
-    op.create_index("idx_reviews_reviewer", "reviews", ["reviewer_id"])
+    op.create_index("idx_references_source_uri", "references", ["source_uri"])
+    op.create_index("idx_references_target_uri", "references", ["target_uri"])
+    op.create_index(
+        "idx_references_source_claim", "references", ["source_claim_id"]
+    )
+    op.create_index(
+        "idx_references_target_claim", "references", ["target_claim_id"]
+    )
+    op.create_index(
+        "idx_references_source_type", "references", ["source_type"]
+    )
+    op.create_index(
+        "idx_references_target_type", "references", ["target_type"]
+    )
+    op.create_index(
+        "uq_references_source_target_role",
+        "references",
+        ["source_uri", "target_uri", "role"],
+        unique=True,
+    )
 
     # ------------------------------------------------------------------
-    # 8. bundles (depends on agents)
+    # 7. outbox
+    # ------------------------------------------------------------------
+    op.create_table(
+        "outbox",
+        sa.Column(
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column("operation", sa.String(), nullable=False),
+        sa.Column(
+            "payload",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+        ),
+        sa.Column(
+            "status",
+            sa.String(),
+            nullable=False,
+            server_default="pending",
+        ),
+        sa.Column(
+            "attempts",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+        ),
+        sa.Column(
+            "max_attempts",
+            sa.Integer(),
+            nullable=False,
+            server_default="5",
+        ),
+        sa.Column("last_error", sa.Text(), nullable=True),
+        sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("retry_after", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "status IN ('pending', 'processing', 'completed', 'failed')",
+            name="ck_outbox_status",
+        ),
+    )
+    op.create_index(
+        "idx_outbox_pending",
+        "outbox",
+        ["created_at"],
+        postgresql_where=sa.text("status = 'pending'"),
+    )
+
+    # ------------------------------------------------------------------
+    # 8. bundles
     # ------------------------------------------------------------------
     op.create_table(
         "bundles",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
+        sa.Column(
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
         sa.Column("idempotency_key", sa.Text(), nullable=False, unique=True),
-        sa.Column("submitted_by", sa.Uuid(), sa.ForeignKey("agents.id"), nullable=False),
-        sa.Column("extension_id", sa.Text(), nullable=False),
-        sa.Column("status", sa.Text(), nullable=False, server_default="accepted"),
-        sa.Column("claim_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("relation_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("artifact_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column(
+            "submitted_by",
+            sa.Uuid(),
+            sa.ForeignKey("agents.id"),
+            nullable=False,
+        ),
+        sa.Column("extension_id", sa.String(), nullable=True),
+        sa.Column(
+            "status",
+            sa.Text(),
+            nullable=False,
+            server_default="accepted",
+        ),
+        sa.Column(
+            "claim_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+        ),
+        sa.Column(
+            "reference_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+        ),
+        sa.Column(
+            "artifact_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+        ),
         sa.Column(
             "submitted_at",
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.text("now()"),
         ),
-        sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column(
+            "attrs",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+            server_default="{}",
+        ),
         sa.CheckConstraint(
             "status IN ('accepted', 'rejected', 'processing')",
             name="ck_bundles_status",
@@ -289,18 +542,37 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 9. artifacts (depends on bundles)
+    # 9. artifacts
     # ------------------------------------------------------------------
     op.create_table(
         "artifacts",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
-        sa.Column("bundle_id", sa.Uuid(), sa.ForeignKey("bundles.id"), nullable=True),
+        sa.Column(
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
+        sa.Column(
+            "bundle_id",
+            sa.Uuid(),
+            sa.ForeignKey("bundles.id"),
+            nullable=True,
+        ),
         sa.Column("artifact_type", sa.Text(), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("storage_ref", sa.Text(), nullable=True),
         sa.Column("content_inline", sa.Text(), nullable=True),
-        sa.Column("structured_data", sa.JSON(), nullable=True),
-        sa.Column("attrs", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column(
+            "structured_data",
+            sa.dialects.postgresql.JSONB(),
+            nullable=True,
+        ),
+        sa.Column(
+            "attrs",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+            server_default="{}",
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -310,54 +582,133 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 10. artifact_claims (depends on artifacts, claims)
+    # 10. artifact_claims
     # ------------------------------------------------------------------
     op.create_table(
         "artifact_claims",
-        sa.Column("artifact_id", sa.Uuid(), sa.ForeignKey("artifacts.id"), primary_key=True),
-        sa.Column("claim_id", sa.Uuid(), sa.ForeignKey("claims.id"), primary_key=True),
+        sa.Column(
+            "artifact_id",
+            sa.Uuid(),
+            sa.ForeignKey("artifacts.id"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "claim_id",
+            sa.Uuid(),
+            sa.ForeignKey("claims.id"),
+            primary_key=True,
+        ),
     )
 
     # ------------------------------------------------------------------
-    # 11. pending_references (depends on claims)
+    # 11. extensions
     # ------------------------------------------------------------------
     op.create_table(
-        "pending_references",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
-        sa.Column("source_claim_id", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=False),
-        sa.Column("external_ref", sa.Text(), nullable=False),
-        sa.Column("relation_type", sa.Text(), nullable=False),
-        sa.Column("status", sa.Text(), nullable=False, server_default="pending"),
-        sa.Column("resolved_to", sa.Uuid(), sa.ForeignKey("claims.id"), nullable=True),
+        "extensions",
+        sa.Column(
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.text("now()"),
         ),
-        sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column("name", sa.String(128), nullable=False, unique=True),
+        sa.Column("version", sa.String(64), nullable=False),
+        sa.Column("extension_type", sa.String(32), nullable=False),
+        sa.Column("base_url", sa.String(2048), nullable=False),
+        sa.Column("description", sa.String(1024), nullable=True),
+        sa.Column(
+            "registered_by",
+            sa.Uuid(),
+            sa.ForeignKey("agents.id"),
+            nullable=False,
+        ),
+        sa.Column(
+            "health_status",
+            sa.String(16),
+            nullable=False,
+            server_default="unknown",
+        ),
+        sa.Column(
+            "last_heartbeat",
+            sa.DateTime(timezone=True),
+            nullable=True,
+        ),
+        sa.Column(
+            "manifest",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+            server_default="{}",
+        ),
+        sa.Column(
+            "subscribed_events",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+            server_default="[]",
+        ),
         sa.CheckConstraint(
-            "status IN ('pending', 'resolved', 'expired')",
-            name="ck_pending_references_status",
+            "extension_type IN ('ingestion', 'analysis', 'integration')",
+            name="ck_extensions_type",
+        ),
+        sa.CheckConstraint(
+            "health_status IN ('healthy', 'unhealthy', 'unknown')",
+            name="ck_extensions_health_status",
         ),
     )
     op.create_index(
-        "idx_pending_refs_external",
-        "pending_references",
-        ["external_ref"],
-        postgresql_where=sa.text("status = 'pending'"),
+        "idx_extensions_name_version",
+        "extensions",
+        ["name", "version"],
+        unique=True,
+    )
+    op.create_index(
+        "idx_extensions_type",
+        "extensions",
+        ["extension_type"],
+    )
+    op.create_index(
+        "idx_extensions_healthy",
+        "extensions",
+        ["health_status"],
+        postgresql_where=sa.text("health_status = 'healthy'"),
     )
 
     # ------------------------------------------------------------------
-    # 12. layers (registry for interpretability layers)
+    # 12. layers
     # ------------------------------------------------------------------
     op.create_table(
         "layers",
-        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
+        sa.Column(
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
         sa.Column("name", sa.Text(), nullable=False, unique=True),
         sa.Column("version", sa.Text(), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default="true"),
-        sa.Column("config", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column(
+            "enabled",
+            sa.Boolean(),
+            nullable=False,
+            server_default="true",
+        ),
+        sa.Column(
+            "config",
+            sa.dialects.postgresql.JSONB(),
+            nullable=False,
+            server_default="{}",
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -372,40 +723,19 @@ def upgrade() -> None:
         ),
     )
 
-    # ------------------------------------------------------------------
-    # Views
-    # ------------------------------------------------------------------
-
-    # Latest version of each claim lineage
-    op.execute(
-        """
-        CREATE VIEW claims_latest AS
-        SELECT DISTINCT ON (lineage_id) *
-        FROM claims
-        WHERE status IN ('active', 'draft')
-        ORDER BY lineage_id, version DESC
-        """
-    )
-
 
 def downgrade() -> None:
-    # Drop views first
-    op.execute("DROP VIEW IF EXISTS claims_latest")
-
-    # Drop tables in reverse dependency order
     op.drop_table("layers")
-    op.drop_table("pending_references")
+    op.drop_table("extensions")
     op.drop_table("artifact_claims")
     op.drop_table("artifacts")
     op.drop_table("bundles")
-    op.drop_table("reviews")
-    op.drop_table("provenance")
-    op.drop_table("relations")
-    op.execute("DROP TABLE IF EXISTS claims")
+    op.drop_table("outbox")
+    op.drop_table("references")
+    op.drop_table("interactions")
+    op.drop_table("claims")
     op.drop_table("sources")
     op.drop_table("namespaces")
     op.drop_table("agents")
-
-    # Drop extensions
     op.execute('DROP EXTENSION IF EXISTS "vector"')
     op.execute('DROP EXTENSION IF EXISTS "uuid-ossp"')
