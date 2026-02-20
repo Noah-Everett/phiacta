@@ -11,6 +11,12 @@ Usage:
     For the ``create_repo`` operation, the worker executes the full compound
     sequence: create repo -> commit initial files -> setup branch protection
     -> setup webhook.  This is treated as a single atomic outbox entry.
+
+Retry policy:
+    - **Transient errors** (Forgejo unreachable, timeouts, 503): retried
+      indefinitely with exponential backoff (5s, 10s, 20s, ... capped at 5min).
+    - **Permanent errors** (bad payload, 400/404, validation): retried up to
+      ``max_attempts`` (default 5), then marked as ``failed``.
 """
 
 from __future__ import annotations
@@ -18,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select, text, update
@@ -40,6 +46,15 @@ _POLL_INTERVAL = 5.0
 
 # Max entries to claim per poll cycle
 _BATCH_SIZE = 10
+
+# Backoff constants
+_BACKOFF_BASE = 5.0  # seconds
+_BACKOFF_MAX = 300.0  # 5 minutes
+
+
+def _backoff_seconds(attempts: int) -> float:
+    """Exponential backoff: 5s, 10s, 20s, 40s, ... capped at 5 minutes."""
+    return min(_BACKOFF_BASE * (2 ** attempts), _BACKOFF_MAX)
 
 
 class OutboxWorker:
@@ -88,13 +103,20 @@ class OutboxWorker:
 
         Uses SELECT FOR UPDATE SKIP LOCKED so multiple workers can run
         concurrently without processing the same entry.
+
+        Only picks up entries whose ``retry_after`` has passed (or is NULL).
         """
+        now = datetime.now(timezone.utc)
+
         async with self._session_factory() as session:
             async with session.begin():
-                # Claim entries atomically
+                # Claim entries atomically — skip those still in backoff
                 stmt = (
                     select(Outbox)
-                    .where(Outbox.status == "pending")
+                    .where(
+                        Outbox.status == "pending",
+                        (Outbox.retry_after <= now) | (Outbox.retry_after.is_(None)),
+                    )
                     .order_by(Outbox.created_at)
                     .limit(_BATCH_SIZE)
                     .with_for_update(skip_locked=True)
@@ -133,6 +155,7 @@ class OutboxWorker:
                         status="completed",
                         processed_at=datetime.now(timezone.utc),
                         attempts=entry.attempts + 1,
+                        retry_after=None,
                     )
                 )
                 await session.commit()
@@ -141,23 +164,56 @@ class OutboxWorker:
                 )
 
             except ForgejoUnavailableError as exc:
-                # Transient failure — retry later
-                await self._mark_retry(session, entry, str(exc))
+                # Transient: retry indefinitely with backoff
+                await self._mark_transient_retry(session, entry, str(exc))
 
             except ForgejoError as exc:
-                # Permanent-ish failure
-                await self._mark_retry(session, entry, str(exc))
+                # Permanent: respect max_attempts
+                await self._mark_permanent_retry(session, entry, str(exc))
 
             except Exception as exc:
                 logger.exception("Unexpected error processing outbox entry %s", entry.id)
-                await self._mark_retry(session, entry, str(exc))
+                await self._mark_permanent_retry(session, entry, str(exc))
 
-    async def _mark_retry(
+    async def _mark_transient_retry(
         self, session: AsyncSession, entry: Outbox, error: str
     ) -> None:
-        """Increment attempts and mark as pending (or failed if exhausted)."""
+        """Transient failure (Forgejo down) — retry with backoff, no attempt limit."""
+        new_attempts = entry.attempts + 1
+        backoff = _backoff_seconds(new_attempts)
+        retry_at = datetime.now(timezone.utc) + timedelta(seconds=backoff)
+
+        await session.execute(
+            update(Outbox)
+            .where(Outbox.id == entry.id)
+            .values(
+                status="pending",
+                attempts=new_attempts,
+                last_error=error[:2000],
+                retry_after=retry_at,
+            )
+        )
+        await session.commit()
+
+        logger.warning(
+            "Outbox entry %s (%s) transient failure, retry in %.0fs: %s",
+            entry.id,
+            entry.operation,
+            backoff,
+            error[:200],
+        )
+
+    async def _mark_permanent_retry(
+        self, session: AsyncSession, entry: Outbox, error: str
+    ) -> None:
+        """Permanent failure — retry up to max_attempts, then fail."""
         new_attempts = entry.attempts + 1
         new_status = "failed" if new_attempts >= entry.max_attempts else "pending"
+        retry_at = (
+            None
+            if new_status == "failed"
+            else datetime.now(timezone.utc) + timedelta(seconds=_backoff_seconds(new_attempts))
+        )
 
         await session.execute(
             update(Outbox)
@@ -166,8 +222,22 @@ class OutboxWorker:
                 status=new_status,
                 attempts=new_attempts,
                 last_error=error[:2000],
+                retry_after=retry_at,
             )
         )
+
+        # If a create_repo entry permanently failed, mark the claim as error
+        if new_status == "failed" and entry.operation == "create_repo":
+            claim_id = entry.payload.get("claim_id")
+            if claim_id:
+                await session.execute(
+                    text("""
+                        UPDATE claims SET repo_status = 'error'
+                        WHERE id = :claim_id AND repo_status = 'provisioning'
+                    """),
+                    {"claim_id": claim_id},
+                )
+
         await session.commit()
 
         if new_status == "failed":
