@@ -145,6 +145,35 @@ async def debug_outbox(request: Request) -> dict[str, Any]:
     }
 
 
+@app.get("/debug/claims")
+async def debug_claims(request: Request) -> dict[str, Any]:
+    """Temporary debug endpoint: show claim repo statuses."""
+    engine = request.app.state.engine
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT id, title, repo_status, forgejo_repo_id, "
+                "current_head_sha, created_at "
+                "FROM claims ORDER BY created_at"
+            )
+        )
+        rows = result.mappings().all()
+    return {
+        "count": len(rows),
+        "claims": [
+            {
+                "id": str(r["id"]),
+                "title": r["title"],
+                "repo_status": r["repo_status"],
+                "forgejo_repo_id": r["forgejo_repo_id"],
+                "current_head_sha": r["current_head_sha"],
+                "created_at": str(r["created_at"]),
+            }
+            for r in rows
+        ],
+    }
+
+
 @app.delete("/debug/outbox")
 async def debug_clear_outbox(request: Request) -> dict[str, Any]:
     """Temporary debug endpoint: delete all failed/stuck outbox entries
