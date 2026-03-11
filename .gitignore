@@ -22,9 +22,7 @@ htmlcov/
 
 *.log
 
-node_modules/
 .DS_Store
 
 # Production secrets
 .env.prod
-cloudflared/credentials.json
