@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.config import get_settings
 from phiacta.db.session import get_db
-from phiacta.extensions.dispatcher import dispatch_event
 
 logger = logging.getLogger(__name__)
 
@@ -121,14 +120,3 @@ async def _handle_push(payload: dict, db: AsyncSession) -> None:
         )
 
     await db.commit()
-
-    # Dispatch event for extensions
-    await dispatch_event(
-        db,
-        "entry.content_updated",
-        {
-            "entry_id": str(entry_id),
-            "head_sha": after_sha,
-            "ref": ref,
-        },
-    )

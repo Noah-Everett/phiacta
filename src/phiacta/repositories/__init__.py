@@ -5,12 +5,10 @@ from phiacta.repositories.agent_repository import AgentRepository
 from phiacta.repositories.base import BaseRepository
 from phiacta.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.repositories.entry_repository import EntryRepository
-from phiacta.repositories.extension_repository import ExtensionRepository
 
 __all__ = [
     "AgentRepository",
     "BaseRepository",
     "EntryRefRepository",
     "EntryRepository",
-    "ExtensionRepository",
 ]

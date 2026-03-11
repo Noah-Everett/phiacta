@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
-from phiacta.extensions.dispatcher import dispatch_event
 from phiacta.models.agent import Agent
 from phiacta.models.entry import Entry
 from phiacta.models.outbox import Outbox
@@ -101,9 +100,6 @@ async def create_entry(
     db.add(outbox_entry)
 
     await db.commit()
-    await dispatch_event(
-        db, "entry.created", {"entry_ids": [str(entry.id)]}
-    )
 
     return EntryResponse.model_validate(entry)
 

@@ -5,7 +5,6 @@ from phiacta.models.agent import Agent
 from phiacta.models.base import Base, TimestampMixin, UUIDMixin
 from phiacta.models.entry import Entry
 from phiacta.models.entry_ref import EntryRef
-from phiacta.models.extension import Extension
 from phiacta.models.outbox import Outbox
 
 __all__ = [
@@ -13,7 +12,6 @@ __all__ = [
     "Base",
     "Entry",
     "EntryRef",
-    "Extension",
     "Outbox",
     "TimestampMixin",
     "UUIDMixin",

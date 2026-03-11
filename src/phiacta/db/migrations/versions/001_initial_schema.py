@@ -230,85 +230,9 @@ def upgrade() -> None:
         postgresql_where=sa.text("status = 'pending'"),
     )
 
-    # ------------------------------------------------------------------
-    # 5. extensions
-    # ------------------------------------------------------------------
-    op.create_table(
-        "extensions",
-        sa.Column(
-            "id",
-            sa.Uuid(),
-            primary_key=True,
-            server_default=sa.text("uuid_generate_v4()"),
-        ),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.Column("name", sa.String(128), nullable=False, unique=True),
-        sa.Column("version", sa.String(64), nullable=False),
-        sa.Column("extension_type", sa.String(32), nullable=False),
-        sa.Column("base_url", sa.String(2048), nullable=False),
-        sa.Column("description", sa.String(1024), nullable=True),
-        sa.Column(
-            "registered_by",
-            sa.Uuid(),
-            sa.ForeignKey("agents.id"),
-            nullable=False,
-        ),
-        sa.Column(
-            "health_status",
-            sa.String(16),
-            nullable=False,
-            server_default="unknown",
-        ),
-        sa.Column(
-            "last_heartbeat",
-            sa.DateTime(timezone=True),
-            nullable=True,
-        ),
-        sa.Column(
-            "manifest",
-            sa.dialects.postgresql.JSONB(),
-            nullable=False,
-            server_default="{}",
-        ),
-        sa.Column(
-            "subscribed_events",
-            sa.dialects.postgresql.JSONB(),
-            nullable=False,
-            server_default="[]",
-        ),
-    )
-    op.create_index(
-        "idx_extensions_name_version",
-        "extensions",
-        ["name", "version"],
-        unique=True,
-    )
-    op.create_index(
-        "idx_extensions_type",
-        "extensions",
-        ["extension_type"],
-    )
-    op.create_index(
-        "idx_extensions_healthy",
-        "extensions",
-        ["health_status"],
-        postgresql_where=sa.text("health_status = 'healthy'"),
-    )
 
 
 def downgrade() -> None:
-    op.drop_table("extensions")
     op.drop_table("outbox")
     op.drop_table("entry_refs")
     op.drop_table("entries")

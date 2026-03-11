@@ -17,14 +17,6 @@ class Settings(BaseSettings):
     cors_origins: list[str] = []
     database_pool_size: int = 20
 
-    # Extensions
-    max_extensions: int = 100
-    extension_dispatch_timeout: float = 10.0
-    extension_health_check_timeout: float = 5.0
-    extension_register_rate_limit: int = 10  # per minute
-    extension_heartbeat_rate_limit: int = 60  # per minute
-    extension_allowed_hosts: list[str] = []
-
     # Auth
     jwt_secret_key: str
     access_token_expire_minutes: int = 1440
