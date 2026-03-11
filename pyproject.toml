@@ -13,7 +13,6 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
     "alembic>=1.14",
-    "pgvector>=0.3",
 
     # Auth
     "PyJWT[crypto]>=2.8",
@@ -23,17 +22,11 @@ dependencies = [
     # Rate limiting
     "slowapi>=0.1.9",
 
-    # HTTP / WebSocket
-    "websockets>=14.0",
+    # HTTP
     "httpx>=0.28",
-    "tenacity>=9.0",
 
     # Logging
     "structlog>=24.4",
-
-    # AI/ML
-    "openai>=1.58",
-    "tiktoken>=0.8",
 ]
 
 [project.optional-dependencies]
@@ -41,15 +34,11 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
-    "factory-boy>=3.3",
     "mypy>=1.13",
     "ruff>=0.8",
     "pre-commit>=4.0",
 ]
-extensions = [
-    "pymupdf>=1.25",  # PDF parsing for paper ingestion
-]
-all = ["phiacta[dev,extensions]"]
+all = ["phiacta[dev]"]
 
 [build-system]
 requires = ["hatchling"]
@@ -67,18 +56,12 @@ select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "PT", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/phiacta/db/migrations/versions/*.py" = ["E501"]
-"src/phiacta/layers/*/layer.py" = ["E501"]
-"src/phiacta/layers/*/routes.py" = ["E501", "B008"]
 "src/phiacta/api/*.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-
-[[tool.mypy.overrides]]
-module = "pgvector.*"
-ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

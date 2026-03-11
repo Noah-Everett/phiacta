@@ -22,7 +22,8 @@ async def search_entries(
 ) -> SearchResponse:
     # Full-text search deferred to Phase 4 (Discovery).
     # For now, do a simple ILIKE title search as a placeholder.
-    stmt = select(Entry).where(Entry.title.ilike(f"%{body.query}%"))
+    escaped = body.query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    stmt = select(Entry).where(Entry.title.ilike(f"%{escaped}%"))
 
     if body.layout_hint is not None:
         stmt = stmt.where(Entry.layout_hint == body.layout_hint)

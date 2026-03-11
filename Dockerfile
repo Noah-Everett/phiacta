@@ -49,14 +49,13 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml .
 COPY src/ src/
 RUN uv pip install --system --no-cache .
-COPY extensions/ extensions/
 COPY alembic.ini .
 COPY scripts/entrypoint.prod.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Non-root user for production
-RUN groupadd -r newpub && useradd -r -g newpub newpub
-USER newpub
+RUN groupadd -r phiacta && useradd -r -g phiacta phiacta
+USER phiacta
 
 EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]

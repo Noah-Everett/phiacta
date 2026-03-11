@@ -3,14 +3,14 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: phiacta
-      POSTGRES_USER: newpub
+      POSTGRES_USER: phiacta
       POSTGRES_PASSWORD: devpassword
     ports:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U newpub -d phiacta"]
+      test: ["CMD-SHELL", "pg_isready -U phiacta -d phiacta"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -44,8 +44,7 @@ services:
       dockerfile: Dockerfile
       target: development
     environment:
-      DATABASE_URL: "postgresql+asyncpg://newpub:devpassword@db:5432/phiacta"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      DATABASE_URL: "postgresql+asyncpg://phiacta:devpassword@db:5432/phiacta"
       JWT_SECRET_KEY: "dev-secret-not-for-production-use-only"
       LOG_LEVEL: "debug"
       ENVIRONMENT: "development"
@@ -59,7 +58,6 @@ services:
       - "8000:8000"
     volumes:
       - ./src:/app/src
-      - ./extensions:/app/extensions
     depends_on:
       db:
         condition: service_healthy
