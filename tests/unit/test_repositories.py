@@ -14,7 +14,6 @@ from phiacta.repositories.agent_repository import AgentRepository
 from phiacta.repositories.base import BaseRepository
 from phiacta.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.repositories.entry_repository import EntryRepository
-from phiacta.repositories.interaction_repository import InteractionRepository
 
 
 class TestBaseRepositoryInstantiation:
@@ -64,16 +63,6 @@ class TestEntryRefRepositoryInstantiation:
         assert callable(getattr(repo, "list_by_entry", None))
         assert callable(getattr(repo, "list_by_rel", None))
         assert callable(getattr(repo, "count_all", None))
-
-
-class TestInteractionRepositoryInstantiation:
-    def test_interaction_repository_has_custom_methods(self) -> None:
-        mock_session = MagicMock(spec=AsyncSession)
-        repo = InteractionRepository(mock_session)
-        assert callable(getattr(repo, "list_by_entry", None))
-        assert callable(getattr(repo, "get_signal_by_agent", None))
-        assert callable(getattr(repo, "get_with_author", None))
-        assert callable(getattr(repo, "soft_delete", None))
 
 
 class TestBaseRepositoryInheritance:

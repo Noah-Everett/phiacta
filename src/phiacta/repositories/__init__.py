@@ -6,7 +6,6 @@ from phiacta.repositories.base import BaseRepository
 from phiacta.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.repositories.entry_repository import EntryRepository
 from phiacta.repositories.extension_repository import ExtensionRepository
-from phiacta.repositories.interaction_repository import InteractionRepository
 
 __all__ = [
     "AgentRepository",
@@ -14,5 +13,4 @@ __all__ = [
     "EntryRefRepository",
     "EntryRepository",
     "ExtensionRepository",
-    "InteractionRepository",
 ]

@@ -231,112 +231,7 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 5. interactions
-    # ------------------------------------------------------------------
-    op.create_table(
-        "interactions",
-        sa.Column(
-            "id",
-            sa.Uuid(),
-            primary_key=True,
-            server_default=sa.text("uuid_generate_v4()"),
-        ),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column(
-            "entry_id",
-            sa.Uuid(),
-            sa.ForeignKey("entries.id", ondelete="RESTRICT"),
-            nullable=False,
-        ),
-        sa.Column(
-            "author_id",
-            sa.Uuid(),
-            sa.ForeignKey("agents.id"),
-            nullable=False,
-        ),
-        sa.Column("kind", sa.String(), nullable=False),
-        sa.Column("signal", sa.String(), nullable=True),
-        sa.Column("confidence", sa.Float(), nullable=True),
-        sa.Column(
-            "weight",
-            sa.Float(),
-            nullable=False,
-            server_default="1.0",
-        ),
-        sa.Column("author_trust_snapshot", sa.Float(), nullable=True),
-        sa.Column("body", sa.Text(), nullable=True),
-        sa.Column("origin_uri", sa.Text(), nullable=True),
-        sa.Column(
-            "attrs",
-            sa.dialects.postgresql.JSONB(),
-            nullable=False,
-            server_default="{}",
-        ),
-        sa.CheckConstraint(
-            "kind IN ('vote', 'review')",
-            name="ck_interactions_kind",
-        ),
-        sa.CheckConstraint(
-            "signal IS NULL OR signal IN ('agree', 'disagree', 'neutral')",
-            name="ck_interactions_signal",
-        ),
-        sa.CheckConstraint(
-            "confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)",
-            name="ck_interactions_confidence",
-        ),
-        sa.CheckConstraint(
-            "(signal IS NULL AND confidence IS NULL)"
-            " OR (signal IS NOT NULL AND confidence IS NOT NULL)",
-            name="ck_interactions_signal_confidence",
-        ),
-        sa.CheckConstraint(
-            "kind != 'vote' OR signal IS NOT NULL",
-            name="ck_interactions_vote_signal",
-        ),
-        sa.CheckConstraint(
-            "kind != 'review' OR body IS NOT NULL",
-            name="ck_interactions_body_required",
-        ),
-    )
-    op.create_index("idx_interactions_entry", "interactions", ["entry_id"])
-    op.create_index("idx_interactions_author", "interactions", ["author_id"])
-    op.create_index(
-        "idx_interactions_entry_signal",
-        "interactions",
-        ["entry_id", "signal", "confidence"],
-        postgresql_where=sa.text(
-            "signal IS NOT NULL AND deleted_at IS NULL"
-        ),
-    )
-    op.create_index(
-        "idx_interactions_entry_kind",
-        "interactions",
-        ["entry_id", "kind"],
-    )
-    op.create_index(
-        "uq_interactions_entry_author_signal",
-        "interactions",
-        ["entry_id", "author_id"],
-        unique=True,
-        postgresql_where=sa.text(
-            "signal IS NOT NULL AND deleted_at IS NULL"
-        ),
-    )
-
-    # ------------------------------------------------------------------
-    # 6. extensions
+    # 5. extensions
     # ------------------------------------------------------------------
     op.create_table(
         "extensions",
@@ -414,7 +309,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("extensions")
-    op.drop_table("interactions")
     op.drop_table("outbox")
     op.drop_table("entry_refs")
     op.drop_table("entries")

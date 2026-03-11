@@ -9,7 +9,6 @@ from phiacta.models.agent import Agent
 from phiacta.models.base import Base, TimestampMixin, UUIDMixin
 from phiacta.models.entry import Entry
 from phiacta.models.entry_ref import EntryRef
-from phiacta.models.interaction import Interaction
 from phiacta.models.outbox import Outbox
 
 
@@ -54,35 +53,6 @@ class TestEntryDefaults:
                 created_by=uuid4(),
             )
             assert entry.layout_hint == hint
-
-
-class TestInteractionDefaults:
-    def test_vote_interaction(self) -> None:
-        interaction = Interaction(
-            entry_id=uuid4(),
-            author_id=uuid4(),
-            kind="vote",
-            signal="agree",
-            confidence=0.9,
-            attrs={},
-        )
-        assert interaction.kind == "vote"
-        assert interaction.signal == "agree"
-        assert interaction.confidence == 0.9
-        assert interaction.body is None
-
-    def test_review_interaction(self) -> None:
-        interaction = Interaction(
-            entry_id=uuid4(),
-            author_id=uuid4(),
-            kind="review",
-            signal="disagree",
-            confidence=0.7,
-            body="This entry has issues",
-            attrs={},
-        )
-        assert interaction.kind == "review"
-        assert interaction.body == "This entry has issues"
 
 
 class TestEntryRefDefaults:

@@ -58,9 +58,6 @@ class Entry(UUIDMixin, TimestampMixin, Base):
     )
 
     # Relationships
-    interactions: Mapped[list[Interaction]] = relationship(  # type: ignore[name-defined]  # noqa: F821
-        back_populates="entry",
-    )
     created_by_agent: Mapped[Agent] = relationship(  # type: ignore[name-defined]  # noqa: F821
         foreign_keys="[Entry.created_by]",
     )

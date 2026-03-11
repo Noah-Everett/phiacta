@@ -18,9 +18,6 @@ ALLOWED_EVENT_TYPES = frozenset(
         "entry.updated",
         "entry.content_updated",
         "entry_ref.created",
-        "interaction.created",
-        "interaction.updated",
-        "interaction.deleted",
     }
 )
 
