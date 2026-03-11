@@ -5,27 +5,21 @@ from fastapi import APIRouter
 
 from phiacta.api.agents import router as agents_router
 from phiacta.api.auth import router as auth_router
-from phiacta.api.bundles import router as bundles_router
-from phiacta.api.claims import router as claims_router
+from phiacta.api.entries import router as entries_router
+from phiacta.api.entry_refs import router as entry_refs_router
 from phiacta.api.extensions import router as extensions_router
 from phiacta.api.interactions import (
-    claim_interactions_router,
+    entry_interactions_router,
     interactions_router,
 )
-from phiacta.api.namespaces import router as namespaces_router
-from phiacta.api.references import router as references_router
 from phiacta.api.search import router as search_router
-from phiacta.api.sources import router as sources_router
 
 v1_router = APIRouter()
 v1_router.include_router(auth_router)
-v1_router.include_router(claims_router)
-v1_router.include_router(claim_interactions_router)
+v1_router.include_router(entries_router)
+v1_router.include_router(entry_interactions_router)
 v1_router.include_router(interactions_router)
 v1_router.include_router(agents_router)
-v1_router.include_router(references_router)
-v1_router.include_router(sources_router)
-v1_router.include_router(bundles_router)
-v1_router.include_router(namespaces_router)
+v1_router.include_router(entry_refs_router)
 v1_router.include_router(search_router)
 v1_router.include_router(extensions_router)

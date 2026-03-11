@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -18,9 +18,9 @@ class InteractionRepository(BaseRepository[Interaction]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, Interaction)
 
-    async def list_by_claim(
+    async def list_by_entry(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         *,
         kind: str | None = None,
         signal: str | None = None,
@@ -32,7 +32,7 @@ class InteractionRepository(BaseRepository[Interaction]):
         stmt = (
             select(Interaction)
             .where(
-                Interaction.claim_id == claim_id,
+                Interaction.entry_id == entry_id,
                 Interaction.deleted_at.is_(None),
             )
             .options(selectinload(Interaction.author))
@@ -54,11 +54,11 @@ class InteractionRepository(BaseRepository[Interaction]):
         return list(result.scalars().all())
 
     async def get_signal_by_agent(
-        self, claim_id: UUID, author_id: UUID
+        self, entry_id: UUID, author_id: UUID
     ) -> Interaction | None:
         result = await self.session.execute(
             select(Interaction).where(
-                Interaction.claim_id == claim_id,
+                Interaction.entry_id == entry_id,
                 Interaction.author_id == author_id,
                 Interaction.signal.is_not(None),
                 Interaction.deleted_at.is_(None),
@@ -77,19 +77,19 @@ class InteractionRepository(BaseRepository[Interaction]):
         return result.scalar_one_or_none()
 
     async def soft_delete(self, interaction: Interaction) -> None:
-        interaction.deleted_at = datetime.now(timezone.utc)
+        interaction.deleted_at = datetime.now(UTC)
         await self.session.flush()
 
-    async def count_by_claim(
+    async def count_by_entry(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         *,
         kind: str | None = None,
         signal: str | None = None,
         author_id: UUID | None = None,
     ) -> int:
         stmt = select(func.count()).where(
-            Interaction.claim_id == claim_id,
+            Interaction.entry_id == entry_id,
             Interaction.deleted_at.is_(None),
         )
         if kind is not None:

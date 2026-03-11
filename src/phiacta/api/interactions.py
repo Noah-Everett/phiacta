@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -17,7 +17,7 @@ from phiacta.db.session import get_db
 from phiacta.extensions.dispatcher import dispatch_event
 from phiacta.models.agent import Agent
 from phiacta.models.interaction import Interaction
-from phiacta.repositories.claim_repository import ClaimRepository
+from phiacta.repositories.entry_repository import EntryRepository
 from phiacta.repositories.interaction_repository import InteractionRepository
 from phiacta.schemas.common import PaginatedResponse
 from phiacta.schemas.interaction import (
@@ -38,18 +38,18 @@ _BODY_LIMIT_BY_KIND: dict[str, int] = {
 }
 
 # ---------------------------------------------------------------------------
-# Router 1: /claims/{claim_id}/interactions (list + create)
+# Router 1: /entries/{entry_id}/interactions (list + create)
 # ---------------------------------------------------------------------------
-claim_interactions_router = APIRouter(
-    prefix="/claims/{claim_id}/interactions", tags=["interactions"]
+entry_interactions_router = APIRouter(
+    prefix="/entries/{entry_id}/interactions", tags=["interactions"]
 )
 
 
-@claim_interactions_router.get(
+@entry_interactions_router.get(
     "", response_model=PaginatedResponse[InteractionListResponse]
 )
 async def list_interactions(
-    claim_id: UUID,
+    entry_id: UUID,
     kind: str | None = Query(None, pattern="^(vote|review)$"),
     signal: str | None = Query(None, pattern="^(agree|disagree|neutral)$"),
     author_id: UUID | None = Query(None),
@@ -58,14 +58,14 @@ async def list_interactions(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[InteractionListResponse]:
-    claim_repo = ClaimRepository(db)
-    claim = await claim_repo.get_by_id(claim_id)
-    if claim is None:
-        raise HTTPException(status_code=404, detail="Claim not found")
+    entry_repo = EntryRepository(db)
+    entry = await entry_repo.get_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
 
     repo = InteractionRepository(db)
-    interactions = await repo.list_by_claim(
-        claim_id,
+    interactions = await repo.list_by_entry(
+        entry_id,
         kind=kind,
         signal=signal,
         author_id=author_id,
@@ -74,8 +74,8 @@ async def list_interactions(
         offset=offset,
     )
 
-    total = await repo.count_by_claim(
-        claim_id, kind=kind, signal=signal, author_id=author_id,
+    total = await repo.count_by_entry(
+        entry_id, kind=kind, signal=signal, author_id=author_id,
     )
     items = [InteractionListResponse.model_validate(i) for i in interactions]
     return PaginatedResponse(
@@ -83,45 +83,42 @@ async def list_interactions(
     )
 
 
-@claim_interactions_router.post(
+@entry_interactions_router.post(
     "", response_model=InteractionResponse, status_code=201
 )
 @limiter.limit("30/minute")
 async def create_interaction(
     request: Request,
-    claim_id: UUID,
+    entry_id: UUID,
     body: InteractionCreate,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> InteractionResponse:
-    # Validate claim exists
-    claim_repo = ClaimRepository(db)
-    claim = await claim_repo.get_by_id(claim_id)
-    if claim is None:
-        raise HTTPException(status_code=404, detail="Claim not found")
+    # Validate entry exists
+    entry_repo = EntryRepository(db)
+    entry = await entry_repo.get_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
 
     repo = InteractionRepository(db)
 
-    # Enforce one active signal per agent per claim.
-    # Use a savepoint so a concurrent duplicate triggers IntegrityError
-    # instead of silently passing the check.
+    # Enforce one active signal per agent per entry.
     if body.signal is not None:
-        existing_signal = await repo.get_signal_by_agent(claim_id, agent.id)
+        existing_signal = await repo.get_signal_by_agent(entry_id, agent.id)
         if existing_signal is not None:
             raise HTTPException(
                 status_code=409,
-                detail="You already have an active signal on this claim. "
+                detail="You already have an active signal on this entry. "
                 "Delete your existing vote/review first.",
             )
 
     interaction = Interaction(
-        claim_id=claim_id,
+        entry_id=entry_id,
         author_id=agent.id,
         kind=body.kind,
         signal=body.signal,
         confidence=body.confidence,
         weight=1.0,
-        author_trust_snapshot=agent.trust_score,
         body=body.body,
         attrs=body.attrs,
     )
@@ -132,7 +129,7 @@ async def create_interaction(
         await db.rollback()
         raise HTTPException(
             status_code=409,
-            detail="You already have an active signal on this claim. "
+            detail="You already have an active signal on this entry. "
             "Delete your existing vote/review first.",
         )
 
@@ -144,7 +141,7 @@ async def create_interaction(
         "interaction.created",
         {
             "interaction_id": str(interaction.id),
-            "claim_id": str(claim_id),
+            "entry_id": str(entry_id),
             "kind": body.kind,
             "author_id": str(agent.id),
         },
@@ -198,7 +195,7 @@ async def update_interaction(
 
     # 15-minute edit window
     elapsed = (
-        datetime.now(timezone.utc) - interaction.created_at.replace(tzinfo=timezone.utc)
+        datetime.now(UTC) - interaction.created_at.replace(tzinfo=UTC)
     ).total_seconds()
     if elapsed > _EDIT_WINDOW_SECONDS:
         raise HTTPException(
@@ -224,7 +221,7 @@ async def update_interaction(
     edit_history.append(
         {
             "body": interaction.body,
-            "edited_at": datetime.now(timezone.utc).isoformat(),
+            "edited_at": datetime.now(UTC).isoformat(),
         }
     )
     # Cap edit history to prevent unbounded growth
@@ -244,7 +241,7 @@ async def update_interaction(
         "interaction.updated",
         {
             "interaction_id": str(interaction_id),
-            "claim_id": str(interaction.claim_id),
+            "entry_id": str(interaction.entry_id),
             "author_id": str(agent.id),
         },
     )
@@ -278,7 +275,7 @@ async def delete_interaction(
         "interaction.deleted",
         {
             "interaction_id": str(interaction_id),
-            "claim_id": str(interaction.claim_id),
+            "entry_id": str(interaction.entry_id),
             "author_id": str(agent.id),
         },
     )

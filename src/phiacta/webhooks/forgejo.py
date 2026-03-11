@@ -4,7 +4,7 @@
 """Forgejo webhook handler.
 
 Handles push events from Forgejo to keep Postgres in sync with git state.
-The webhook is registered on each claim repo by the outbox worker during
+The webhook is registered on each entry repo by the outbox worker during
 repo provisioning.
 
 Verification uses HMAC-SHA256 over the request body, matching the shared
@@ -32,11 +32,7 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 
 def _verify_signature(body: bytes, signature: str, secret: str) -> bool:
-    """Verify HMAC-SHA256 signature from Forgejo.
-
-    Forgejo sends the signature in the ``X-Forgejo-Signature`` header
-    as a hex-encoded HMAC-SHA256 digest.
-    """
+    """Verify HMAC-SHA256 signature from Forgejo."""
     if not secret:
         logger.warning("FORGEJO_WEBHOOK_SECRET is not configured — rejecting webhook")
         return False
@@ -54,7 +50,7 @@ async def handle_forgejo_webhook(
     """Handle incoming Forgejo webhook events.
 
     Currently handles:
-    - ``push``: Updates claim ``current_head_sha`` and ``content_cache``.
+    - ``push``: Updates entry ``current_head_sha``.
     """
     settings = get_settings()
 
@@ -77,18 +73,18 @@ async def handle_forgejo_webhook(
 
 
 async def _handle_push(payload: dict, db: AsyncSession) -> None:
-    """Handle a push event: update claim head SHA and content cache.
+    """Handle a push event: update entry head SHA.
 
-    The repo name is the claim UUID (set during repo creation).
+    The repo name is the entry UUID (set during repo creation).
     """
     repo = payload.get("repository", {})
     repo_name = repo.get("name", "")
 
-    # Validate that repo_name is a valid UUID (it should be the claim_id)
+    # Validate that repo_name is a valid UUID (it should be the entry_id)
     try:
-        claim_id = UUID(repo_name)
+        entry_id = UUID(repo_name)
     except ValueError:
-        logger.warning("Push event for non-claim repo: %s", repo_name)
+        logger.warning("Push event for non-entry repo: %s", repo_name)
         return
 
     # Extract the new head SHA
@@ -103,24 +99,23 @@ async def _handle_push(payload: dict, db: AsyncSession) -> None:
         logger.debug("Ignoring push to non-main ref: %s", ref)
         return
 
-    # Update the claim's head SHA
+    # Update the entry's head SHA
     await db.execute(
         text("""
-            UPDATE claims SET current_head_sha = :sha
-            WHERE id = :claim_id
+            UPDATE entries SET current_head_sha = :sha
+            WHERE id = :entry_id
         """),
-        {"sha": after_sha, "claim_id": claim_id},
+        {"sha": after_sha, "entry_id": entry_id},
     )
 
-    # Try to extract content from the push payload's commits
-    # (Forgejo includes modified file content in some webhook configurations)
+    # Log push info
     commits = payload.get("commits", [])
     if commits:
         last_commit = commits[-1]
         message = last_commit.get("message", "")
         logger.info(
-            "Push to claim %s: %s (sha=%s)",
-            claim_id,
+            "Push to entry %s: %s (sha=%s)",
+            entry_id,
             message[:80],
             after_sha[:12],
         )
@@ -130,9 +125,9 @@ async def _handle_push(payload: dict, db: AsyncSession) -> None:
     # Dispatch event for extensions
     await dispatch_event(
         db,
-        "claim.content_updated",
+        "entry.content_updated",
         {
-            "claim_id": str(claim_id),
+            "entry_id": str(entry_id),
             "head_sha": after_sha,
             "ref": ref,
         },

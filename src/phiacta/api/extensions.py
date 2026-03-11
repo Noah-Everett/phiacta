@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
@@ -72,7 +72,7 @@ async def register_extension(
         existing.manifest = body.manifest
         existing.subscribed_events = body.subscribed_events
         existing.health_status = "healthy"
-        existing.last_heartbeat = datetime.now(timezone.utc)
+        existing.last_heartbeat = datetime.now(UTC)
         await db.flush()
         await db.commit()
         return ExtensionResponse.model_validate(existing)
@@ -116,7 +116,7 @@ async def register_extension(
         base_url=body.base_url,
         description=body.description,
         health_status=health_status,
-        last_heartbeat=datetime.now(timezone.utc) if health_status == "healthy" else None,
+        last_heartbeat=datetime.now(UTC) if health_status == "healthy" else None,
         manifest=body.manifest,
         subscribed_events=body.subscribed_events,
         registered_by=agent.id,
@@ -198,7 +198,7 @@ async def heartbeat(
             detail="Only the original registrant may send heartbeats",
         )
     ext.health_status = body.status
-    ext.last_heartbeat = datetime.now(timezone.utc)
+    ext.last_heartbeat = datetime.now(UTC)
     await db.flush()
     await db.commit()
     return ExtensionResponse.model_validate(ext)

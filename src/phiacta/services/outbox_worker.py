@@ -16,7 +16,7 @@ Retry policy:
     - **Transient errors** (Forgejo unreachable, timeouts, 503): retried
       indefinitely with exponential backoff (5s, 10s, 20s, ... capped at 5min).
     - **Permanent errors** (bad payload, 400/404, validation): retried up to
-      ``max_attempts`` (default 5), then marked as ``failed``.
+      5 times, then marked as ``failed``.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select, text, update
@@ -44,12 +44,15 @@ logger = logging.getLogger(__name__)
 # Polling interval in seconds
 _POLL_INTERVAL = 5.0
 
-# Max entries to claim per poll cycle
+# Max entries to process per poll cycle
 _BATCH_SIZE = 10
 
 # Backoff constants
 _BACKOFF_BASE = 5.0  # seconds
 _BACKOFF_MAX = 300.0  # 5 minutes
+
+# Max retry attempts for permanent errors
+_MAX_ATTEMPTS = 5
 
 
 def _backoff_seconds(attempts: int) -> float:
@@ -81,7 +84,7 @@ class OutboxWorker:
             result = await session.execute(
                 update(Outbox)
                 .where(Outbox.status == "processing")
-                .values(status="pending", retry_after=None)
+                .values(status="pending", process_after=None)
                 .returning(Outbox.id)
             )
             rows = result.all()
@@ -123,9 +126,9 @@ class OutboxWorker:
         Uses SELECT FOR UPDATE SKIP LOCKED so multiple workers can run
         concurrently without processing the same entry.
 
-        Only picks up entries whose ``retry_after`` has passed (or is NULL).
+        Only picks up entries whose ``process_after`` has passed (or is NULL).
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         async with self._session_factory() as session:
             async with session.begin():
@@ -134,7 +137,7 @@ class OutboxWorker:
                     select(Outbox)
                     .where(
                         Outbox.status == "pending",
-                        (Outbox.retry_after <= now) | (Outbox.retry_after.is_(None)),
+                        (Outbox.process_after <= now) | (Outbox.process_after.is_(None)),
                     )
                     .order_by(Outbox.created_at)
                     .limit(_BATCH_SIZE)
@@ -172,9 +175,9 @@ class OutboxWorker:
                     .where(Outbox.id == entry.id)
                     .values(
                         status="completed",
-                        processed_at=datetime.now(timezone.utc),
+                        processed_at=datetime.now(UTC),
                         attempts=entry.attempts + 1,
-                        retry_after=None,
+                        process_after=None,
                     )
                 )
                 await session.commit()
@@ -187,7 +190,7 @@ class OutboxWorker:
                 await self._mark_transient_retry(session, entry, str(exc))
 
             except ForgejoError as exc:
-                # Permanent: respect max_attempts
+                # Permanent: respect max attempts
                 await self._mark_permanent_retry(session, entry, str(exc))
 
             except Exception as exc:
@@ -200,7 +203,7 @@ class OutboxWorker:
         """Transient failure (Forgejo down) — retry with backoff, no attempt limit."""
         new_attempts = entry.attempts + 1
         backoff = _backoff_seconds(new_attempts)
-        retry_at = datetime.now(timezone.utc) + timedelta(seconds=backoff)
+        retry_at = datetime.now(UTC) + timedelta(seconds=backoff)
 
         await session.execute(
             update(Outbox)
@@ -209,7 +212,7 @@ class OutboxWorker:
                 status="pending",
                 attempts=new_attempts,
                 last_error=error[:2000],
-                retry_after=retry_at,
+                process_after=retry_at,
             )
         )
         await session.commit()
@@ -225,13 +228,13 @@ class OutboxWorker:
     async def _mark_permanent_retry(
         self, session: AsyncSession, entry: Outbox, error: str
     ) -> None:
-        """Permanent failure — retry up to max_attempts, then fail."""
+        """Permanent failure — retry up to _MAX_ATTEMPTS, then fail."""
         new_attempts = entry.attempts + 1
-        new_status = "failed" if new_attempts >= entry.max_attempts else "pending"
+        new_status = "failed" if new_attempts >= _MAX_ATTEMPTS else "pending"
         retry_at = (
             None
             if new_status == "failed"
-            else datetime.now(timezone.utc) + timedelta(seconds=_backoff_seconds(new_attempts))
+            else datetime.now(UTC) + timedelta(seconds=_backoff_seconds(new_attempts))
         )
 
         await session.execute(
@@ -241,20 +244,20 @@ class OutboxWorker:
                 status=new_status,
                 attempts=new_attempts,
                 last_error=error[:2000],
-                retry_after=retry_at,
+                process_after=retry_at,
             )
         )
 
-        # If a create_repo entry permanently failed, mark the claim as error
+        # If a create_repo entry permanently failed, mark the entry as error
         if new_status == "failed" and entry.operation == "create_repo":
-            claim_id = entry.payload.get("claim_id")
-            if claim_id:
+            entry_id = entry.payload.get("entry_id")
+            if entry_id:
                 await session.execute(
                     text("""
-                        UPDATE claims SET repo_status = 'error'
-                        WHERE id = :claim_id AND repo_status = 'provisioning'
+                        UPDATE entries SET repo_status = 'error'
+                        WHERE id = :entry_id AND repo_status = 'provisioning'
                     """),
-                    {"claim_id": claim_id},
+                    {"entry_id": entry_id},
                 )
 
         await session.commit()
@@ -273,7 +276,7 @@ class OutboxWorker:
                 entry.id,
                 entry.operation,
                 new_attempts,
-                entry.max_attempts,
+                _MAX_ATTEMPTS,
                 error[:200],
             )
 
@@ -289,16 +292,16 @@ class OutboxWorker:
         elif op == "create_branch":
             await self._handle_create_branch(payload)
         elif op == "setup_branch_protection":
-            claim_id = UUID(payload["claim_id"])
-            await self._git.setup_branch_protection(claim_id)
+            entry_id = UUID(payload["entry_id"])
+            await self._git.setup_branch_protection(entry_id)
         elif op == "setup_webhook":
-            claim_id = UUID(payload["claim_id"])
-            await self._git.setup_webhook(claim_id)
+            entry_id = UUID(payload["entry_id"])
+            await self._git.setup_webhook(entry_id)
         elif op == "rename_branch":
-            claim_id = UUID(payload["claim_id"])
+            entry_id = UUID(payload["entry_id"])
             old_name = self._validate_git_ref(payload["old_name"])
             new_name = self._validate_git_ref(payload["new_name"])
-            await self._git.rename_branch(claim_id, old_name, new_name)
+            await self._git.rename_branch(entry_id, old_name, new_name)
         else:
             raise ValueError(f"Unknown outbox operation: {op}")
 
@@ -327,98 +330,101 @@ class OutboxWorker:
         return fmt
 
     async def _handle_create_repo(self, payload: dict) -> None:
-        """Compound operation: create repo + commit initial files + setup
-        branch protection + setup webhook.
+        """Compound operation: create repo + commit initial .phiacta/entry.yaml
+        + setup branch protection + setup webhook.
 
-        This is the full sequence for provisioning a new claim.
+        This is the full sequence for provisioning a new entry.
         """
-        claim_id = UUID(payload["claim_id"])
+        entry_id = UUID(payload["entry_id"])
         title = self._sanitize_string(payload["title"])
-        content = payload["content"]
-        fmt = self._validate_format(payload.get("format", "markdown"))
-        author_name = self._sanitize_string(
-            payload.get("author_name", "phiacta-service"), max_length=100
+        content_format = self._validate_format(payload.get("content_format", "markdown"))
+        author_handle = self._sanitize_string(
+            payload.get("author_handle", "phiacta-service"), max_length=100
         )
         author_id = payload.get("author_id", "service")
 
         author = AgentInfo(
-            name=author_name,
+            name=author_handle,
             email=f"{author_id}@phiacta.local",
         )
 
         # Step 1: Create the repository
-        repo_id = await self._git.create_repo(claim_id)
+        repo_id = await self._git.create_repo(entry_id)
 
-        # Step 2: Commit initial files
-        ext = {"markdown": ".md", "latex": ".tex", "plain": ".txt"}.get(fmt, ".md")
+        # Step 2: Commit initial .phiacta/entry.yaml
+        entry_yaml = (
+            f"title: {title!r}\n"
+            f"content_format: {content_format}\n"
+            f"schema_version: 1\n"
+        )
         files = [
-            FileContent(path=f"claim{ext}", content=content),
+            FileContent(path=".phiacta/entry.yaml", content=entry_yaml),
         ]
         sha = await self._git.commit_files(
-            claim_id, files, author, f"Initial claim: {title}"
+            entry_id, files, author, f"Initial entry: {title}"
         )
 
         # Step 3: Setup branch protection on main
-        await self._git.setup_branch_protection(claim_id)
+        await self._git.setup_branch_protection(entry_id)
 
         # Step 4: Register webhook
-        await self._git.setup_webhook(claim_id)
+        await self._git.setup_webhook(entry_id)
 
-        # Step 5: Update claim record with Forgejo state
+        # Step 5: Update entry record with Forgejo state
         async with self._session_factory() as session:
             await session.execute(
                 text("""
-                    UPDATE claims SET
+                    UPDATE entries SET
                         forgejo_repo_id = :repo_id,
                         current_head_sha = :sha,
                         repo_status = 'ready'
-                    WHERE id = :claim_id
+                    WHERE id = :entry_id
                 """),
-                {"repo_id": repo_id, "sha": sha, "claim_id": claim_id},
+                {"repo_id": repo_id, "sha": sha, "entry_id": entry_id},
             )
             await session.commit()
 
     async def _handle_commit_files(self, payload: dict) -> None:
         """Commit file changes to an existing repo."""
-        claim_id = UUID(payload["claim_id"])
+        entry_id = UUID(payload["entry_id"])
         content = payload["content"]
-        fmt = self._validate_format(payload.get("format", "markdown"))
+        fmt = self._validate_format(payload.get("content_format", "markdown"))
         message = self._sanitize_string(
-            payload.get("message", "Update claim content"), max_length=200
+            payload.get("message", "Update entry content"), max_length=200
         )
-        author_name = self._sanitize_string(
-            payload.get("author_name", "phiacta-service"), max_length=100
+        author_handle = self._sanitize_string(
+            payload.get("author_handle", "phiacta-service"), max_length=100
         )
         author_id = payload.get("author_id", "service")
 
         author = AgentInfo(
-            name=author_name,
+            name=author_handle,
             email=f"{author_id}@phiacta.local",
         )
 
         ext = {"markdown": ".md", "latex": ".tex", "plain": ".txt"}.get(fmt, ".md")
-        files = [FileContent(path=f"claim{ext}", content=content)]
+        files = [FileContent(path=f"entry{ext}", content=content)]
         sha = await self._git.commit_files(
-            claim_id, files, author, message
+            entry_id, files, author, message
         )
 
         # Update head SHA
         async with self._session_factory() as session:
             await session.execute(
                 text("""
-                    UPDATE claims SET current_head_sha = :sha
-                    WHERE id = :claim_id
+                    UPDATE entries SET current_head_sha = :sha
+                    WHERE id = :entry_id
                 """),
-                {"sha": sha, "claim_id": claim_id},
+                {"sha": sha, "entry_id": entry_id},
             )
             await session.commit()
 
     async def _handle_create_branch(self, payload: dict) -> None:
-        """Create a branch on a claim repo."""
-        claim_id = UUID(payload["claim_id"])
+        """Create a branch on an entry repo."""
+        entry_id = UUID(payload["entry_id"])
         branch_name = self._validate_git_ref(payload["branch_name"])
         from_ref = self._validate_git_ref(payload.get("from_ref", "main"))
-        await self._git.create_branch(claim_id, branch_name, from_ref)
+        await self._git.create_branch(entry_id, branch_name, from_ref)
 
 
 async def start_outbox_worker(engine: AsyncEngine) -> OutboxWorker:

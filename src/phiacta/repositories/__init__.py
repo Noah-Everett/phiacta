@@ -3,20 +3,16 @@
 
 from phiacta.repositories.agent_repository import AgentRepository
 from phiacta.repositories.base import BaseRepository
-from phiacta.repositories.bundle_repository import BundleRepository
-from phiacta.repositories.claim_repository import ClaimRepository
+from phiacta.repositories.entry_ref_repository import EntryRefRepository
+from phiacta.repositories.entry_repository import EntryRepository
 from phiacta.repositories.extension_repository import ExtensionRepository
 from phiacta.repositories.interaction_repository import InteractionRepository
-from phiacta.repositories.reference_repository import ReferenceRepository
-from phiacta.repositories.source_repository import SourceRepository
 
 __all__ = [
     "AgentRepository",
     "BaseRepository",
-    "BundleRepository",
-    "ClaimRepository",
+    "EntryRefRepository",
+    "EntryRepository",
     "ExtensionRepository",
     "InteractionRepository",
-    "ReferenceRepository",
-    "SourceRepository",
 ]

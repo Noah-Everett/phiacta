@@ -62,117 +62,62 @@ async def db_session(
 def make_agent(
     *,
     agent_type: str = "human",
-    name: str = "Test Agent",
-    external_id: str | None = None,
-    trust_score: float = 1.0,
+    handle: str = "test-agent",
+    email: str = "test@example.com",
+    password_hash: str = "$2b$12$fakehash",
 ) -> dict[str, object]:
     """Return kwargs suitable for constructing an Agent model instance."""
     return {
         "id": uuid4(),
         "agent_type": agent_type,
-        "name": name,
-        "external_id": external_id,
-        "trust_score": trust_score,
-        "attrs": {},
+        "handle": handle,
+        "email": email,
+        "password_hash": password_hash,
     }
 
 
-def make_namespace(
+def make_entry(
     *,
-    name: str = "test-namespace",
-    description: str | None = "A test namespace",
-) -> dict[str, object]:
-    """Return kwargs suitable for constructing a Namespace model instance."""
-    return {
-        "id": uuid4(),
-        "name": name,
-        "description": description,
-        "attrs": {},
-    }
-
-
-def make_claim(
-    *,
-    namespace_id: object,
     created_by: object,
-    title: str = "Test Claim",
-    content: str = "Test claim content",
-    claim_type: str = "assertion",
-    format: str = "markdown",
+    title: str = "Test Entry",
+    content_format: str = "markdown",
+    repo_name: str | None = None,
+    layout_hint: str | None = None,
+    tags: list[str] | None = None,
+    summary: str | None = None,
+    license_: str | None = None,
     status: str = "active",
 ) -> dict[str, object]:
-    """Return kwargs suitable for constructing a Claim model instance."""
+    """Return kwargs suitable for constructing an Entry model instance."""
+    entry_id = uuid4()
     return {
-        "id": uuid4(),
+        "id": entry_id,
         "title": title,
-        "claim_type": claim_type,
-        "format": format,
-        "content_cache": content,
-        "namespace_id": namespace_id,
+        "content_format": content_format,
+        "repo_name": repo_name or str(entry_id),
         "created_by": created_by,
+        "layout_hint": layout_hint,
+        "tags": tags or [],
+        "summary": summary,
+        "license": license_,
         "status": status,
-        "attrs": {},
     }
 
 
-def make_source(
+def make_entry_ref(
     *,
-    submitted_by: object,
-    source_type: str = "manual_entry",
-    title: str | None = "Test Source",
-    external_ref: str | None = None,
-    content_hash: str | None = None,
+    from_entry_id: object,
+    to_entry_id: object,
+    rel: str = "evidence",
+    version_sha: str | None = None,
+    note: str | None = None,
 ) -> dict[str, object]:
-    """Return kwargs suitable for constructing a Source model instance."""
+    """Return kwargs suitable for constructing an EntryRef model instance."""
     return {
         "id": uuid4(),
-        "source_type": source_type,
-        "title": title,
-        "submitted_by": submitted_by,
-        "external_ref": external_ref,
-        "content_hash": content_hash,
-        "attrs": {},
-    }
-
-
-def make_reference(
-    *,
-    source_uri: str,
-    target_uri: str,
-    created_by: object,
-    role: str = "evidence",
-    source_type: str = "claim",
-    target_type: str = "claim",
-    source_claim_id: object | None = None,
-    target_claim_id: object | None = None,
-) -> dict[str, object]:
-    """Return kwargs suitable for constructing a Reference model instance."""
-    return {
-        "id": uuid4(),
-        "source_uri": source_uri,
-        "target_uri": target_uri,
-        "role": role,
-        "created_by": created_by,
-        "source_type": source_type,
-        "target_type": target_type,
-        "source_claim_id": source_claim_id,
-        "target_claim_id": target_claim_id,
-    }
-
-
-def make_bundle(
-    *,
-    submitted_by: object,
-    idempotency_key: str | None = None,
-    extension_id: str = "test-extension",
-    status: str = "accepted",
-) -> dict[str, object]:
-    """Return kwargs suitable for constructing a Bundle model instance."""
-    return {
-        "id": uuid4(),
-        "idempotency_key": idempotency_key or str(uuid4()),
-        "submitted_by": submitted_by,
-        "extension_id": extension_id,
-        "status": status,
-        "attrs": {},
+        "from_entry_id": from_entry_id,
+        "to_entry_id": to_entry_id,
+        "rel": rel,
+        "version_sha": version_sha,
+        "note": note,
     }

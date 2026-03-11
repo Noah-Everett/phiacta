@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
-    name: str
+    handle: str = Field(min_length=1, max_length=50)
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
 
@@ -24,10 +24,9 @@ class AgentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    name: str
-    email: str | None
+    handle: str
     agent_type: str
-    trust_score: float
+    is_active: bool
     created_at: datetime
 
 
@@ -37,9 +36,8 @@ class PublicAgentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    name: str
+    handle: str
     agent_type: str
-    trust_score: float
     created_at: datetime
 
 

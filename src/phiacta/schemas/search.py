@@ -3,23 +3,20 @@
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from pydantic import BaseModel
 
-from phiacta.schemas.claim import ClaimResponse
+from phiacta.schemas.entry import EntryResponse
 
 
 class SearchRequest(BaseModel):
     query: str
-    namespace_id: UUID | None = None
-    claim_type: str | None = None
+    layout_hint: str | None = None
     limit: int = 20
     offset: int = 0
 
 
 class SearchResult(BaseModel):
-    claim: ClaimResponse
+    entry: EntryResponse
     rank: float
 
 

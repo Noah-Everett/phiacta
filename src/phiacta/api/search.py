@@ -4,43 +4,40 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.db.session import get_db
-from phiacta.models.claim import Claim
-from phiacta.schemas.claim import ClaimResponse
+from phiacta.models.entry import Entry
+from phiacta.schemas.entry import EntryResponse
 from phiacta.schemas.search import SearchRequest, SearchResponse, SearchResult
 
 router = APIRouter(prefix="/search", tags=["search"])
 
 
 @router.post("", response_model=SearchResponse)
-async def search_claims(
+async def search_entries(
     body: SearchRequest,
     db: AsyncSession = Depends(get_db),
 ) -> SearchResponse:
-    ts_query = func.plainto_tsquery("english", body.query)
-    rank = func.ts_rank(Claim.search_tsv, ts_query)
+    # Full-text search deferred to Phase 4 (Discovery).
+    # For now, do a simple ILIKE title search as a placeholder.
+    stmt = select(Entry).where(Entry.title.ilike(f"%{body.query}%"))
 
-    stmt = select(Claim, rank.label("rank")).where(Claim.search_tsv.op("@@")(ts_query))
+    if body.layout_hint is not None:
+        stmt = stmt.where(Entry.layout_hint == body.layout_hint)
 
-    if body.namespace_id is not None:
-        stmt = stmt.where(Claim.namespace_id == body.namespace_id)
-    if body.claim_type is not None:
-        stmt = stmt.where(Claim.claim_type == body.claim_type)
-
-    stmt = stmt.order_by(rank.desc()).limit(body.limit).offset(body.offset)
+    stmt = stmt.limit(body.limit).offset(body.offset)
 
     result = await db.execute(stmt)
-    rows = result.all()
+    entries = result.scalars().all()
 
     results = [
         SearchResult(
-            claim=ClaimResponse.model_validate(row[0]),
-            rank=float(row[1]),
+            entry=EntryResponse.model_validate(e),
+            rank=1.0,
         )
-        for row in rows
+        for e in entries
     ]
 
     return SearchResponse(results=results, total=len(results), query=body.query)

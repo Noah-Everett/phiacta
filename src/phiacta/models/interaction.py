@@ -23,15 +23,15 @@ from phiacta.models.base import Base, TimestampMixin, UUIDMixin
 
 
 class Interaction(UUIDMixin, TimestampMixin, Base):
-    """Structured scoring interactions on claims: votes and reviews only.
+    """Structured scoring interactions on entries: votes and reviews only.
 
     Comments, issues, and suggestions are handled by Forgejo (git-native).
     """
 
     __tablename__ = "interactions"
 
-    claim_id: Mapped[UUID] = mapped_column(
-        ForeignKey("claims.id", ondelete="RESTRICT"),
+    entry_id: Mapped[UUID] = mapped_column(
+        ForeignKey("entries.id", ondelete="RESTRICT"),
         nullable=False,
     )
     author_id: Mapped[UUID] = mapped_column(
@@ -65,7 +65,7 @@ class Interaction(UUIDMixin, TimestampMixin, Base):
     )
 
     # Relationships
-    claim: Mapped[Claim] = relationship(  # type: ignore[name-defined]  # noqa: F821
+    entry: Mapped[Entry] = relationship(  # type: ignore[name-defined]  # noqa: F821
         back_populates="interactions",
     )
     author: Mapped[Agent] = relationship(  # type: ignore[name-defined]  # noqa: F821
@@ -98,21 +98,21 @@ class Interaction(UUIDMixin, TimestampMixin, Base):
             "kind != 'review' OR body IS NOT NULL",
             name="ck_interactions_body_required",
         ),
-        Index("idx_interactions_claim", "claim_id"),
+        Index("idx_interactions_entry", "entry_id"),
         Index("idx_interactions_author", "author_id"),
         Index(
-            "idx_interactions_claim_signal",
-            "claim_id",
+            "idx_interactions_entry_signal",
+            "entry_id",
             "signal",
             "confidence",
             postgresql_where=text(
                 "signal IS NOT NULL AND deleted_at IS NULL"
             ),
         ),
-        Index("idx_interactions_claim_kind", "claim_id", "kind"),
+        Index("idx_interactions_entry_kind", "entry_id", "kind"),
         Index(
-            "uq_interactions_claim_author_signal",
-            "claim_id",
+            "uq_interactions_entry_author_signal",
+            "entry_id",
             "author_id",
             unique=True,
             postgresql_where=text(

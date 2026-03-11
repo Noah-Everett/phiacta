@@ -134,25 +134,25 @@ class GitService(Protocol):
     """Abstract interface for git operations.
 
     All Forgejo details are internal to the implementation.  Callers identify
-    repositories by ``claim_id`` (UUID).  The adapter resolves this to the
-    Forgejo ``{org}/{claim_uuid}`` path internally.
+    repositories by ``entry_id`` (UUID).  The adapter resolves this to the
+    Forgejo ``{org}/{entry_uuid}`` path internally.
     """
 
     # --- Repo lifecycle ---
 
-    async def create_repo(self, claim_id: UUID) -> int:
-        """Create a new repo for a claim. Returns Forgejo repo ID."""
+    async def create_repo(self, entry_id: UUID) -> int:
+        """Create a new repo for an entry. Returns Forgejo repo ID."""
         ...
 
-    async def archive_repo(self, claim_id: UUID) -> None:
-        """Make a repo read-only (for archived/retracted claims)."""
+    async def archive_repo(self, entry_id: UUID) -> None:
+        """Make a repo read-only (for archived/retracted entries)."""
         ...
 
-    async def setup_branch_protection(self, claim_id: UUID) -> None:
+    async def setup_branch_protection(self, entry_id: UUID) -> None:
         """Configure branch protection rules on ``main``."""
         ...
 
-    async def setup_webhook(self, claim_id: UUID) -> None:
+    async def setup_webhook(self, entry_id: UUID) -> None:
         """Register the Phiacta webhook on the repo."""
         ...
 
@@ -160,7 +160,7 @@ class GitService(Protocol):
 
     async def commit_files(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         files: list[FileContent],
         author: AgentInfo,
         message: str,
@@ -169,12 +169,12 @@ class GitService(Protocol):
         """Commit one or more files. Returns the new commit SHA."""
         ...
 
-    async def read_file(self, claim_id: UUID, path: str, ref: str = "main") -> bytes:
+    async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
         """Read a file's contents at a given ref (branch, tag, or SHA)."""
         ...
 
     async def list_files(
-        self, claim_id: UUID, path: str = "", ref: str = "main"
+        self, entry_id: UUID, path: str = "", ref: str = "main"
     ) -> list[str]:
         """List file paths in a directory at a given ref."""
         ...
@@ -183,7 +183,7 @@ class GitService(Protocol):
 
     async def list_commits(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         branch: str = "main",
         limit: int = 50,
         page: int = 1,
@@ -191,26 +191,26 @@ class GitService(Protocol):
         """List commits on a branch, newest first."""
         ...
 
-    async def get_diff(self, claim_id: UUID, base: str, head: str) -> DiffInfo:
+    async def get_diff(self, entry_id: UUID, base: str, head: str) -> DiffInfo:
         """Get the diff between two refs."""
         ...
 
     # --- Branches ---
 
     async def create_branch(
-        self, claim_id: UUID, name: str, from_ref: str = "main"
+        self, entry_id: UUID, name: str, from_ref: str = "main"
     ) -> None:
         """Create a new branch from a given ref."""
         ...
 
     async def rename_branch(
-        self, claim_id: UUID, old_name: str, new_name: str
+        self, entry_id: UUID, old_name: str, new_name: str
     ) -> None:
         """Rename a branch (used for archiving merged proposal branches)."""
         ...
 
     async def list_branches(
-        self, claim_id: UUID, exclude_archived: bool = True
+        self, entry_id: UUID, exclude_archived: bool = True
     ) -> list[str]:
         """List branches. Optionally exclude ``archived/*`` branches."""
         ...
@@ -219,7 +219,7 @@ class GitService(Protocol):
 
     async def create_pull_request(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         title: str,
         body: str,
         head_branch: str,
@@ -228,20 +228,20 @@ class GitService(Protocol):
         """Create a PR. Returns PR info including number."""
         ...
 
-    async def merge_pull_request(self, claim_id: UUID, pr_number: int) -> str:
+    async def merge_pull_request(self, entry_id: UUID, pr_number: int) -> str:
         """Merge a PR. Returns the merge commit SHA.
 
         Raises ``MergeConflictError`` if not mergeable.
         """
         ...
 
-    async def close_pull_request(self, claim_id: UUID, pr_number: int) -> None:
+    async def close_pull_request(self, entry_id: UUID, pr_number: int) -> None:
         """Close a PR without merging (reject proposal)."""
         ...
 
     async def list_pull_requests(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         state: str = "open",
         limit: int = 50,
         page: int = 1,
@@ -250,7 +250,7 @@ class GitService(Protocol):
         ...
 
     async def get_pull_request(
-        self, claim_id: UUID, pr_number: int
+        self, entry_id: UUID, pr_number: int
     ) -> PullRequestInfo:
         """Get a single PR by number."""
         ...
@@ -259,7 +259,7 @@ class GitService(Protocol):
 
     async def create_issue(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         title: str,
         body: str,
         labels: list[str] | None = None,
@@ -267,17 +267,17 @@ class GitService(Protocol):
         """Create an issue. Returns issue info including number."""
         ...
 
-    async def close_issue(self, claim_id: UUID, issue_number: int) -> None:
+    async def close_issue(self, entry_id: UUID, issue_number: int) -> None:
         """Close an issue."""
         ...
 
-    async def reopen_issue(self, claim_id: UUID, issue_number: int) -> None:
+    async def reopen_issue(self, entry_id: UUID, issue_number: int) -> None:
         """Reopen a closed issue."""
         ...
 
     async def list_issues(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         state: str = "open",
         limit: int = 50,
         page: int = 1,
@@ -285,7 +285,7 @@ class GitService(Protocol):
         """List issues by state."""
         ...
 
-    async def get_issue(self, claim_id: UUID, issue_number: int) -> IssueInfo:
+    async def get_issue(self, entry_id: UUID, issue_number: int) -> IssueInfo:
         """Get a single issue by number."""
         ...
 
@@ -293,7 +293,7 @@ class GitService(Protocol):
 
     async def add_issue_comment(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         issue_number: int,
         body: str,
         author: AgentInfo,
@@ -303,7 +303,7 @@ class GitService(Protocol):
 
     async def list_issue_comments(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         issue_number: int,
         limit: int = 50,
         page: int = 1,
@@ -313,7 +313,7 @@ class GitService(Protocol):
 
     async def add_pr_comment(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         pr_number: int,
         body: str,
         author: AgentInfo,
@@ -323,7 +323,7 @@ class GitService(Protocol):
 
     async def list_pr_comments(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         pr_number: int,
         limit: int = 50,
         page: int = 1,
@@ -453,9 +453,9 @@ class ForgejoGitService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _repo_path(self, claim_id: UUID) -> str:
-        """Return the ``owner/repo`` slug for a claim."""
-        return f"{self._org}/{claim_id}"
+    def _repo_path(self, entry_id: UUID) -> str:
+        """Return the ``owner/repo`` slug for an entry."""
+        return f"{self._org}/{entry_id}"
 
     async def _request(
         self,
@@ -540,17 +540,17 @@ class ForgejoGitService:
     # Repo lifecycle
     # ------------------------------------------------------------------
 
-    async def create_repo(self, claim_id: UUID) -> int:
-        """Create a new repo under the organisation for *claim_id*.
+    async def create_repo(self, entry_id: UUID) -> int:
+        """Create a new repo under the organisation for *entry_id*.
 
         Idempotent: if the repo already exists, its ID is returned without
         creating a duplicate.
         """
-        repo_name = str(claim_id)
+        repo_name = str(entry_id)
 
         # Check whether the repo already exists.
         try:
-            resp = await self._request("GET", f"/repos/{self._repo_path(claim_id)}")
+            resp = await self._request("GET", f"/repos/{self._repo_path(entry_id)}")
             existing = resp.json()
             logger.info("Repo %s/%s already exists (id=%s)", self._org, repo_name, existing["id"])
             return existing["id"]
@@ -562,7 +562,7 @@ class ForgejoGitService:
             f"/orgs/{self._org}/repos",
             json={
                 "name": repo_name,
-                "description": f"Claim {claim_id}",
+                "description": f"Entry {entry_id}",
                 "private": True,
                 "auto_init": False,
                 "default_branch": "main",
@@ -573,16 +573,16 @@ class ForgejoGitService:
         logger.info("Created repo %s/%s (id=%d)", self._org, repo_name, repo_id)
         return repo_id
 
-    async def archive_repo(self, claim_id: UUID) -> None:
+    async def archive_repo(self, entry_id: UUID) -> None:
         """Make a repo read-only by setting its ``archived`` flag."""
         await self._request(
             "PATCH",
-            f"/repos/{self._repo_path(claim_id)}",
+            f"/repos/{self._repo_path(entry_id)}",
             json={"archived": True},
         )
-        logger.info("Archived repo %s", self._repo_path(claim_id))
+        logger.info("Archived repo %s", self._repo_path(entry_id))
 
-    async def setup_branch_protection(self, claim_id: UUID) -> None:
+    async def setup_branch_protection(self, entry_id: UUID) -> None:
         """Configure branch protection on ``main``.
 
         Rules:
@@ -590,7 +590,7 @@ class ForgejoGitService:
         - No branch deletion
         - Push restricted to the service account (only via API)
         """
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         await self._request(
             "POST",
             f"/repos/{repo}/branch_protections",
@@ -613,7 +613,7 @@ class ForgejoGitService:
         )
         logger.info("Branch protection configured on %s/main", repo)
 
-    async def setup_webhook(self, claim_id: UUID) -> None:
+    async def setup_webhook(self, entry_id: UUID) -> None:
         """Register the Phiacta push webhook on the repo."""
         settings = get_settings()
         # Build callback URL.  The webhook handler lives at /webhooks/forgejo on
@@ -625,7 +625,7 @@ class ForgejoGitService:
         # config setting for the callback URL.
         callback_url = "http://phiacta-api:8000/webhooks/forgejo"
 
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         await self._request(
             "POST",
             f"/repos/{repo}/hooks",
@@ -648,7 +648,7 @@ class ForgejoGitService:
 
     async def commit_files(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         files: list[FileContent],
         author: AgentInfo,
         message: str,
@@ -663,7 +663,7 @@ class ForgejoGitService:
 
         Returns the SHA of the last commit created.
         """
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         last_sha = ""
 
         for fc in files:
@@ -717,10 +717,10 @@ class ForgejoGitService:
         return last_sha
 
     async def read_file(
-        self, claim_id: UUID, path: str, ref: str = "main"
+        self, entry_id: UUID, path: str, ref: str = "main"
     ) -> bytes:
         """Read a file's raw contents at a given ref."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         resp = await self._request(
             "GET",
             f"/repos/{repo}/contents/{path}",
@@ -731,10 +731,10 @@ class ForgejoGitService:
         return base64.b64decode(content_b64)
 
     async def list_files(
-        self, claim_id: UUID, path: str = "", ref: str = "main"
+        self, entry_id: UUID, path: str = "", ref: str = "main"
     ) -> list[str]:
         """List file paths in a directory at a given ref."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         endpoint = f"/repos/{repo}/contents/{path}" if path else f"/repos/{repo}/contents"
         resp = await self._request("GET", endpoint, params={"ref": ref})
         items = resp.json()
@@ -751,13 +751,13 @@ class ForgejoGitService:
 
     async def list_commits(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         branch: str = "main",
         limit: int = 50,
         page: int = 1,
     ) -> list[CommitInfo]:
         """List commits on a branch, newest first."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         raw_list = await self._paginate(
             f"/repos/{repo}/git/commits",
             params={"sha": branch},
@@ -767,14 +767,14 @@ class ForgejoGitService:
         return [_parse_commit(c) for c in raw_list]
 
     async def get_diff(
-        self, claim_id: UUID, base: str, head: str
+        self, entry_id: UUID, base: str, head: str
     ) -> DiffInfo:
         """Get the diff between two refs.
 
         Uses the Forgejo compare endpoint:
         ``GET /repos/{owner}/{repo}/compare/{base}...{head}``
         """
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         resp = await self._request(
             "GET",
             f"/repos/{repo}/compare/{base}...{head}",
@@ -808,10 +808,10 @@ class ForgejoGitService:
     # ------------------------------------------------------------------
 
     async def create_branch(
-        self, claim_id: UUID, name: str, from_ref: str = "main"
+        self, entry_id: UUID, name: str, from_ref: str = "main"
     ) -> None:
         """Create a new branch from a given ref."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         await self._request(
             "POST",
             f"/repos/{repo}/branches",
@@ -823,10 +823,10 @@ class ForgejoGitService:
         logger.info("Created branch %s on %s from %s", name, repo, from_ref)
 
     async def rename_branch(
-        self, claim_id: UUID, old_name: str, new_name: str
+        self, entry_id: UUID, old_name: str, new_name: str
     ) -> None:
         """Rename a branch (used for archiving merged proposal branches)."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         await self._request(
             "PATCH",
             f"/repos/{repo}/branches/{old_name}",
@@ -835,10 +835,10 @@ class ForgejoGitService:
         logger.info("Renamed branch %s -> %s on %s", old_name, new_name, repo)
 
     async def list_branches(
-        self, claim_id: UUID, exclude_archived: bool = True
+        self, entry_id: UUID, exclude_archived: bool = True
     ) -> list[str]:
         """List branch names, optionally excluding ``archived/*`` branches."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         raw_list = await self._paginate_all(f"/repos/{repo}/branches")
         names = [b["name"] for b in raw_list]
         if exclude_archived:
@@ -851,14 +851,14 @@ class ForgejoGitService:
 
     async def create_pull_request(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         title: str,
         body: str,
         head_branch: str,
         base_branch: str = "main",
     ) -> PullRequestInfo:
         """Create a pull request. Returns PR info including number."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         resp = await self._request(
             "POST",
             f"/repos/{repo}/pulls",
@@ -871,12 +871,12 @@ class ForgejoGitService:
         )
         return _parse_pr(resp.json())
 
-    async def merge_pull_request(self, claim_id: UUID, pr_number: int) -> str:
+    async def merge_pull_request(self, entry_id: UUID, pr_number: int) -> str:
         """Merge a PR. Returns the merge commit SHA.
 
         Raises ``MergeConflictError`` if the PR is not mergeable.
         """
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         resp = await self._request(
             "POST",
             f"/repos/{repo}/pulls/{pr_number}/merge",
@@ -895,9 +895,9 @@ class ForgejoGitService:
         logger.info("Merged PR #%d on %s (sha=%s)", pr_number, repo, merge_sha[:12])
         return merge_sha
 
-    async def close_pull_request(self, claim_id: UUID, pr_number: int) -> None:
+    async def close_pull_request(self, entry_id: UUID, pr_number: int) -> None:
         """Close a PR without merging."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         await self._request(
             "PATCH",
             f"/repos/{repo}/pulls/{pr_number}",
@@ -907,13 +907,13 @@ class ForgejoGitService:
 
     async def list_pull_requests(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         state: str = "open",
         limit: int = 50,
         page: int = 1,
     ) -> list[PullRequestInfo]:
         """List PRs filtered by state."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         raw_list = await self._paginate(
             f"/repos/{repo}/pulls",
             params={"state": state},
@@ -923,10 +923,10 @@ class ForgejoGitService:
         return [_parse_pr(pr) for pr in raw_list]
 
     async def get_pull_request(
-        self, claim_id: UUID, pr_number: int
+        self, entry_id: UUID, pr_number: int
     ) -> PullRequestInfo:
         """Get a single PR by number."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         resp = await self._request("GET", f"/repos/{repo}/pulls/{pr_number}")
         return _parse_pr(resp.json())
 
@@ -936,7 +936,7 @@ class ForgejoGitService:
 
     async def create_issue(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         title: str,
         body: str,
         labels: list[str] | None = None,
@@ -946,12 +946,12 @@ class ForgejoGitService:
         Labels are resolved to Forgejo label IDs by name.  Non-existent labels
         are silently ignored.
         """
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         payload: dict = {"title": title, "body": body}
 
         if labels:
             # Resolve label names to IDs.
-            label_ids = await self._resolve_label_ids(claim_id, labels)
+            label_ids = await self._resolve_label_ids(entry_id, labels)
             if label_ids:
                 payload["labels"] = label_ids
 
@@ -962,9 +962,9 @@ class ForgejoGitService:
         )
         return _parse_issue(resp.json())
 
-    async def close_issue(self, claim_id: UUID, issue_number: int) -> None:
+    async def close_issue(self, entry_id: UUID, issue_number: int) -> None:
         """Close an issue."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         await self._request(
             "PATCH",
             f"/repos/{repo}/issues/{issue_number}",
@@ -972,9 +972,9 @@ class ForgejoGitService:
         )
         logger.info("Closed issue #%d on %s", issue_number, repo)
 
-    async def reopen_issue(self, claim_id: UUID, issue_number: int) -> None:
+    async def reopen_issue(self, entry_id: UUID, issue_number: int) -> None:
         """Reopen a closed issue."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         await self._request(
             "PATCH",
             f"/repos/{repo}/issues/{issue_number}",
@@ -984,13 +984,13 @@ class ForgejoGitService:
 
     async def list_issues(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         state: str = "open",
         limit: int = 50,
         page: int = 1,
     ) -> list[IssueInfo]:
         """List issues filtered by state."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         raw_list = await self._paginate(
             f"/repos/{repo}/issues",
             params={"state": state, "type": "issues"},
@@ -999,9 +999,9 @@ class ForgejoGitService:
         )
         return [_parse_issue(i) for i in raw_list]
 
-    async def get_issue(self, claim_id: UUID, issue_number: int) -> IssueInfo:
+    async def get_issue(self, entry_id: UUID, issue_number: int) -> IssueInfo:
         """Get a single issue by number."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         resp = await self._request(
             "GET",
             f"/repos/{repo}/issues/{issue_number}",
@@ -1014,7 +1014,7 @@ class ForgejoGitService:
 
     async def add_issue_comment(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         issue_number: int,
         body: str,
         author: AgentInfo,
@@ -1024,7 +1024,7 @@ class ForgejoGitService:
         The comment body is prefixed with an authorship line since all
         Forgejo API calls are made by the service account.
         """
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         attributed_body = f"**{author.name}** ({author.email}):\n\n{body}"
         resp = await self._request(
             "POST",
@@ -1035,13 +1035,13 @@ class ForgejoGitService:
 
     async def list_issue_comments(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         issue_number: int,
         limit: int = 50,
         page: int = 1,
     ) -> list[CommentInfo]:
         """List comments on an issue."""
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         raw_list = await self._paginate(
             f"/repos/{repo}/issues/{issue_number}/comments",
             limit=limit,
@@ -1051,7 +1051,7 @@ class ForgejoGitService:
 
     async def add_pr_comment(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         pr_number: int,
         body: str,
         author: AgentInfo,
@@ -1061,7 +1061,7 @@ class ForgejoGitService:
         Forgejo treats PR comments as issue comments (PRs are issues
         internally), so this uses the issues comment endpoint.
         """
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         attributed_body = f"**{author.name}** ({author.email}):\n\n{body}"
         resp = await self._request(
             "POST",
@@ -1072,7 +1072,7 @@ class ForgejoGitService:
 
     async def list_pr_comments(
         self,
-        claim_id: UUID,
+        entry_id: UUID,
         pr_number: int,
         limit: int = 50,
         page: int = 1,
@@ -1081,7 +1081,7 @@ class ForgejoGitService:
 
         Forgejo treats PR comments as issue comments.
         """
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         raw_list = await self._paginate(
             f"/repos/{repo}/issues/{pr_number}/comments",
             limit=limit,
@@ -1106,13 +1106,13 @@ class ForgejoGitService:
     # ------------------------------------------------------------------
 
     async def _resolve_label_ids(
-        self, claim_id: UUID, label_names: list[str]
+        self, entry_id: UUID, label_names: list[str]
     ) -> list[int]:
         """Resolve label names to Forgejo label IDs for a repo.
 
         Labels that do not exist are silently skipped.
         """
-        repo = self._repo_path(claim_id)
+        repo = self._repo_path(entry_id)
         all_labels = await self._paginate_all(f"/repos/{repo}/labels")
         name_to_id = {lbl["name"]: lbl["id"] for lbl in all_labels}
         return [name_to_id[n] for n in label_names if n in name_to_id]

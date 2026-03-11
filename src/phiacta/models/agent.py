@@ -3,8 +3,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, CheckConstraint, Float, Index, String, Text, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Boolean, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from phiacta.models.base import Base, TimestampMixin, UUIDMixin
@@ -13,42 +12,25 @@ from phiacta.models.base import Base, TimestampMixin, UUIDMixin
 class Agent(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "agents"
 
-    agent_type: Mapped[str] = mapped_column(String, nullable=False)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
-    email: Mapped[str | None] = mapped_column(Text, default=None)
-    password_hash: Mapped[str | None] = mapped_column(Text, default=None)
+    handle: Mapped[str] = mapped_column(
+        String(50), nullable=False, unique=True
+    )
+    email: Mapped[str] = mapped_column(
+        String(254), nullable=False, unique=True
+    )
+    password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    agent_type: Mapped[str] = mapped_column(String(20), nullable=False)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
-    external_id: Mapped[str | None] = mapped_column(Text, default=None)
-    trust_score: Mapped[float] = mapped_column(Float, default=1.0)
-    api_key_hash: Mapped[str | None] = mapped_column(Text, default=None)
-    attrs: Mapped[dict[str, object]] = mapped_column(
-        JSONB,
-        nullable=False,
-        server_default="{}",
-    )
 
     # Relationships
-    created_claims: Mapped[list[Claim]] = relationship(  # type: ignore[name-defined]  # noqa: F821
-        foreign_keys="[Claim.created_by]",
+    created_entries: Mapped[list[Entry]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        foreign_keys="[Entry.created_by]",
         back_populates="created_by_agent",
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "agent_type IN ('human', 'ai', 'organization', 'pipeline', 'extension')",
-            name="ck_agents_agent_type",
-        ),
-        Index(
-            "idx_agents_external_id",
-            "external_id",
-            postgresql_where=text("external_id IS NOT NULL"),
-        ),
-        Index(
-            "idx_agents_email_unique",
-            "email",
-            unique=True,
-            postgresql_where=text("email IS NOT NULL"),
-        ),
+        Index("idx_agents_handle", "handle", unique=True),
+        Index("idx_agents_email", "email", unique=True),
     )

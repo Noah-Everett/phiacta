@@ -2,37 +2,21 @@
 # Copyright (C) 2026 Phiacta Contributors
 
 from phiacta.models.agent import Agent
-from phiacta.models.artifact import Artifact, artifact_claims
 from phiacta.models.base import Base, TimestampMixin, UUIDMixin
-from phiacta.models.bundle import Bundle
-from phiacta.models.claim import Claim
+from phiacta.models.entry import Entry
+from phiacta.models.entry_ref import EntryRef
 from phiacta.models.extension import Extension
 from phiacta.models.interaction import Interaction
-from phiacta.models.layer_registry import LayerRecord
-from phiacta.models.namespace import Namespace
-from phiacta.models.outbox import Outbox, OutboxOperation, OutboxStatus
-from phiacta.models.provenance import Provenance
-from phiacta.models.reference import Reference, ReferenceRole
-from phiacta.models.source import Source
+from phiacta.models.outbox import Outbox
 
 __all__ = [
     "Agent",
-    "Artifact",
     "Base",
-    "Bundle",
-    "Claim",
+    "Entry",
+    "EntryRef",
     "Extension",
     "Interaction",
-    "LayerRecord",
-    "Namespace",
     "Outbox",
-    "OutboxOperation",
-    "OutboxStatus",
-    "Provenance",
-    "Reference",
-    "ReferenceRole",
-    "Source",
     "TimestampMixin",
     "UUIDMixin",
-    "artifact_claims",
 ]

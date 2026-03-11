@@ -14,10 +14,14 @@ class AgentRepository(BaseRepository[Agent]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, Agent)
 
-    async def get_by_external_id(self, external_id: str) -> Agent | None:
-        result = await self.session.execute(select(Agent).where(Agent.external_id == external_id))
+    async def get_by_handle(self, handle: str) -> Agent | None:
+        result = await self.session.execute(
+            select(Agent).where(Agent.handle == handle)
+        )
         return result.scalar_one_or_none()
 
-    async def get_by_name(self, name: str) -> Agent | None:
-        result = await self.session.execute(select(Agent).where(Agent.name == name))
+    async def get_by_email(self, email: str) -> Agent | None:
+        result = await self.session.execute(
+            select(Agent).where(Agent.email == email)
+        )
         return result.scalar_one_or_none()

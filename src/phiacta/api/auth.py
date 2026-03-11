@@ -26,8 +26,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 limiter = Limiter(key_func=get_remote_address)
 
 # Precomputed dummy hash for timing-safe login failures.
-# This is bcrypt hash of a random string, used to burn CPU time
-# when the email is not found so the response time is consistent.
 _DUMMY_HASH = "$2b$12$LJ3m4ys3Lk0TSwHvGHsvxu1IZSOF5kPuEwGMaLHiYmGKIbkNpEwHi"
 
 
@@ -46,9 +44,17 @@ async def register(
             detail="Email already registered",
         )
 
+    # Check handle uniqueness
+    result = await db.execute(select(Agent).where(Agent.handle == body.handle))
+    if result.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Handle already taken",
+        )
+
     agent = Agent(
         agent_type="human",
-        name=body.name,
+        handle=body.handle,
         email=body.email,
         password_hash=hash_password(body.password),
     )

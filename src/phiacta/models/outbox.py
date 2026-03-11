@@ -3,64 +3,45 @@
 
 from __future__ import annotations
 
-import enum
 from datetime import datetime
+from uuid import UUID
 
-from sqlalchemy import (
-    CheckConstraint,
-    DateTime,
-    Index,
-    Integer,
-    String,
-    Text,
-    text,
-)
+from sqlalchemy import DateTime, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from phiacta.models.base import Base, TimestampMixin, UUIDMixin
+from phiacta.models.base import Base, UUIDMixin
 
 
-class OutboxStatus(str, enum.Enum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-class OutboxOperation(str, enum.Enum):
-    CREATE_REPO = "create_repo"
-    COMMIT_FILES = "commit_files"
-    CREATE_BRANCH = "create_branch"
-    RENAME_BRANCH = "rename_branch"
-    SETUP_BRANCH_PROTECTION = "setup_branch_protection"
-    SETUP_WEBHOOK = "setup_webhook"
-
-
-class Outbox(UUIDMixin, TimestampMixin, Base):
+class Outbox(UUIDMixin, Base):
     __tablename__ = "outbox"
 
-    operation: Mapped[str] = mapped_column(String, nullable=False)
-    payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
-    status: Mapped[str] = mapped_column(String, default="pending")
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-    max_attempts: Mapped[int] = mapped_column(Integer, default=5)
+    aggregate_id: Mapped[UUID] = mapped_column(nullable=False)
+    aggregate_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    operation: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    process_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     processed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    retry_after: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "status IN ('pending', 'processing', 'completed', 'failed')",
-            name="ck_outbox_status",
-        ),
         Index(
-            "idx_outbox_pending",
-            "created_at",
+            "ix_outbox_poll",
+            "status",
+            "process_after",
             postgresql_where=text("status = 'pending'"),
         ),
     )

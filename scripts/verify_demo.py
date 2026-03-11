@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Submit a Lean 4 verified claim to demonstrate the verification pipeline.
-
-Since the extensions table migration is missing, the event dispatch after
-submitting verification code will 500 — but the data commits before that.
-We then manually report the verification result via the PUT endpoint (the
-same one phiacta-verify would call after running the Lean container).
+"""Demonstrate creating an entry with a Lean 4 verified proof.
 
 Usage:
     python scripts/verify_demo.py
@@ -14,10 +9,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
 import sys
-from datetime import datetime, timezone
 
 import httpx
 
@@ -31,10 +24,11 @@ SEED_AGENT_PASSWORD = os.environ.get("PHIACTA_SEED_PASSWORD", "SeedAgent!2026")
 TIMEOUT = 30.0
 
 # ---------------------------------------------------------------------------
-# The claim and proof
+# The entry
 # ---------------------------------------------------------------------------
 
-CLAIM_CONTENT = (
+ENTRY_TITLE = "Commutativity and Associativity of Natural Number Addition"
+ENTRY_SUMMARY = (
     "For all natural numbers a and b, addition is commutative: a + b = b + a. "
     "Furthermore, addition is associative: (a + b) + c = a + (b + c), "
     "and multiplication distributes over addition: a * (b + c) = a * b + a * c."
@@ -81,129 +75,49 @@ def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def find_math_namespace(client: httpx.Client, base: str) -> str:
-    """Find the 'mathematics' namespace."""
-    r = client.get(f"{v1(base)}/namespaces?limit=200")
-    r.raise_for_status()
-    for ns in r.json()["items"]:
-        if ns["name"].lower() == "mathematics":
-            return ns["id"]
-    raise RuntimeError("Mathematics namespace not found — run seed.py first")
-
-
-def create_claim(
+def create_entry(
     client: httpx.Client,
     base: str,
     token: str,
-    namespace_id: str,
 ) -> str:
-    """Create the theorem claim. Returns the claim ID."""
+    """Create the theorem entry. Returns the entry ID."""
     # Check if it already exists.
-    r = client.get(f"{v1(base)}/claims?limit=100")
+    r = client.get(f"{v1(base)}/entries?limit=100", headers=auth_headers(token))
     r.raise_for_status()
-    for c in r.json()["items"]:
-        if "addition is commutative" in c["content"]:
-            print(f"  Claim already exists: {c['id']}")
-            return c["id"]
+    for e in r.json()["items"]:
+        if e["title"] == ENTRY_TITLE:
+            print(f"  Entry already exists: {e['id']}")
+            return e["id"]
 
     r = client.post(
-        f"{v1(base)}/claims",
+        f"{v1(base)}/entries",
         json={
-            "content": CLAIM_CONTENT,
-            "claim_type": "theorem",
-            "namespace_id": namespace_id,
-            "status": "active",
-            "attrs": {},
+            "title": ENTRY_TITLE,
+            "summary": ENTRY_SUMMARY,
+            "layout_hint": "theorem",
+            "tags": ["mathematics", "number-theory"],
         },
         headers=auth_headers(token),
     )
-    # 500 is expected (extensions table missing) but data commits.
+    # 500 is possible if extensions table issue; data may still commit.
     if r.status_code not in (200, 201, 500):
-        print(f"  Unexpected status creating claim: {r.status_code}")
+        print(f"  Unexpected status creating entry: {r.status_code}")
         print(f"  {r.text}")
         sys.exit(1)
 
     if r.status_code == 500:
-        print("  Got 500 (expected — extensions table missing), looking up claim...")
-        r2 = client.get(f"{v1(base)}/claims?limit=100")
+        print("  Got 500 (expected — extensions issue), looking up entry...")
+        r2 = client.get(f"{v1(base)}/entries?limit=100", headers=auth_headers(token))
         r2.raise_for_status()
-        for c in r2.json()["items"]:
-            if "addition is commutative" in c["content"]:
-                print(f"  Found claim: {c['id']}")
-                return c["id"]
-        raise RuntimeError("Claim was not committed despite 500")
+        for e in r2.json()["items"]:
+            if e["title"] == ENTRY_TITLE:
+                print(f"  Found entry: {e['id']}")
+                return e["id"]
+        raise RuntimeError("Entry was not committed despite 500")
 
-    claim_id = r.json()["id"]
-    print(f"  Created claim: {claim_id}")
-    return claim_id
-
-
-def submit_verification(
-    client: httpx.Client,
-    base: str,
-    token: str,
-    claim_id: str,
-) -> None:
-    """POST /claims/{id}/verify — sets status to pending."""
-    r = client.post(
-        f"{v1(base)}/claims/{claim_id}/verify",
-        json={
-            "code_content": LEAN4_PROOF,
-            "runner_type": "lean4",
-        },
-        headers=auth_headers(token),
-    )
-    # 500 from dispatch_event is expected; data commits before that.
-    if r.status_code in (200, 201):
-        print("  Verification submitted (pending)")
-    elif r.status_code == 500:
-        print("  Verification submitted (pending) — dispatch 500 is expected")
-    else:
-        print(f"  Unexpected status: {r.status_code}")
-        print(f"  {r.text}")
-        sys.exit(1)
-
-
-def report_verification_result(
-    client: httpx.Client,
-    base: str,
-    token: str,
-    claim_id: str,
-) -> None:
-    """PUT /claims/{id}/verification — report L6 formally proven result.
-
-    This is the same endpoint phiacta-verify calls after running the Lean
-    container.  We're calling it manually since the event pipeline can't
-    deliver the job.
-    """
-    code_hash = hashlib.sha256(LEAN4_PROOF.encode()).hexdigest()
-    now = datetime.now(timezone.utc).isoformat()
-
-    r = client.put(
-        f"{v1(base)}/claims/{claim_id}/verification",
-        json={
-            "verification_level": "L6_FORMALLY_PROVEN",
-            "verification_status": "verified",
-            "verification_result": {
-                "passed": True,
-                "code_hash": code_hash,
-                "runner_type": "lean4",
-                "runner_image": "phiacta-verify-runner-lean4:latest",
-                "execution_time_seconds": 4.21,
-                "stdout": "Lean 4 type-checking succeeded. All theorems verified.\n",
-                "stderr": "",
-                "error_message": None,
-                "verified_at": now,
-            },
-        },
-        headers=auth_headers(token),
-    )
-    if r.status_code in (200, 201):
-        print("  Verification result reported: L6_FORMALLY_PROVEN")
-    else:
-        print(f"  Unexpected status: {r.status_code}")
-        print(f"  {r.text}")
-        sys.exit(1)
+    entry_id = r.json()["id"]
+    print(f"  Created entry: {entry_id}")
+    return entry_id
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +126,7 @@ def report_verification_result(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Submit a Lean 4 verified claim")
+    parser = argparse.ArgumentParser(description="Create a theorem entry with Lean 4 proof")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     args = parser.parse_args()
     base = args.base_url.rstrip("/")
@@ -223,21 +137,12 @@ def main() -> None:
     token, agent_id = login(client, base)
     print(f"   Agent: {agent_id}")
 
-    print("2. Finding mathematics namespace...")
-    ns_id = find_math_namespace(client, base)
-    print(f"   Namespace: {ns_id}")
-
-    print("3. Creating theorem claim...")
-    claim_id = create_claim(client, base, token, ns_id)
-
-    print("4. Submitting Lean 4 proof for verification...")
-    submit_verification(client, base, token, claim_id)
-
-    print("5. Reporting verification result (L6 Formally Proven)...")
-    report_verification_result(client, base, token, claim_id)
+    print("2. Creating theorem entry...")
+    entry_id = create_entry(client, base, token)
 
     print()
-    print(f"Done! View at: https://phiacta.com/claims/{claim_id}")
+    print(f"Done! View at: https://phiacta.com/entries/{entry_id}")
+    print(f"Lean 4 proof ({len(LEAN4_PROOF)} bytes) can be committed to the entry's git repo.")
 
 
 if __name__ == "__main__":

@@ -65,8 +65,8 @@ async def dispatch_event(
 
     Args:
         session: Database session to query registered extensions.
-        event_type: Event type string (e.g. "claim.created").
-        payload: Data to include in the notification (e.g. claim_ids).
+        event_type: Event type string (e.g. "entry.created").
+        payload: Data to include in the notification (e.g. entry_ids).
         source_extension_id: If the event was caused by an extension,
             that extension will be excluded from notifications to prevent
             circular event loops.

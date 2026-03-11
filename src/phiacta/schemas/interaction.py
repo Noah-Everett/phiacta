@@ -10,7 +10,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 
-
 # ---------------------------------------------------------------------------
 # Attrs payload cap (64 KiB serialised)
 # ---------------------------------------------------------------------------
@@ -89,16 +88,15 @@ class AuthorSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    name: str
+    handle: str
     agent_type: str
-    trust_score: float
 
 
 class InteractionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    claim_id: UUID
+    entry_id: UUID
     author: AuthorSummary
     kind: str
     signal: str | None
@@ -115,7 +113,7 @@ class InteractionListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    claim_id: UUID
+    entry_id: UUID
     author: AuthorSummary
     kind: str
     signal: str | None
