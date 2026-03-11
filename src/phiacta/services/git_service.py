@@ -65,41 +65,6 @@ class DiffInfo:
     files_changed: list[FileDiff]
 
 
-@dataclass(frozen=True, slots=True)
-class IssueInfo:
-    number: int
-    title: str
-    body: str
-    state: str  # "open", "closed"
-    labels: list[str]
-    created_by: str  # author display name
-    created_at: datetime
-    updated_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class CommentInfo:
-    id: int
-    body: str
-    created_by: str  # author display name
-    created_at: datetime
-    updated_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class PullRequestInfo:
-    number: int
-    title: str
-    body: str
-    state: str  # "open", "closed", "merged"
-    head_branch: str
-    base_branch: str
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-    merged_at: datetime | None = None
-
-
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
@@ -111,14 +76,6 @@ class ForgejoError(Exception):
 
 class RepoNotFoundError(ForgejoError):
     """Raised when a repository does not exist."""
-
-
-class MergeConflictError(ForgejoError):
-    """Raised when a PR cannot be merged due to conflicts."""
-
-    def __init__(self, message: str, conflicting_files: list[str] | None = None) -> None:
-        super().__init__(message)
-        self.conflicting_files: list[str] = conflicting_files or []
 
 
 class ForgejoUnavailableError(ForgejoError):
@@ -215,122 +172,6 @@ class GitService(Protocol):
         """List branches. Optionally exclude ``archived/*`` branches."""
         ...
 
-    # --- Pull requests (proposals) ---
-
-    async def create_pull_request(
-        self,
-        entry_id: UUID,
-        title: str,
-        body: str,
-        head_branch: str,
-        base_branch: str = "main",
-    ) -> PullRequestInfo:
-        """Create a PR. Returns PR info including number."""
-        ...
-
-    async def merge_pull_request(self, entry_id: UUID, pr_number: int) -> str:
-        """Merge a PR. Returns the merge commit SHA.
-
-        Raises ``MergeConflictError`` if not mergeable.
-        """
-        ...
-
-    async def close_pull_request(self, entry_id: UUID, pr_number: int) -> None:
-        """Close a PR without merging (reject proposal)."""
-        ...
-
-    async def list_pull_requests(
-        self,
-        entry_id: UUID,
-        state: str = "open",
-        limit: int = 50,
-        page: int = 1,
-    ) -> list[PullRequestInfo]:
-        """List PRs by state."""
-        ...
-
-    async def get_pull_request(
-        self, entry_id: UUID, pr_number: int
-    ) -> PullRequestInfo:
-        """Get a single PR by number."""
-        ...
-
-    # --- Issues ---
-
-    async def create_issue(
-        self,
-        entry_id: UUID,
-        title: str,
-        body: str,
-        labels: list[str] | None = None,
-    ) -> IssueInfo:
-        """Create an issue. Returns issue info including number."""
-        ...
-
-    async def close_issue(self, entry_id: UUID, issue_number: int) -> None:
-        """Close an issue."""
-        ...
-
-    async def reopen_issue(self, entry_id: UUID, issue_number: int) -> None:
-        """Reopen a closed issue."""
-        ...
-
-    async def list_issues(
-        self,
-        entry_id: UUID,
-        state: str = "open",
-        limit: int = 50,
-        page: int = 1,
-    ) -> list[IssueInfo]:
-        """List issues by state."""
-        ...
-
-    async def get_issue(self, entry_id: UUID, issue_number: int) -> IssueInfo:
-        """Get a single issue by number."""
-        ...
-
-    # --- Comments (on issues and PRs) ---
-
-    async def add_issue_comment(
-        self,
-        entry_id: UUID,
-        issue_number: int,
-        body: str,
-        author: AgentInfo,
-    ) -> CommentInfo:
-        """Add a comment to an issue. Returns comment info."""
-        ...
-
-    async def list_issue_comments(
-        self,
-        entry_id: UUID,
-        issue_number: int,
-        limit: int = 50,
-        page: int = 1,
-    ) -> list[CommentInfo]:
-        """List comments on an issue."""
-        ...
-
-    async def add_pr_comment(
-        self,
-        entry_id: UUID,
-        pr_number: int,
-        body: str,
-        author: AgentInfo,
-    ) -> CommentInfo:
-        """Add a comment to a PR. Returns comment info."""
-        ...
-
-    async def list_pr_comments(
-        self,
-        entry_id: UUID,
-        pr_number: int,
-        limit: int = 50,
-        page: int = 1,
-    ) -> list[CommentInfo]:
-        """List comments on a PR."""
-        ...
-
     # --- Health ---
 
     async def health_check(self) -> bool:
@@ -363,56 +204,6 @@ def _parse_commit(raw: dict) -> CommitInfo:
             email=author_data.get("email", ""),
         ),
         timestamp=_parse_datetime(author_data.get("date")),
-    )
-
-
-def _parse_issue(raw: dict) -> IssueInfo:
-    """Convert a Forgejo issue JSON object to ``IssueInfo``."""
-    return IssueInfo(
-        number=raw["number"],
-        title=raw.get("title", ""),
-        body=raw.get("body", "") or "",
-        state=raw.get("state", "open"),
-        labels=[lbl.get("name", "") for lbl in raw.get("labels", [])],
-        created_by=raw.get("user", {}).get("login", ""),
-        created_at=_parse_datetime(raw.get("created_at")),
-        updated_at=_parse_datetime(raw.get("updated_at")),
-    )
-
-
-def _parse_pr(raw: dict) -> PullRequestInfo:
-    """Convert a Forgejo PR JSON object to ``PullRequestInfo``."""
-    # Forgejo uses state "open"/"closed" plus a separate merged_at field.
-    merged_at = raw.get("merged_at")
-    if merged_at:
-        state = "merged"
-        merged_at_dt = _parse_datetime(merged_at)
-    else:
-        state = raw.get("state", "open")
-        merged_at_dt = None
-
-    return PullRequestInfo(
-        number=raw["number"],
-        title=raw.get("title", ""),
-        body=raw.get("body", "") or "",
-        state=state,
-        head_branch=raw.get("head", {}).get("ref", ""),
-        base_branch=raw.get("base", {}).get("ref", ""),
-        created_by=raw.get("user", {}).get("login", ""),
-        created_at=_parse_datetime(raw.get("created_at")),
-        updated_at=_parse_datetime(raw.get("updated_at")),
-        merged_at=merged_at_dt,
-    )
-
-
-def _parse_comment(raw: dict) -> CommentInfo:
-    """Convert a Forgejo comment JSON object to ``CommentInfo``."""
-    return CommentInfo(
-        id=raw["id"],
-        body=raw.get("body", "") or "",
-        created_by=raw.get("user", {}).get("login", ""),
-        created_at=_parse_datetime(raw.get("created_at")),
-        updated_at=_parse_datetime(raw.get("updated_at")),
     )
 
 
@@ -486,12 +277,6 @@ class ForgejoGitService:
 
         if resp.status_code == 404:
             raise RepoNotFoundError(f"Not found: {method} {path}")
-        if resp.status_code == 409:
-            body = resp.json() if resp.content else {}
-            raise MergeConflictError(
-                body.get("message", "Conflict"),
-                conflicting_files=body.get("conflicting_files", []),
-            )
         if resp.status_code == 503:
             raise ForgejoUnavailableError("Forgejo returned 503 Service Unavailable")
         if resp.status_code >= 400:
@@ -616,13 +401,6 @@ class ForgejoGitService:
     async def setup_webhook(self, entry_id: UUID) -> None:
         """Register the Phiacta push webhook on the repo."""
         settings = get_settings()
-        # Build callback URL.  The webhook handler lives at /webhooks/forgejo on
-        # the Phiacta API.  In a Docker Compose deployment the API service is
-        # reachable from the Forgejo container as ``http://phiacta-api:8000``.
-        # The base URL is constructed from the Forgejo URL's scheme/host pattern
-        # but in practice the target is the *API* host.  We use a well-known
-        # internal address here; a more robust setup would add a dedicated
-        # config setting for the callback URL.
         callback_url = "http://phiacta-api:8000/webhooks/forgejo"
 
         repo = self._repo_path(entry_id)
@@ -846,250 +624,6 @@ class ForgejoGitService:
         return names
 
     # ------------------------------------------------------------------
-    # Pull requests (proposals)
-    # ------------------------------------------------------------------
-
-    async def create_pull_request(
-        self,
-        entry_id: UUID,
-        title: str,
-        body: str,
-        head_branch: str,
-        base_branch: str = "main",
-    ) -> PullRequestInfo:
-        """Create a pull request. Returns PR info including number."""
-        repo = self._repo_path(entry_id)
-        resp = await self._request(
-            "POST",
-            f"/repos/{repo}/pulls",
-            json={
-                "title": title,
-                "body": body,
-                "head": head_branch,
-                "base": base_branch,
-            },
-        )
-        return _parse_pr(resp.json())
-
-    async def merge_pull_request(self, entry_id: UUID, pr_number: int) -> str:
-        """Merge a PR. Returns the merge commit SHA.
-
-        Raises ``MergeConflictError`` if the PR is not mergeable.
-        """
-        repo = self._repo_path(entry_id)
-        resp = await self._request(
-            "POST",
-            f"/repos/{repo}/pulls/{pr_number}/merge",
-            json={
-                "Do": "merge",
-                "merge_message_field": "",
-            },
-        )
-        # After merging, fetch the PR to get the merge commit SHA.
-        pr_resp = await self._request(
-            "GET",
-            f"/repos/{repo}/pulls/{pr_number}",
-        )
-        pr_data = pr_resp.json()
-        merge_sha: str = pr_data.get("merge_commit_sha", "")
-        logger.info("Merged PR #%d on %s (sha=%s)", pr_number, repo, merge_sha[:12])
-        return merge_sha
-
-    async def close_pull_request(self, entry_id: UUID, pr_number: int) -> None:
-        """Close a PR without merging."""
-        repo = self._repo_path(entry_id)
-        await self._request(
-            "PATCH",
-            f"/repos/{repo}/pulls/{pr_number}",
-            json={"state": "closed"},
-        )
-        logger.info("Closed PR #%d on %s", pr_number, repo)
-
-    async def list_pull_requests(
-        self,
-        entry_id: UUID,
-        state: str = "open",
-        limit: int = 50,
-        page: int = 1,
-    ) -> list[PullRequestInfo]:
-        """List PRs filtered by state."""
-        repo = self._repo_path(entry_id)
-        raw_list = await self._paginate(
-            f"/repos/{repo}/pulls",
-            params={"state": state},
-            limit=limit,
-            page=page,
-        )
-        return [_parse_pr(pr) for pr in raw_list]
-
-    async def get_pull_request(
-        self, entry_id: UUID, pr_number: int
-    ) -> PullRequestInfo:
-        """Get a single PR by number."""
-        repo = self._repo_path(entry_id)
-        resp = await self._request("GET", f"/repos/{repo}/pulls/{pr_number}")
-        return _parse_pr(resp.json())
-
-    # ------------------------------------------------------------------
-    # Issues
-    # ------------------------------------------------------------------
-
-    async def create_issue(
-        self,
-        entry_id: UUID,
-        title: str,
-        body: str,
-        labels: list[str] | None = None,
-    ) -> IssueInfo:
-        """Create an issue. Returns issue info including number.
-
-        Labels are resolved to Forgejo label IDs by name.  Non-existent labels
-        are silently ignored.
-        """
-        repo = self._repo_path(entry_id)
-        payload: dict = {"title": title, "body": body}
-
-        if labels:
-            # Resolve label names to IDs.
-            label_ids = await self._resolve_label_ids(entry_id, labels)
-            if label_ids:
-                payload["labels"] = label_ids
-
-        resp = await self._request(
-            "POST",
-            f"/repos/{repo}/issues",
-            json=payload,
-        )
-        return _parse_issue(resp.json())
-
-    async def close_issue(self, entry_id: UUID, issue_number: int) -> None:
-        """Close an issue."""
-        repo = self._repo_path(entry_id)
-        await self._request(
-            "PATCH",
-            f"/repos/{repo}/issues/{issue_number}",
-            json={"state": "closed"},
-        )
-        logger.info("Closed issue #%d on %s", issue_number, repo)
-
-    async def reopen_issue(self, entry_id: UUID, issue_number: int) -> None:
-        """Reopen a closed issue."""
-        repo = self._repo_path(entry_id)
-        await self._request(
-            "PATCH",
-            f"/repos/{repo}/issues/{issue_number}",
-            json={"state": "open"},
-        )
-        logger.info("Reopened issue #%d on %s", issue_number, repo)
-
-    async def list_issues(
-        self,
-        entry_id: UUID,
-        state: str = "open",
-        limit: int = 50,
-        page: int = 1,
-    ) -> list[IssueInfo]:
-        """List issues filtered by state."""
-        repo = self._repo_path(entry_id)
-        raw_list = await self._paginate(
-            f"/repos/{repo}/issues",
-            params={"state": state, "type": "issues"},
-            limit=limit,
-            page=page,
-        )
-        return [_parse_issue(i) for i in raw_list]
-
-    async def get_issue(self, entry_id: UUID, issue_number: int) -> IssueInfo:
-        """Get a single issue by number."""
-        repo = self._repo_path(entry_id)
-        resp = await self._request(
-            "GET",
-            f"/repos/{repo}/issues/{issue_number}",
-        )
-        return _parse_issue(resp.json())
-
-    # ------------------------------------------------------------------
-    # Comments (issues and PRs)
-    # ------------------------------------------------------------------
-
-    async def add_issue_comment(
-        self,
-        entry_id: UUID,
-        issue_number: int,
-        body: str,
-        author: AgentInfo,
-    ) -> CommentInfo:
-        """Add a comment to an issue.
-
-        The comment body is prefixed with an authorship line since all
-        Forgejo API calls are made by the service account.
-        """
-        repo = self._repo_path(entry_id)
-        attributed_body = f"**{author.name}** ({author.email}):\n\n{body}"
-        resp = await self._request(
-            "POST",
-            f"/repos/{repo}/issues/{issue_number}/comments",
-            json={"body": attributed_body},
-        )
-        return _parse_comment(resp.json())
-
-    async def list_issue_comments(
-        self,
-        entry_id: UUID,
-        issue_number: int,
-        limit: int = 50,
-        page: int = 1,
-    ) -> list[CommentInfo]:
-        """List comments on an issue."""
-        repo = self._repo_path(entry_id)
-        raw_list = await self._paginate(
-            f"/repos/{repo}/issues/{issue_number}/comments",
-            limit=limit,
-            page=page,
-        )
-        return [_parse_comment(c) for c in raw_list]
-
-    async def add_pr_comment(
-        self,
-        entry_id: UUID,
-        pr_number: int,
-        body: str,
-        author: AgentInfo,
-    ) -> CommentInfo:
-        """Add a comment to a PR.
-
-        Forgejo treats PR comments as issue comments (PRs are issues
-        internally), so this uses the issues comment endpoint.
-        """
-        repo = self._repo_path(entry_id)
-        attributed_body = f"**{author.name}** ({author.email}):\n\n{body}"
-        resp = await self._request(
-            "POST",
-            f"/repos/{repo}/issues/{pr_number}/comments",
-            json={"body": attributed_body},
-        )
-        return _parse_comment(resp.json())
-
-    async def list_pr_comments(
-        self,
-        entry_id: UUID,
-        pr_number: int,
-        limit: int = 50,
-        page: int = 1,
-    ) -> list[CommentInfo]:
-        """List comments on a PR.
-
-        Forgejo treats PR comments as issue comments.
-        """
-        repo = self._repo_path(entry_id)
-        raw_list = await self._paginate(
-            f"/repos/{repo}/issues/{pr_number}/comments",
-            limit=limit,
-            page=page,
-        )
-        return [_parse_comment(c) for c in raw_list]
-
-    # ------------------------------------------------------------------
     # Health
     # ------------------------------------------------------------------
 
@@ -1100,22 +634,6 @@ class ForgejoGitService:
             return resp.status_code == 200
         except (httpx.ConnectError, httpx.TimeoutException):
             return False
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    async def _resolve_label_ids(
-        self, entry_id: UUID, label_names: list[str]
-    ) -> list[int]:
-        """Resolve label names to Forgejo label IDs for a repo.
-
-        Labels that do not exist are silently skipped.
-        """
-        repo = self._repo_path(entry_id)
-        all_labels = await self._paginate_all(f"/repos/{repo}/labels")
-        name_to_id = {lbl["name"]: lbl["id"] for lbl in all_labels}
-        return [name_to_id[n] for n in label_names if n in name_to_id]
 
     async def close(self) -> None:
         """Close the underlying HTTP client.
