@@ -28,6 +28,3 @@ node_modules/
 # Production secrets
 .env.prod
 cloudflared/credentials.json
-
-# Old repo snapshot (should not be tracked)
-NewPublishing/
