@@ -6,6 +6,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import (
+    JSON,
     ForeignKey,
     Index,
     Integer,
@@ -25,7 +26,9 @@ class Entry(UUIDMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     layout_hint: Mapped[str | None] = mapped_column(String(50), default=None)
     tags: Mapped[list[str]] = mapped_column(
-        ARRAY(Text), nullable=False, server_default="{}"
+        JSON().with_variant(ARRAY(Text), "postgresql"),
+        nullable=False,
+        server_default="[]",
     )
     summary: Mapped[str | None] = mapped_column(Text, default=None)
     license: Mapped[str | None] = mapped_column(String(50), default=None)

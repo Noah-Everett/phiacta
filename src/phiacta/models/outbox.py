@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, Index, Integer, String, Text, func, text
+from sqlalchemy import JSON, DateTime, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,7 +20,7 @@ class Outbox(UUIDMixin, Base):
     aggregate_type: Mapped[str] = mapped_column(String(30), nullable=False)
     operation: Mapped[str] = mapped_column(String(50), nullable=False)
     payload: Mapped[dict[str, object]] = mapped_column(
-        JSONB, nullable=False, server_default="{}"
+        JSON().with_variant(JSONB, "postgresql"), nullable=False, server_default="{}"
     )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending"

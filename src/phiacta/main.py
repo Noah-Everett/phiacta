@@ -11,7 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from phiacta.api.auth import limiter
+from phiacta.api.rate_limit import limiter
 from phiacta.api.router import v1_router
 from phiacta.config import get_settings
 from phiacta.db.session import get_engine

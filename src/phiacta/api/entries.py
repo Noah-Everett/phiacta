@@ -6,10 +6,9 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.api.rate_limit import limiter
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
 from phiacta.models.agent import Agent
@@ -20,8 +19,6 @@ from phiacta.repositories.entry_repository import EntryRepository
 from phiacta.schemas.common import PaginatedResponse
 from phiacta.schemas.entry import EntryCreate, EntryResponse, EntryUpdate
 from phiacta.schemas.entry_ref import EntryRefResponse
-
-limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
@@ -136,6 +133,7 @@ async def update_entry(
         entry.status = body.status
 
     await db.commit()
+    await db.refresh(entry)
     return EntryResponse.model_validate(entry)
 
 

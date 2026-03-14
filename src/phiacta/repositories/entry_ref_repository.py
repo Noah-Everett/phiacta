@@ -48,3 +48,22 @@ class EntryRefRepository(BaseRepository[EntryRef]):
             select(func.count()).select_from(EntryRef)
         )
         return result.scalar_one()
+
+    async def count_by_entry(self, entry_id: UUID, *, direction: str = "both") -> int:
+        if direction == "outgoing":
+            stmt = select(func.count()).where(EntryRef.from_entry_id == entry_id)
+        elif direction == "incoming":
+            stmt = select(func.count()).where(EntryRef.to_entry_id == entry_id)
+        else:
+            stmt = select(func.count()).where(
+                (EntryRef.from_entry_id == entry_id)
+                | (EntryRef.to_entry_id == entry_id)
+            )
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
+
+    async def count_by_rel(self, rel: str) -> int:
+        result = await self.session.execute(
+            select(func.count()).where(EntryRef.rel == rel)
+        )
+        return result.scalar_one()

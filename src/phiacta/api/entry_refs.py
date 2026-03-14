@@ -6,10 +6,10 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.api.rate_limit import limiter
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
 from phiacta.models.agent import Agent
@@ -17,8 +17,6 @@ from phiacta.models.entry_ref import EntryRef
 from phiacta.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.schemas.common import PaginatedResponse
 from phiacta.schemas.entry_ref import EntryRefCreate, EntryRefResponse
-
-limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/entry-refs", tags=["entry-refs"])
 
@@ -37,15 +35,18 @@ async def list_entry_refs(
         refs = await repo.list_by_entry(
             from_entry_id, direction="outgoing", limit=limit, offset=offset,
         )
+        total = await repo.count_by_entry(from_entry_id, direction="outgoing")
     elif to_entry_id is not None:
         refs = await repo.list_by_entry(
             to_entry_id, direction="incoming", limit=limit, offset=offset,
         )
+        total = await repo.count_by_entry(to_entry_id, direction="incoming")
     elif rel is not None:
         refs = await repo.list_by_rel(rel, limit=limit, offset=offset)
+        total = await repo.count_by_rel(rel)
     else:
         refs = await repo.list_all(limit=limit, offset=offset)
-    total = await repo.count_all()
+        total = await repo.count_all()
     items = [EntryRefResponse.model_validate(r) for r in refs]
     return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
 
@@ -78,6 +79,17 @@ async def create_entry_ref(
         note=body.note,
     )
     repo = EntryRefRepository(db)
-    ref = await repo.create(ref)
-    await db.commit()
+    try:
+        ref = await repo.create(ref)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        detail = str(exc.orig) if exc.orig else str(exc)
+        if "ck_entry_refs_no_self_ref" in detail:
+            raise HTTPException(
+                status_code=422, detail="Self-referential entry ref not allowed",
+            ) from None
+        raise HTTPException(
+            status_code=422, detail="Invalid entry reference (check entry IDs exist)",
+        ) from None
     return EntryRefResponse.model_validate(ref)

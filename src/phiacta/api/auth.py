@@ -4,11 +4,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.api.rate_limit import limiter
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.auth.passwords import hash_password, verify_password
 from phiacta.auth.tokens import create_access_token
@@ -22,8 +21,6 @@ from phiacta.schemas.auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-limiter = Limiter(key_func=get_remote_address)
 
 # Precomputed dummy hash for timing-safe login failures.
 _DUMMY_HASH = "$2b$12$LJ3m4ys3Lk0TSwHvGHsvxu1IZSOF5kPuEwGMaLHiYmGKIbkNpEwHi"
