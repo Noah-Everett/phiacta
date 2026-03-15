@@ -12,13 +12,12 @@ from phiacta.api.rate_limit import limiter
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
 from phiacta.models.agent import Agent
-from phiacta.models.entry import Entry
-from phiacta.models.outbox import Outbox
 from phiacta.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.repositories.entry_repository import EntryRepository
 from phiacta.schemas.common import PaginatedResponse
 from phiacta.schemas.entry import EntryCreate, EntryResponse, EntryUpdate
 from phiacta.schemas.entry_ref import EntryRefResponse
+from phiacta.services.entry_service import EntryService
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
@@ -67,37 +66,8 @@ async def create_entry(
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> EntryResponse:
-    repo = EntryRepository(db)
-
-    entry = Entry(
-        title=body.title,
-        content_format=body.content_format,
-        layout_hint=body.layout_hint,
-        tags=body.tags,
-        summary=body.summary,
-        license=body.license,
-        repo_name=str(agent.handle),
-        created_by=agent.id,
-    )
-    entry = await repo.create(entry)
-
-    # Enqueue Forgejo repo creation via outbox
-    outbox_entry = Outbox(
-        aggregate_id=entry.id,
-        aggregate_type="entry",
-        operation="create_repo",
-        payload={
-            "entry_id": str(entry.id),
-            "title": body.title,
-            "content_format": body.content_format,
-            "author_id": str(agent.id),
-            "author_handle": agent.handle,
-        },
-    )
-    db.add(outbox_entry)
-
-    await db.commit()
-
+    service = EntryService(db)
+    entry = await service.create_entry(body, agent)
     return EntryResponse.model_validate(entry)
 
 
