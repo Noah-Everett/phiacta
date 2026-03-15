@@ -19,21 +19,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import TypeAlias
 from uuid import UUID, uuid4
 
 import httpx
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from phiacta.models.entry import Entry
-from tests.e2e.conftest import auth_header, register_agent
-
-# The webhook secret used in tests. Must match what the app is configured with.
-TEST_WEBHOOK_SECRET = "test-webhook-secret-for-e2e-testing"
-
-AuthedFixture: TypeAlias = tuple[httpx.AsyncClient, dict, str]
+from tests.e2e.conftest import TEST_WEBHOOK_SECRET, auth_header, register_agent
 
 
 def _compute_forgejo_signature(body: bytes, secret: str) -> str:
@@ -285,3 +278,76 @@ class TestWebhookUnknownRepo:
         )
         # Should not crash
         assert resp.status_code == 200
+
+
+class TestWebhookPushHappyPath:
+    """Scenario: Valid push webhook updates entry head SHA."""
+
+    async def test_webhook_updates_head_sha_on_valid_push(
+        self,
+        client: httpx.AsyncClient,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Push to main branch with valid signature updates current_head_sha."""
+        entry_id, repo_name, _ = await _create_entry_for_webhook(client)
+
+        new_sha = "a" * 40  # valid 40-char hex SHA
+        payload = _make_push_payload(
+            repo_name=repo_name,
+            ref="refs/heads/main",
+            after=new_sha,
+        )
+        body = json.dumps(payload).encode()
+        sig = _compute_forgejo_signature(body, TEST_WEBHOOK_SECRET)
+        resp = await client.post(
+            "/webhooks/forgejo",
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Forgejo-Event": "push",
+                "X-Forgejo-Signature": sig,
+            },
+        )
+        assert resp.status_code == 200
+
+        # Verify the entry's head SHA was updated
+        async with e2e_session_factory() as session:
+            result = await session.execute(
+                select(Entry).where(Entry.id == UUID(entry_id))
+            )
+            entry = result.scalar_one()
+            assert entry.current_head_sha == new_sha
+
+    async def test_webhook_rejects_invalid_sha_format(
+        self,
+        client: httpx.AsyncClient,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Push with non-hex or wrong-length SHA is silently ignored."""
+        entry_id, repo_name, _ = await _create_entry_for_webhook(client)
+
+        payload = _make_push_payload(
+            repo_name=repo_name,
+            ref="refs/heads/main",
+            after="not-a-valid-sha-at-all",
+        )
+        body = json.dumps(payload).encode()
+        sig = _compute_forgejo_signature(body, TEST_WEBHOOK_SECRET)
+        resp = await client.post(
+            "/webhooks/forgejo",
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Forgejo-Event": "push",
+                "X-Forgejo-Signature": sig,
+            },
+        )
+        assert resp.status_code == 200
+
+        # Entry's head SHA should NOT have been updated
+        async with e2e_session_factory() as session:
+            result = await session.execute(
+                select(Entry).where(Entry.id == UUID(entry_id))
+            )
+            entry = result.scalar_one()
+            assert entry.current_head_sha != "not-a-valid-sha-at-all"

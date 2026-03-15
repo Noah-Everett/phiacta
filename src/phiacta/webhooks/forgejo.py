@@ -16,18 +16,21 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.config import get_settings
+from phiacta.config import Settings, get_settings
 from phiacta.db.session import get_db
+from phiacta.repositories.entry_repository import EntryRepository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _verify_signature(body: bytes, signature: str, secret: str) -> bool:
@@ -45,13 +48,13 @@ def _verify_signature(body: bytes, signature: str, secret: str) -> bool:
 async def handle_forgejo_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, str]:
     """Handle incoming Forgejo webhook events.
 
     Currently handles:
     - ``push``: Updates entry ``current_head_sha`` and runs ingestion.
     """
-    settings = get_settings()
 
     # Read and verify signature
     body = await request.body()
@@ -92,20 +95,25 @@ async def _handle_push(payload: dict, db: AsyncSession) -> None:
         # Branch deletion — ignore
         return
 
+    # Validate SHA format (40-char lowercase hex) to prevent DB errors
+    if not _SHA_RE.match(after_sha):
+        logger.warning("Push event with invalid SHA format: %s", after_sha[:50])
+        return
+
     ref = payload.get("ref", "")
     if ref != "refs/heads/main":
         # Only track main branch pushes for content sync
         logger.debug("Ignoring push to non-main ref: %s", ref)
         return
 
-    # Update the entry's head SHA (cast UUID to str for SQLite compat)
-    await db.execute(
-        text("""
-            UPDATE entries SET current_head_sha = :sha
-            WHERE id = :entry_id
-        """),
-        {"sha": after_sha, "entry_id": str(entry_id)},
-    )
+    # Update the entry's head SHA via repository (preserves ORM onupdate)
+    repo = EntryRepository(db)
+    entry = await repo.get_by_id(entry_id)
+    if entry is None:
+        logger.warning("Push event for unknown entry: %s", entry_id)
+        return
+    entry.current_head_sha = after_sha
+    await db.flush()
 
     # Log push info
     commits = payload.get("commits", [])

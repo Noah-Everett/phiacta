@@ -27,10 +27,11 @@ import re
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select, text, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from phiacta.models.outbox import Outbox
+from phiacta.repositories.entry_repository import EntryRepository
 from phiacta.services.entry_yaml import generate_entry_yaml
 from phiacta.services.git_service import (
     AgentInfo,
@@ -254,15 +255,13 @@ class OutboxWorker:
 
         # If a create_repo entry permanently failed, mark the entry as error
         if new_status == "failed" and entry.operation == "create_repo":
-            entry_id = entry.payload.get("entry_id")
-            if entry_id:
-                await session.execute(
-                    text("""
-                        UPDATE entries SET repo_status = 'error'
-                        WHERE id = :entry_id AND repo_status = 'provisioning'
-                    """),
-                    {"entry_id": entry_id},
-                )
+            entry_id_str = entry.payload.get("entry_id")
+            if entry_id_str:
+                repo = EntryRepository(session)
+                db_entry = await repo.get_by_id(UUID(entry_id_str))
+                if db_entry is not None and db_entry.repo_status == "provisioning":
+                    db_entry.repo_status = "error"
+                    await session.flush()
 
         await session.commit()
 
@@ -362,7 +361,11 @@ class OutboxWorker:
 
         # Parse created_at or use now
         try:
-            created_at = datetime.fromisoformat(created_at_str) if created_at_str else datetime.now(UTC)
+            created_at = (
+                datetime.fromisoformat(created_at_str)
+                if created_at_str
+                else datetime.now(UTC)
+            )
         except (ValueError, TypeError):
             created_at = datetime.now(UTC)
 
@@ -421,17 +424,15 @@ class OutboxWorker:
             else:
                 raise
 
-        # Step 5: Update entry record with Forgejo state
+        # Step 5: Update entry record with Forgejo state (via repository
+        # so ORM onupdate for updated_at fires correctly)
         async with self._session_factory() as session:
-            await session.execute(
-                text("""
-                    UPDATE entries SET
-                        forgejo_repo_id = :repo_id,
-                        current_head_sha = :sha,
-                        repo_status = 'ready'
-                    WHERE id = :entry_id
-                """),
-                {"repo_id": repo_id, "sha": sha, "entry_id": str(entry_id)},
+            repo = EntryRepository(session)
+            await repo.update_repo_status(
+                entry_id,
+                repo_status="ready",
+                forgejo_repo_id=repo_id,
+                current_head_sha=sha,
             )
             await session.commit()
 
@@ -459,14 +460,13 @@ class OutboxWorker:
             entry_id, files, author, message
         )
 
-        # Update head SHA
+        # Update head SHA (via repository so ORM onupdate fires)
         async with self._session_factory() as session:
-            await session.execute(
-                text("""
-                    UPDATE entries SET current_head_sha = :sha
-                    WHERE id = :entry_id
-                """),
-                {"sha": sha, "entry_id": str(entry_id)},
+            repo = EntryRepository(session)
+            await repo.update_repo_status(
+                entry_id,
+                repo_status="ready",
+                current_head_sha=sha,
             )
             await session.commit()
 
