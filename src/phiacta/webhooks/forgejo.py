@@ -49,7 +49,7 @@ async def handle_forgejo_webhook(
     """Handle incoming Forgejo webhook events.
 
     Currently handles:
-    - ``push``: Updates entry ``current_head_sha``.
+    - ``push``: Updates entry ``current_head_sha`` and runs ingestion.
     """
     settings = get_settings()
 
@@ -61,9 +61,9 @@ async def handle_forgejo_webhook(
 
     # Parse event type
     event_type = request.headers.get("X-Forgejo-Event", "")
-    payload = await request.json()
 
     if event_type == "push":
+        payload = await request.json()
         await _handle_push(payload, db)
     else:
         logger.debug("Ignoring Forgejo event type: %s", event_type)
@@ -98,13 +98,13 @@ async def _handle_push(payload: dict, db: AsyncSession) -> None:
         logger.debug("Ignoring push to non-main ref: %s", ref)
         return
 
-    # Update the entry's head SHA
+    # Update the entry's head SHA (cast UUID to str for SQLite compat)
     await db.execute(
         text("""
             UPDATE entries SET current_head_sha = :sha
             WHERE id = :entry_id
         """),
-        {"sha": after_sha, "entry_id": entry_id},
+        {"sha": after_sha, "entry_id": str(entry_id)},
     )
 
     # Log push info
