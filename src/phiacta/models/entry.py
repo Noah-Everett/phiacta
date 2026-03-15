@@ -63,6 +63,7 @@ class Entry(UUIDMixin, TimestampMixin, Base):
     # Relationships
     created_by_agent: Mapped[Agent] = relationship(  # type: ignore[name-defined]  # noqa: F821
         foreign_keys="[Entry.created_by]",
+        lazy="raise",
     )
 
     __table_args__ = (
