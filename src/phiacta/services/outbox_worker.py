@@ -31,6 +31,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from phiacta.models.outbox import Outbox
+from phiacta.services.entry_yaml import generate_entry_yaml
 from phiacta.services.git_service import (
     AgentInfo,
     FileContent,
@@ -53,6 +54,9 @@ _BACKOFF_MAX = 300.0  # 5 minutes
 
 # Max retry attempts for permanent errors
 _MAX_ATTEMPTS = 5
+
+# Map content_format to README file extension
+_FORMAT_EXTENSIONS = {"markdown": ".md", "latex": ".tex", "plain": ".txt"}
 
 
 def _backoff_seconds(attempts: int) -> float:
@@ -330,10 +334,10 @@ class OutboxWorker:
         return fmt
 
     async def _handle_create_repo(self, payload: dict) -> None:
-        """Compound operation: create repo + commit initial .phiacta/entry.yaml
-        + setup branch protection + setup webhook.
+        """Compound operation: create repo + commit initial files + setup
+        branch protection + setup webhook.
 
-        This is the full sequence for provisioning a new entry.
+        This is the full sequence for provisioning a new entry repository.
         """
         entry_id = UUID(payload["entry_id"])
         title = self._sanitize_string(payload["title"])
@@ -341,34 +345,81 @@ class OutboxWorker:
         author_handle = self._sanitize_string(
             payload.get("author_handle", "phiacta-service"), max_length=100
         )
-        author_id = payload.get("author_id", "service")
+        author_id_str = payload.get("author_id", "service")
+
+        # Optional fields from the creation payload
+        tags = payload.get("tags") or []
+        summary = payload.get("summary")
+        entry_license = payload.get("license")
+        layout_hint = payload.get("layout_hint")
+        content = payload.get("content")
+        created_at_str = payload.get("created_at")
 
         author = AgentInfo(
             name=author_handle,
-            email=f"{author_id}@phiacta.local",
+            email=f"{author_id_str}@phiacta.local",
         )
 
-        # Step 1: Create the repository
+        # Parse created_at or use now
+        try:
+            created_at = datetime.fromisoformat(created_at_str) if created_at_str else datetime.now(UTC)
+        except (ValueError, TypeError):
+            created_at = datetime.now(UTC)
+
+        # Parse author_id as UUID for entry.yaml generation
+        try:
+            author_id = UUID(author_id_str)
+        except (ValueError, TypeError):
+            author_id = entry_id  # fallback
+
+        # Step 1: Create the repository (idempotent — checks if exists)
         repo_id = await self._git.create_repo(entry_id)
 
-        # Step 2: Commit initial .phiacta/entry.yaml
-        entry_yaml = (
-            f"title: {title!r}\n"
-            f"content_format: {content_format}\n"
-            f"schema_version: 1\n"
+        # Step 2: Commit initial .phiacta/entry.yaml + README
+        entry_yaml = generate_entry_yaml(
+            entry_id=entry_id,
+            title=title,
+            content_format=content_format,
+            author_id=author_id,
+            author_handle=author_handle,
+            created_at=created_at,
+            tags=tags if tags else None,
+            summary=summary,
+            license=entry_license,
+            layout_hint=layout_hint,
         )
+
+        # README file with appropriate extension
+        ext = _FORMAT_EXTENSIONS.get(content_format, ".md")
+        readme_content = content if content else f"# {title}\n"
+
         files = [
             FileContent(path=".phiacta/entry.yaml", content=entry_yaml),
+            FileContent(path=f"README{ext}", content=readme_content),
         ]
         sha = await self._git.commit_files(
             entry_id, files, author, f"Initial entry: {title}"
         )
 
         # Step 3: Setup branch protection on main
-        await self._git.setup_branch_protection(entry_id)
+        try:
+            await self._git.setup_branch_protection(entry_id)
+        except ForgejoError as exc:
+            # Idempotent: if protection already exists, log and continue
+            if "422" in str(exc) or "409" in str(exc):
+                logger.info("Branch protection already exists for %s", entry_id)
+            else:
+                raise
 
         # Step 4: Register webhook
-        await self._git.setup_webhook(entry_id)
+        try:
+            await self._git.setup_webhook(entry_id)
+        except ForgejoError as exc:
+            # Idempotent: if webhook already exists, log and continue
+            if "422" in str(exc) or "409" in str(exc):
+                logger.info("Webhook already exists for %s", entry_id)
+            else:
+                raise
 
         # Step 5: Update entry record with Forgejo state
         async with self._session_factory() as session:
@@ -380,7 +431,7 @@ class OutboxWorker:
                         repo_status = 'ready'
                     WHERE id = :entry_id
                 """),
-                {"repo_id": repo_id, "sha": sha, "entry_id": entry_id},
+                {"repo_id": repo_id, "sha": sha, "entry_id": str(entry_id)},
             )
             await session.commit()
 
@@ -402,7 +453,7 @@ class OutboxWorker:
             email=f"{author_id}@phiacta.local",
         )
 
-        ext = {"markdown": ".md", "latex": ".tex", "plain": ".txt"}.get(fmt, ".md")
+        ext = _FORMAT_EXTENSIONS.get(fmt, ".md")
         files = [FileContent(path=f"entry{ext}", content=content)]
         sha = await self._git.commit_files(
             entry_id, files, author, message
@@ -415,7 +466,7 @@ class OutboxWorker:
                     UPDATE entries SET current_head_sha = :sha
                     WHERE id = :entry_id
                 """),
-                {"sha": sha, "entry_id": entry_id},
+                {"sha": sha, "entry_id": str(entry_id)},
             )
             await session.commit()
 
