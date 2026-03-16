@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
-from sqlalchemy import event, text
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -27,9 +27,13 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from phiacta.api.rate_limit import limiter
+from phiacta.config import Settings, get_settings
 from phiacta.db.session import get_db
 from phiacta.main import app
 from phiacta.models.base import Base
+
+# Shared test webhook secret — webhook tests must use this value.
+TEST_WEBHOOK_SECRET = "test-webhook-secret-for-e2e-testing"
 
 
 def _get_test_database_url() -> str:
@@ -79,6 +83,15 @@ async def client(
             yield session
 
     app.dependency_overrides[get_db] = _override_get_db
+
+    # Override settings so tests use a known webhook secret and JWT key.
+    _test_settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        jwt_secret_key="dev-only-change-me-in-production-32chars!",
+        forgejo_webhook_secret=TEST_WEBHOOK_SECRET,
+        environment="test",
+    )
+    app.dependency_overrides[get_settings] = lambda: _test_settings
 
     # Disable rate limiting during tests.
     limiter.enabled = False

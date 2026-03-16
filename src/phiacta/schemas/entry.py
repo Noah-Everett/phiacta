@@ -16,6 +16,7 @@ class EntryCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     summary: str | None = None
     license: str | None = None
+    content: str | None = Field(None, max_length=100_000)
 
 
 class EntryUpdate(BaseModel):
