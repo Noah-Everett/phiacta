@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.models.entry_ref import EntryRef
@@ -61,6 +61,14 @@ class EntryRefRepository(BaseRepository[EntryRef]):
             )
         result = await self.session.execute(stmt)
         return result.scalar_one()
+
+    async def delete_outgoing(self, entry_id: UUID) -> int:
+        """Delete all outgoing refs (from_entry_id = entry_id). Returns count deleted."""
+        result = await self.session.execute(
+            delete(EntryRef).where(EntryRef.from_entry_id == entry_id)
+        )
+        await self.session.flush()
+        return result.rowcount
 
     async def count_by_rel(self, rel: str) -> int:
         result = await self.session.execute(

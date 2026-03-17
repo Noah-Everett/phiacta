@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
+from uuid import UUID
 
 import httpx
 import pytest
@@ -31,9 +32,77 @@ from phiacta.config import Settings, get_settings
 from phiacta.db.session import get_db
 from phiacta.main import app
 from phiacta.models.base import Base
+from phiacta.services.git_service import RepoNotFoundError
+from phiacta.services.git_service_dep import get_git_service
 
-# Shared test webhook secret — webhook tests must use this value.
+# Shared test webhook secret -- webhook tests must use this value.
 TEST_WEBHOOK_SECRET = "test-webhook-secret-for-e2e-testing"
+
+
+class FakeGitService:
+    """In-memory GitService stub for E2E tests.
+
+    Stores file contents keyed by ``(entry_id_uuid, file_path)`` and returns
+    them from ``read_file``. All other GitService methods raise
+    ``NotImplementedError`` -- only ``read_file`` is used during webhook
+    ingestion tests.
+
+    Tests populate ``files`` before sending webhook payloads::
+
+        fake_git = FakeGitService()
+        fake_git.files[(entry_uuid, ".phiacta/entry.yaml")] = yaml_bytes
+    """
+
+    def __init__(self) -> None:
+        self.files: dict[tuple[UUID, str], bytes] = {}
+
+    async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
+        """Return the file contents or raise RepoNotFoundError."""
+        key = (entry_id, path)
+        if key not in self.files:
+            raise RepoNotFoundError(f"File not found: {path} in repo {entry_id}")
+        return self.files[key]
+
+    # Remaining protocol methods -- not needed for ingestion tests.
+    async def create_repo(self, entry_id: UUID) -> int:
+        raise NotImplementedError
+
+    async def archive_repo(self, entry_id: UUID) -> None:
+        raise NotImplementedError
+
+    async def setup_branch_protection(self, entry_id: UUID) -> None:
+        raise NotImplementedError
+
+    async def setup_webhook(self, entry_id: UUID) -> None:
+        raise NotImplementedError
+
+    async def commit_files(self, entry_id, files, author, message, branch="main"):  # type: ignore[override]
+        raise NotImplementedError
+
+    async def list_files(self, entry_id, path="", ref="main"):  # type: ignore[override]
+        raise NotImplementedError
+
+    async def list_commits(self, entry_id, branch="main", limit=50, page=1):  # type: ignore[override]
+        raise NotImplementedError
+
+    async def get_diff(self, entry_id, base, head):  # type: ignore[override]
+        raise NotImplementedError
+
+    async def create_branch(self, entry_id, name, from_ref="main"):  # type: ignore[override]
+        raise NotImplementedError
+
+    async def rename_branch(self, entry_id, old_name, new_name):  # type: ignore[override]
+        raise NotImplementedError
+
+    async def list_branches(self, entry_id, exclude_archived=True):  # type: ignore[override]
+        raise NotImplementedError
+
+    async def health_check(self) -> bool:
+        return True
+
+
+# Module-level fake so tests can populate files BEFORE the request.
+_fake_git_service = FakeGitService()
 
 
 def _get_test_database_url() -> str:
@@ -93,6 +162,10 @@ async def client(
     )
     app.dependency_overrides[get_settings] = lambda: _test_settings
 
+    # Override git service so ingestion tests don't hit real Forgejo.
+    _fake_git_service.files.clear()
+    app.dependency_overrides[get_git_service] = lambda: _fake_git_service
+
     # Disable rate limiting during tests.
     limiter.enabled = False
 
@@ -128,3 +201,13 @@ async def register_agent(
 def auth_header(token: str) -> dict[str, str]:
     """Return an Authorization header dict for the given token."""
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def fake_git(client: httpx.AsyncClient) -> FakeGitService:
+    """Return the FakeGitService instance wired to the current test client.
+
+    The ``client`` fixture clears files on each test, so this is safe to use
+    without manual cleanup. Depend on ``client`` to ensure the override is active.
+    """
+    return _fake_git_service
