@@ -410,8 +410,15 @@ def _populate_fake_git(
     readme_ext: str = ".md",
     refs_yaml: str | None = None,
 ) -> None:
-    """Populate the FakeGitService with files for an entry."""
+    """Populate the FakeGitService with files for an entry.
+
+    Clears all existing files for the entry first, then sets only the files
+    that are explicitly passed. This ensures that not passing a file (e.g.
+    refs_yaml=None) means the file is absent from the repo.
+    """
     eid = UUID(entry_id)
+    # Clear all files for this entry so omitted files are truly absent
+    fake_git.files = {k: v for k, v in fake_git.files.items() if k[0] != eid}
     if entry_yaml is not None:
         fake_git.files[(eid, ".phiacta/entry.yaml")] = entry_yaml.encode("utf-8")
     if readme_content is not None:
