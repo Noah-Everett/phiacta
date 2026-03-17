@@ -57,8 +57,6 @@ _BACKOFF_MAX = 300.0  # 5 minutes
 # Max retry attempts for permanent errors
 _MAX_ATTEMPTS = 5
 
-# Re-export for backward compatibility (shared constant now in phiacta.formats)
-_FORMAT_EXTENSIONS = FORMAT_EXTENSIONS
 
 
 def _backoff_seconds(attempts: int) -> float:
@@ -327,10 +325,9 @@ class OutboxWorker:
 
     @staticmethod
     def _validate_format(fmt: str) -> str:
-        """Validate format against allowed values."""
-        allowed = {"markdown", "latex", "plain"}
-        if fmt not in allowed:
-            raise ValueError(f"Invalid format: {fmt!r}, must be one of {allowed}")
+        """Validate format against allowed values (from FORMAT_EXTENSIONS)."""
+        if fmt not in FORMAT_EXTENSIONS:
+            raise ValueError(f"Invalid format: {fmt!r}, must be one of {set(FORMAT_EXTENSIONS)}")
         return fmt
 
     async def _handle_create_repo(self, payload: dict) -> None:
@@ -394,7 +391,7 @@ class OutboxWorker:
         )
 
         # README file with appropriate extension
-        ext = _FORMAT_EXTENSIONS.get(content_format, ".md")
+        ext = FORMAT_EXTENSIONS.get(content_format, ".md")
         readme_content = content if content else f"# {title}\n"
 
         files = [
@@ -455,7 +452,7 @@ class OutboxWorker:
             email=f"{author_id}@phiacta.local",
         )
 
-        ext = _FORMAT_EXTENSIONS.get(fmt, ".md")
+        ext = FORMAT_EXTENSIONS.get(fmt, ".md")
         files = [FileContent(path=f"entry{ext}", content=content)]
         sha = await self._git.commit_files(
             entry_id, files, author, message

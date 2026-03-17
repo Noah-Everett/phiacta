@@ -93,7 +93,8 @@ async def _handle_push(
     """Handle a push event: update entry head SHA and run ingestion.
 
     The repo name is the entry UUID (set during repo creation).
-    Always returns normally — errors are logged, never raised.
+    Ingestion errors are caught and logged; validation failures
+    (unknown repo, bad SHA) return early without error.
     """
     repo_data = payload.get("repository", {})
     repo_name = repo_data.get("name", "")
@@ -155,7 +156,7 @@ async def _handle_push(
 
     # Run ingestion — wrapped in try/except to always return 200
     try:
-        await _ingest_push(entry, after_sha, db, git_service)
+        await _ingest_push(entry, after_sha, db, git_service, entry_repo)
     except Exception:
         logger.exception("Ingestion failed for entry %s at SHA %s", entry_id, after_sha[:12])
 
@@ -163,7 +164,11 @@ async def _handle_push(
 
 
 async def _ingest_push(
-    entry: Entry, sha: str, db: AsyncSession, git_service: GitService
+    entry: Entry,
+    sha: str,
+    db: AsyncSession,
+    git_service: GitService,
+    entry_repo: EntryRepository,
 ) -> None:
     """Fetch files from Forgejo and sync metadata, content, and refs to Postgres."""
     entry_id = entry.id
@@ -213,7 +218,7 @@ async def _ingest_push(
         entry.content_cache = None
 
     # --- 4. Fetch and parse refs.yaml (optional) ---
-    await _ingest_refs(entry, sha, db, git_service)
+    await _ingest_refs(entry, sha, db, git_service, entry_repo)
 
 
 def _update_entry_metadata(entry: Entry, parsed: dict) -> None:
@@ -248,12 +253,15 @@ def _update_entry_metadata(entry: Entry, parsed: dict) -> None:
 
 
 async def _ingest_refs(
-    entry: Entry, sha: str, db: AsyncSession, git_service: GitService
+    entry: Entry,
+    sha: str,
+    db: AsyncSession,
+    git_service: GitService,
+    entry_repo: EntryRepository,
 ) -> None:
     """Fetch refs.yaml from the repo and replace all outgoing entry_refs."""
     entry_id = entry.id
     ref_repo = EntryRefRepository(db)
-    entry_repo = EntryRepository(db)
 
     try:
         refs_bytes = await git_service.read_file(entry_id, ".phiacta/refs.yaml", ref=sha)
@@ -275,8 +283,12 @@ async def _ingest_refs(
 
     # Insert new refs, filtering invalid ones
     for ref_desc in ref_descriptors:
+        # Strip ent_ prefix from target entry_id
+        raw_target_id = str(ref_desc.get("target", {}).get("entry_id", ""))
+        if raw_target_id.startswith("ent_"):
+            raw_target_id = raw_target_id[4:]
         try:
-            to_entry_id = UUID(ref_desc["to_entry_id"])
+            to_entry_id = UUID(raw_target_id)
         except (ValueError, KeyError):
             logger.warning("Invalid to_entry_id in refs.yaml for entry %s", entry_id)
             continue
@@ -297,11 +309,15 @@ async def _ingest_refs(
         # Truncate rel to column max (String(50))
         rel = str(ref_desc.get("rel", ""))[:50]
 
+        # Truncate version_sha to column max (String(40))
+        raw_version_sha = ref_desc.get("version_sha")
+        version_sha = str(raw_version_sha)[:40] if raw_version_sha else None
+
         new_ref = EntryRef(
             from_entry_id=entry_id,
             to_entry_id=to_entry_id,
             rel=rel,
-            version_sha=ref_desc.get("version_sha"),
+            version_sha=version_sha,
             note=ref_desc.get("note"),
         )
         db.add(new_ref)

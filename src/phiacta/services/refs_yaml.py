@@ -53,14 +53,9 @@ def parse_refs_yaml(yaml_str: str) -> list[dict[str, Any]]:
         if "entry_id" not in target:
             raise ValueError(f"refs[{i}].target missing required 'entry_id' field")
 
-        # Strip ent_ prefix for to_entry_id (used by webhook handler)
-        raw_entry_id = str(target["entry_id"])
-        stripped_id = raw_entry_id[4:] if raw_entry_id.startswith("ent_") else raw_entry_id
-
         result.append({
             "rel": ref["rel"],
             "target": target,
-            "to_entry_id": stripped_id,
             "note": ref.get("note"),
             "version_sha": ref.get("version_sha"),
         })

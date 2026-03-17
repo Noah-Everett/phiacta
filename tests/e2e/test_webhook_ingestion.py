@@ -428,7 +428,6 @@ def _populate_fake_git(
 
 
 def _send_push(
-    client: httpx.AsyncClient,
     repo_name: str,
     after_sha: str = "a" * 40,
 ) -> tuple[bytes, dict]:
@@ -476,7 +475,7 @@ class TestIngestionEntryYamlHappyPath:
         entry_yaml = _build_entry_yaml(entry_id, title="Updated Title from YAML")
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -508,7 +507,7 @@ class TestIngestionEntryYamlHappyPath:
         )
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -539,7 +538,7 @@ class TestIngestionEntryYamlHappyPath:
             fake_git, entry_id, entry_yaml=entry_yaml, readme_content=readme_text
         )
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -567,7 +566,7 @@ class TestIngestionEntryYamlHappyPath:
             readme_ext=".tex",
         )
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -595,7 +594,7 @@ class TestIngestionEntryYamlHappyPath:
             readme_ext=".txt",
         )
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -618,7 +617,7 @@ class TestIngestionEntryYamlHappyPath:
         entry_yaml = _build_entry_yaml(entry_id)
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
-        body, headers = _send_push(client, repo_name, after_sha=new_sha)
+        body, headers = _send_push(repo_name, after_sha=new_sha)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -645,7 +644,7 @@ class TestIngestionEntryYamlHappyPath:
         )
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -673,7 +672,7 @@ class TestIngestionFieldTruncation:
         entry_yaml = _build_entry_yaml(entry_id, title=long_title)
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -697,7 +696,7 @@ class TestIngestionFieldTruncation:
         entry_yaml = _build_entry_yaml(entry_id, layout_hint=long_hint)
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -721,7 +720,7 @@ class TestIngestionFieldTruncation:
         entry_yaml = _build_entry_yaml(entry_id, license_=long_license)
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -750,7 +749,7 @@ class TestIngestionIdempotency:
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
         # First push -- ingests normally
-        body, headers = _send_push(client, repo_name, after_sha=sha)
+        body, headers = _send_push(repo_name, after_sha=sha)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -768,7 +767,7 @@ class TestIngestionIdempotency:
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml_v2)
 
         # Second push with SAME sha -- should be skipped
-        body2, headers2 = _send_push(client, repo_name, after_sha=sha)
+        body2, headers2 = _send_push(repo_name, after_sha=sha)
         resp2 = await client.post("/webhooks/forgejo", content=body2, headers=headers2)
         assert resp2.status_code == 200
 
@@ -793,14 +792,14 @@ class TestIngestionIdempotency:
         entry_yaml_v1 = _build_entry_yaml(entry_id, title="Version One")
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml_v1)
 
-        body1, headers1 = _send_push(client, repo_name, after_sha=sha1)
+        body1, headers1 = _send_push(repo_name, after_sha=sha1)
         await client.post("/webhooks/forgejo", content=body1, headers=headers1)
 
         # Second push with different SHA and different title
         entry_yaml_v2 = _build_entry_yaml(entry_id, title="Version Two")
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml_v2)
 
-        body2, headers2 = _send_push(client, repo_name, after_sha=sha2)
+        body2, headers2 = _send_push(repo_name, after_sha=sha2)
         resp = await client.post("/webhooks/forgejo", content=body2, headers=headers2)
         assert resp.status_code == 200
 
@@ -832,7 +831,7 @@ class TestIngestionEntryYamlErrors:
         # Do NOT populate any files -- entry.yaml is missing
         sha = "f" * 40
 
-        body, headers = _send_push(client, repo_name, after_sha=sha)
+        body, headers = _send_push(repo_name, after_sha=sha)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -859,7 +858,7 @@ class TestIngestionEntryYamlErrors:
         )
         sha = "a1" * 20
 
-        body, headers = _send_push(client, repo_name, after_sha=sha)
+        body, headers = _send_push(repo_name, after_sha=sha)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -884,7 +883,7 @@ class TestIngestionEntryYamlErrors:
         fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = entry_yaml.encode()
         sha = "b1" * 20
 
-        body, headers = _send_push(client, repo_name, after_sha=sha)
+        body, headers = _send_push(repo_name, after_sha=sha)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -916,7 +915,7 @@ class TestIngestionEntryYamlErrors:
         fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = incomplete_yaml.encode()
         sha = "c1" * 20
 
-        body, headers = _send_push(client, repo_name, after_sha=sha)
+        body, headers = _send_push(repo_name, after_sha=sha)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -940,7 +939,7 @@ class TestIngestionEntryYamlErrors:
         fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = b"\x80\x81\x82"
 
         sha = "d1" * 20
-        body, headers = _send_push(client, repo_name, after_sha=sha)
+        body, headers = _send_push(repo_name, after_sha=sha)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         # Must still return 200 to prevent Forgejo retry storms
         assert resp.status_code == 200
@@ -968,7 +967,7 @@ class TestIngestionReadmeErrors:
         # Only entry.yaml, no README
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
-        body, headers = _send_push(client, repo_name)
+        body, headers = _send_push(repo_name)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -999,7 +998,7 @@ class TestIngestionReadmeErrors:
         fake_git.files[(UUID(entry_a_id), ".phiacta/entry.yaml")] = entry_yaml.encode()
         fake_git.files[(UUID(entry_a_id), ".phiacta/refs.yaml")] = refs_yaml.encode()
 
-        body, headers = _send_push(client, repo_a)
+        body, headers = _send_push(repo_a)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -1040,7 +1039,7 @@ class TestIngestionRefsYamlHappyPath:
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml
         )
 
-        body, headers = _send_push(client, repo_a)
+        body, headers = _send_push(repo_a)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -1081,7 +1080,7 @@ class TestIngestionRefsYamlHappyPath:
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml
         )
 
-        body, headers = _send_push(client, repo_a)
+        body, headers = _send_push(repo_a)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -1116,7 +1115,7 @@ class TestIngestionRefsYamlHappyPath:
         _populate_fake_git(
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml_v1
         )
-        body1, headers1 = _send_push(client, repo_a, after_sha="a" * 40)
+        body1, headers1 = _send_push(repo_a, after_sha="a" * 40)
         await client.post("/webhooks/forgejo", content=body1, headers=headers1)
 
         # Second push: A -> C (B ref should be deleted)
@@ -1126,7 +1125,7 @@ class TestIngestionRefsYamlHappyPath:
         _populate_fake_git(
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml_v2
         )
-        body2, headers2 = _send_push(client, repo_a, after_sha="b" * 40)
+        body2, headers2 = _send_push(repo_a, after_sha="b" * 40)
         await client.post("/webhooks/forgejo", content=body2, headers=headers2)
 
         async with e2e_session_factory() as session:
@@ -1159,7 +1158,7 @@ class TestIngestionRefsYamlHappyPath:
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml
         )
 
-        body, headers = _send_push(client, repo_a)
+        body, headers = _send_push(repo_a)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -1191,7 +1190,7 @@ class TestIngestionRefsYamlMissingAndEmpty:
         _populate_fake_git(
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml
         )
-        body1, headers1 = _send_push(client, repo_a, after_sha="a" * 40)
+        body1, headers1 = _send_push(repo_a, after_sha="a" * 40)
         await client.post("/webhooks/forgejo", content=body1, headers=headers1)
 
         # Verify ref exists
@@ -1203,7 +1202,7 @@ class TestIngestionRefsYamlMissingAndEmpty:
 
         # Second push: no refs.yaml at all
         _populate_fake_git(fake_git, entry_a_id, entry_yaml=entry_yaml)
-        body2, headers2 = _send_push(client, repo_a, after_sha="b" * 40)
+        body2, headers2 = _send_push(repo_a, after_sha="b" * 40)
         await client.post("/webhooks/forgejo", content=body2, headers=headers2)
 
         # Refs should be deleted
@@ -1231,7 +1230,7 @@ class TestIngestionRefsYamlMissingAndEmpty:
         _populate_fake_git(
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml_v1
         )
-        body1, headers1 = _send_push(client, repo_a, after_sha="a" * 40)
+        body1, headers1 = _send_push(repo_a, after_sha="a" * 40)
         await client.post("/webhooks/forgejo", content=body1, headers=headers1)
 
         # Second push with empty refs
@@ -1239,7 +1238,7 @@ class TestIngestionRefsYamlMissingAndEmpty:
         _populate_fake_git(
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml_v2
         )
-        body2, headers2 = _send_push(client, repo_a, after_sha="b" * 40)
+        body2, headers2 = _send_push(repo_a, after_sha="b" * 40)
         await client.post("/webhooks/forgejo", content=body2, headers=headers2)
 
         async with e2e_session_factory() as session:
@@ -1272,7 +1271,7 @@ class TestIngestionRefsYamlErrors:
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml
         )
 
-        body, headers = _send_push(client, repo_a)
+        body, headers = _send_push(repo_a)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -1305,7 +1304,7 @@ class TestIngestionRefsYamlErrors:
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml
         )
 
-        body, headers = _send_push(client, repo_a)
+        body, headers = _send_push(repo_a)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -1334,7 +1333,7 @@ class TestIngestionRefsYamlErrors:
         _populate_fake_git(
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml_v1
         )
-        body1, headers1 = _send_push(client, repo_a, after_sha="a" * 40)
+        body1, headers1 = _send_push(repo_a, after_sha="a" * 40)
         await client.post("/webhooks/forgejo", content=body1, headers=headers1)
 
         # Second push: malformed refs.yaml
@@ -1342,7 +1341,7 @@ class TestIngestionRefsYamlErrors:
         fake_git.files[(UUID(entry_a_id), ".phiacta/refs.yaml")] = (
             b"refs: [not: valid: yaml: unterminated"
         )
-        body2, headers2 = _send_push(client, repo_a, after_sha="b" * 40)
+        body2, headers2 = _send_push(repo_a, after_sha="b" * 40)
         await client.post("/webhooks/forgejo", content=body2, headers=headers2)
 
         # Original ref should still exist (not deleted)
@@ -1371,7 +1370,7 @@ class TestIngestionRefsYamlErrors:
             fake_git, entry_a_id, entry_yaml=entry_yaml, refs_yaml=refs_yaml
         )
 
-        body, headers = _send_push(client, repo_a)
+        body, headers = _send_push(repo_a)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -1414,7 +1413,7 @@ class TestIngestionRefsIsolation:
         _populate_fake_git(
             fake_git, entry_b_id, entry_yaml=entry_yaml_b, refs_yaml=refs_yaml_b
         )
-        body_b, headers_b = _send_push(client, repo_b, after_sha="a" * 40)
+        body_b, headers_b = _send_push(repo_b, after_sha="a" * 40)
         await client.post("/webhooks/forgejo", content=body_b, headers=headers_b)
 
         # Now push to entry A with refs A -> C
@@ -1425,7 +1424,7 @@ class TestIngestionRefsIsolation:
         _populate_fake_git(
             fake_git, entry_a_id, entry_yaml=entry_yaml_a, refs_yaml=refs_yaml_a
         )
-        body_a, headers_a = _send_push(client, repo_a, after_sha="b" * 40)
+        body_a, headers_a = _send_push(repo_a, after_sha="b" * 40)
         await client.post("/webhooks/forgejo", content=body_a, headers=headers_a)
 
         # Both entries should still have their refs
@@ -1495,7 +1494,7 @@ class TestIngestionFullJourney:
             refs_yaml=refs_yaml,
         )
 
-        body, headers = _send_push(client, repo_a, after_sha=sha)
+        body, headers = _send_push(repo_a, after_sha=sha)
         resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
@@ -1551,7 +1550,7 @@ class TestIngestionFullJourney:
             entry_yaml=entry_yaml_v1,
             readme_content=readme_v1,
         )
-        body1, headers1 = _send_push(client, repo_a, after_sha="1" * 40)
+        body1, headers1 = _send_push(repo_a, after_sha="1" * 40)
         await client.post("/webhooks/forgejo", content=body1, headers=headers1)
 
         # Verify v1
@@ -1581,7 +1580,7 @@ class TestIngestionFullJourney:
             readme_content=readme_v2,
             refs_yaml=refs_yaml_v2,
         )
-        body2, headers2 = _send_push(client, repo_a, after_sha="2" * 40)
+        body2, headers2 = _send_push(repo_a, after_sha="2" * 40)
         await client.post("/webhooks/forgejo", content=body2, headers=headers2)
 
         # Verify v2
