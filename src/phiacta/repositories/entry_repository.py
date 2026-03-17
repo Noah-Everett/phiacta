@@ -21,14 +21,11 @@ class EntryRepository(BaseRepository[Entry]):
         limit: int = 50,
         offset: int = 0,
         layout_hint: str | None = None,
-        tag: str | None = None,
-        status: str | None = None,
+        status: str | None = "active",
     ) -> list[Entry]:
         stmt = select(Entry)
         if layout_hint is not None:
             stmt = stmt.where(Entry.layout_hint == layout_hint)
-        if tag is not None:
-            stmt = stmt.where(Entry.tags.any(tag))
         if status is not None:
             stmt = stmt.where(Entry.status == status)
         stmt = stmt.order_by(Entry.created_at.desc()).limit(limit).offset(offset)
@@ -38,14 +35,11 @@ class EntryRepository(BaseRepository[Entry]):
     async def count_entries(
         self,
         layout_hint: str | None = None,
-        tag: str | None = None,
-        status: str | None = None,
+        status: str | None = "active",
     ) -> int:
         stmt = select(func.count()).select_from(Entry)
         if layout_hint is not None:
             stmt = stmt.where(Entry.layout_hint == layout_hint)
-        if tag is not None:
-            stmt = stmt.where(Entry.tags.any(tag))
         if status is not None:
             stmt = stmt.where(Entry.status == status)
         result = await self.session.execute(stmt)

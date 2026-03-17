@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from phiacta.schemas.entry_ref import EntryRefResponse
+
 
 class EntryCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
@@ -26,6 +28,29 @@ class EntryUpdate(BaseModel):
     summary: str | None = None
     license: str | None = None
     status: str | None = None
+
+
+class EntryListItem(BaseModel):
+    """Entry fields for list responses — excludes content_cache for performance."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    title: str
+    layout_hint: str | None
+    tags: list[str]
+    summary: str | None
+    license: str | None
+    content_format: str
+    schema_version: int
+    forgejo_repo_id: int | None
+    repo_name: str
+    current_head_sha: str | None
+    repo_status: str
+    status: str
+    created_by: UUID
+    created_at: datetime
+    updated_at: datetime
 
 
 class EntryResponse(BaseModel):
@@ -48,3 +73,10 @@ class EntryResponse(BaseModel):
     created_by: UUID
     created_at: datetime
     updated_at: datetime
+
+
+class EntryDetailResponse(EntryResponse):
+    """Entry detail with nested refs — used by GET /entries/{id}."""
+
+    outgoing_refs: list[EntryRefResponse] = Field(default_factory=list)
+    incoming_refs: list[EntryRefResponse] = Field(default_factory=list)
