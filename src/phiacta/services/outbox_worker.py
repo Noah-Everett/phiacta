@@ -30,6 +30,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from phiacta.formats import FORMAT_EXTENSIONS
 from phiacta.models.outbox import Outbox
 from phiacta.repositories.entry_repository import EntryRepository
 from phiacta.services.entry_yaml import generate_entry_yaml
@@ -56,8 +57,8 @@ _BACKOFF_MAX = 300.0  # 5 minutes
 # Max retry attempts for permanent errors
 _MAX_ATTEMPTS = 5
 
-# Map content_format to README file extension
-_FORMAT_EXTENSIONS = {"markdown": ".md", "latex": ".tex", "plain": ".txt"}
+# Re-export for backward compatibility (shared constant now in phiacta.formats)
+_FORMAT_EXTENSIONS = FORMAT_EXTENSIONS
 
 
 def _backoff_seconds(attempts: int) -> float:

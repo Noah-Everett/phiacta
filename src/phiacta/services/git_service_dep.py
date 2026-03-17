@@ -11,10 +11,19 @@ from __future__ import annotations
 
 from phiacta.services.git_service import ForgejoGitService, GitService
 
+# Module-level singleton — created on first use, reused across requests.
+# The httpx.AsyncClient inside ForgejoGitService is designed for reuse.
+_instance: ForgejoGitService | None = None
+
 
 def get_git_service() -> GitService:
     """Return the GitService instance for the current request.
 
-    Stub -- implementation pending. All tests should FAIL against this stub.
+    Uses a module-level singleton so the underlying httpx.AsyncClient is
+    reused across requests. Tests override this via
+    ``app.dependency_overrides[get_git_service]``.
     """
-    raise NotImplementedError("get_git_service not yet implemented")
+    global _instance
+    if _instance is None:
+        _instance = ForgejoGitService()
+    return _instance

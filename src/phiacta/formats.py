@@ -9,5 +9,8 @@ README file in each entry's git repository.
 
 from __future__ import annotations
 
-# Stub -- implementation pending. All tests should FAIL against this stub.
-FORMAT_EXTENSIONS: dict[str, str] = {}
+FORMAT_EXTENSIONS: dict[str, str] = {
+    "markdown": ".md",
+    "latex": ".tex",
+    "plain": ".txt",
+}
