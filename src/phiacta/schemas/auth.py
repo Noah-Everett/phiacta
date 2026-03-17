@@ -38,6 +38,7 @@ class PublicAgentResponse(BaseModel):
     id: UUID
     handle: str
     agent_type: str
+    is_active: bool
     created_at: datetime
 
 
