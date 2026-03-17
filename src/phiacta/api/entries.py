@@ -15,47 +15,70 @@ from phiacta.models.agent import Agent
 from phiacta.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.repositories.entry_repository import EntryRepository
 from phiacta.schemas.common import PaginatedResponse
-from phiacta.schemas.entry import EntryCreate, EntryResponse, EntryUpdate
+from phiacta.schemas.entry import (
+    EntryCreate,
+    EntryDetailResponse,
+    EntryListItem,
+    EntryResponse,
+    EntryUpdate,
+)
 from phiacta.schemas.entry_ref import EntryRefResponse
 from phiacta.services.entry_service import EntryService
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
+# Max refs returned in the detail endpoint's nested ref lists.
+# High enough to be effectively unbounded for normal use; prevents
+# pathological memory usage on entries with extreme ref counts.
+_DETAIL_REFS_LIMIT = 500
 
-@router.get("", response_model=PaginatedResponse[EntryResponse])
+
+@router.get("", response_model=PaginatedResponse[EntryListItem])
 async def list_entries(
     layout_hint: str | None = Query(None),
-    tag: str | None = Query(None),
-    status: str | None = Query(None),
+    status: str = Query("active"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-) -> PaginatedResponse[EntryResponse]:
+) -> PaginatedResponse[EntryListItem]:
     repo = EntryRepository(db)
+    # "all" sentinel bypasses status filter (maps to None in repository)
+    repo_status = None if status == "all" else status
     entries = await repo.list_entries(
         limit=limit,
         offset=offset,
         layout_hint=layout_hint,
-        tag=tag,
-        status=status,
+        status=repo_status,
     )
     total = await repo.count_entries(
-        layout_hint=layout_hint, tag=tag, status=status,
+        layout_hint=layout_hint, status=repo_status,
     )
-    items = [EntryResponse.model_validate(e) for e in entries]
+    items = [EntryListItem.model_validate(e) for e in entries]
     return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.get("/{entry_id}", response_model=EntryResponse)
+@router.get("/{entry_id}", response_model=EntryDetailResponse)
 async def get_entry(
     entry_id: UUID,
     db: AsyncSession = Depends(get_db),
-) -> EntryResponse:
+) -> EntryDetailResponse:
     repo = EntryRepository(db)
     entry = await repo.get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
-    return EntryResponse.model_validate(entry)
+
+    ref_repo = EntryRefRepository(db)
+    outgoing = await ref_repo.list_by_entry(
+        entry_id, direction="outgoing", limit=_DETAIL_REFS_LIMIT,
+    )
+    incoming = await ref_repo.list_by_entry(
+        entry_id, direction="incoming", limit=_DETAIL_REFS_LIMIT,
+    )
+
+    result = EntryDetailResponse.model_validate(entry)
+    result.outgoing_refs = [EntryRefResponse.model_validate(r) for r in outgoing]
+    result.incoming_refs = [EntryRefResponse.model_validate(r) for r in incoming]
+    return result
 
 
 @router.post("", response_model=EntryResponse, status_code=201)
