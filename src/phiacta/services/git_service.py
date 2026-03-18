@@ -51,6 +51,16 @@ class FileContent:
 
 
 @dataclass(frozen=True, slots=True)
+class FileInfo:
+    """A file or directory entry in a repository listing."""
+
+    name: str
+    path: str
+    type: str  # "file" or "dir"
+    size: int
+
+
+@dataclass(frozen=True, slots=True)
 class FileDiff:
     path: str
     patch: str  # unified diff
@@ -132,8 +142,8 @@ class GitService(Protocol):
 
     async def list_files(
         self, entry_id: UUID, path: str = "", ref: str = "main"
-    ) -> list[str]:
-        """List file paths in a directory at a given ref."""
+    ) -> list[FileInfo]:
+        """List files and directories at a given path and ref."""
         ...
 
     # --- History ---
@@ -510,18 +520,30 @@ class ForgejoGitService:
 
     async def list_files(
         self, entry_id: UUID, path: str = "", ref: str = "main"
-    ) -> list[str]:
-        """List file paths in a directory at a given ref."""
+    ) -> list[FileInfo]:
+        """List files and directories at a given path and ref."""
         repo = self._repo_path(entry_id)
         endpoint = f"/repos/{repo}/contents/{path}" if path else f"/repos/{repo}/contents"
         resp = await self._request("GET", endpoint, params={"ref": ref})
         items = resp.json()
         # Forgejo returns a list of entries for directories, or a single object
-        # for files.  We only list directories here.
+        # for files.
         if isinstance(items, dict):
-            # Single file — return its name.
-            return [items.get("name", path)]
-        return [item["name"] for item in items]
+            return [FileInfo(
+                name=items.get("name", path),
+                path=items.get("path", path),
+                type=items.get("type", "file"),
+                size=items.get("size", 0),
+            )]
+        return [
+            FileInfo(
+                name=item["name"],
+                path=item.get("path", item["name"]),
+                type=item.get("type", "file"),
+                size=item.get("size", 0),
+            )
+            for item in items
+        ]
 
     # ------------------------------------------------------------------
     # History

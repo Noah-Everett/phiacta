@@ -32,7 +32,7 @@ from phiacta.config import Settings, get_settings
 from phiacta.db.session import get_db
 from phiacta.main import app
 from phiacta.models.base import Base
-from phiacta.services.git_service import RepoNotFoundError
+from phiacta.services.git_service import FileInfo, RepoNotFoundError
 from phiacta.services.git_service_dep import get_git_service
 
 # Shared test webhook secret -- webhook tests must use this value.
@@ -43,18 +43,22 @@ class FakeGitService:
     """In-memory GitService stub for E2E tests.
 
     Stores file contents keyed by ``(entry_id_uuid, file_path)`` and returns
-    them from ``read_file``. All other GitService methods raise
-    ``NotImplementedError`` -- only ``read_file`` is used during webhook
-    ingestion tests.
+    them from ``read_file``.  Stores directory listings keyed by
+    ``(entry_id_uuid, dir_path)`` and returns them from ``list_files``.
 
-    Tests populate ``files`` before sending webhook payloads::
+    Tests populate ``files`` and/or ``file_listings`` before sending
+    requests::
 
         fake_git = FakeGitService()
         fake_git.files[(entry_uuid, ".phiacta/entry.yaml")] = yaml_bytes
+        fake_git.file_listings[(entry_uuid, "")] = [
+            {"name": "README.md", "path": "README.md", "type": "file", "size": 512},
+        ]
     """
 
     def __init__(self) -> None:
         self.files: dict[tuple[UUID, str], bytes] = {}
+        self.file_listings: dict[tuple[UUID, str], list[dict]] = {}
 
     async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
         """Return the file contents or raise RepoNotFoundError."""
@@ -63,7 +67,43 @@ class FakeGitService:
             raise RepoNotFoundError(f"File not found: {path} in repo {entry_id}")
         return self.files[key]
 
-    # Remaining protocol methods -- not needed for ingestion tests.
+    async def list_files(self, entry_id: UUID, path: str = "", ref: str = "main") -> list[FileInfo]:
+        """Return the file listing for a directory, or derive from self.files keys."""
+        key = (entry_id, path)
+        if key in self.file_listings:
+            return [FileInfo(**d) for d in self.file_listings[key]]
+        # Fallback: derive listing from self.files keys that match the directory.
+        prefix = f"{path}/" if path else ""
+        result: list[FileInfo] = []
+        seen: set[str] = set()
+        for (eid, fpath) in self.files:
+            if eid != entry_id:
+                continue
+            if prefix and not fpath.startswith(prefix):
+                continue
+            relative = fpath[len(prefix):]
+            if "/" in relative:
+                dirname = relative.split("/")[0]
+                if dirname not in seen:
+                    seen.add(dirname)
+                    result.append(FileInfo(
+                        name=dirname,
+                        path=f"{prefix}{dirname}" if prefix else dirname,
+                        type="dir",
+                        size=0,
+                    ))
+            else:
+                if relative and relative not in seen:
+                    seen.add(relative)
+                    result.append(FileInfo(
+                        name=relative,
+                        path=fpath,
+                        type="file",
+                        size=len(self.files[(eid, fpath)]),
+                    ))
+        return result
+
+    # Remaining protocol methods -- not needed for file-read tests.
     async def create_repo(self, entry_id: UUID) -> int:
         raise NotImplementedError
 
@@ -77,9 +117,6 @@ class FakeGitService:
         raise NotImplementedError
 
     async def commit_files(self, entry_id, files, author, message, branch="main"):  # type: ignore[override]
-        raise NotImplementedError
-
-    async def list_files(self, entry_id, path="", ref="main"):  # type: ignore[override]
         raise NotImplementedError
 
     async def list_commits(self, entry_id, branch="main", limit=50, page=1):  # type: ignore[override]
@@ -164,6 +201,7 @@ async def client(
 
     # Override git service so ingestion tests don't hit real Forgejo.
     _fake_git_service.files.clear()
+    _fake_git_service.file_listings.clear()
     app.dependency_overrides[get_git_service] = lambda: _fake_git_service
 
     # Disable rate limiting during tests.
