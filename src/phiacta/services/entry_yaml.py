@@ -60,7 +60,39 @@ def generate_entry_yaml(
     return yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
+# Fields that callers may update via update_entry_yaml().
+_UPDATABLE_FIELDS = {"title", "content_format", "tags", "summary", "license", "layout_hint"}
+
+# Fields that must never be changed after creation.
+_IMMUTABLE_FIELDS = {"entry_id", "schema_version", "author", "created_at"}
+
 _REQUIRED_FIELDS = {"entry_id", "title", "content_format", "author", "created_at"}
+
+
+def update_entry_yaml(existing_yaml: str, updates: dict[str, Any]) -> str:
+    """Merge field updates into an existing entry.yaml string.
+
+    Only fields in ``_UPDATABLE_FIELDS`` are applied; immutable fields
+    (entry_id, author, created_at, schema_version) are preserved regardless
+    of what ``updates`` contains.
+
+    Returns the new YAML string.
+
+    Raises ``ValueError`` if *existing_yaml* is malformed.
+    """
+    data = parse_entry_yaml(existing_yaml)
+
+    for key, value in updates.items():
+        if key not in _UPDATABLE_FIELDS:
+            continue
+        if key == "tags" and (value is None or value == []):
+            data.pop("tags", None)
+            continue
+        if value is None:
+            continue
+        data[key] = value
+
+    return yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
 def parse_entry_yaml(yaml_str: str) -> dict[str, Any]:

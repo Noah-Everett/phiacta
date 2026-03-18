@@ -115,6 +115,10 @@ class GitService(Protocol):
         """Make a repo read-only (for archived/retracted entries)."""
         ...
 
+    async def unarchive_repo(self, entry_id: UUID) -> None:
+        """Restore a repo from read-only (for un-archived entries)."""
+        ...
+
     async def setup_branch_protection(self, entry_id: UUID) -> None:
         """Configure branch protection rules on ``main``."""
         ...
@@ -387,6 +391,15 @@ class ForgejoGitService:
             json={"archived": True},
         )
         logger.info("Archived repo %s", self._repo_path(entry_id))
+
+    async def unarchive_repo(self, entry_id: UUID) -> None:
+        """Restore a repo from read-only by clearing the ``archived`` flag."""
+        await self._request(
+            "PATCH",
+            f"/repos/{self._repo_path(entry_id)}",
+            json={"archived": False},
+        )
+        logger.info("Unarchived repo %s", self._repo_path(entry_id))
 
     async def setup_branch_protection(self, entry_id: UUID) -> None:
         """Configure branch protection on ``main``.

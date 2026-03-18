@@ -70,6 +70,7 @@ class FakeGitService:
         self._commit_counter: int = 0
         self.commit_history: dict[UUID, list[CommitInfo]] = {}
         self.diffs: dict[tuple[UUID, str, str], DiffInfo] = {}
+        self.archived_repos: set[UUID] = set()
 
     async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
         """Return the file contents or raise RepoNotFoundError."""
@@ -119,7 +120,10 @@ class FakeGitService:
         raise NotImplementedError
 
     async def archive_repo(self, entry_id: UUID) -> None:
-        raise NotImplementedError
+        self.archived_repos.add(entry_id)
+
+    async def unarchive_repo(self, entry_id: UUID) -> None:
+        self.archived_repos.discard(entry_id)
 
     async def setup_branch_protection(self, entry_id: UUID) -> None:
         raise NotImplementedError
@@ -267,6 +271,7 @@ async def client(
     _fake_git_service._commit_counter = 0
     _fake_git_service.commit_history.clear()
     _fake_git_service.diffs.clear()
+    _fake_git_service.archived_repos.clear()
     app.dependency_overrides[get_git_service] = lambda: _fake_git_service
 
     # Disable rate limiting during tests.

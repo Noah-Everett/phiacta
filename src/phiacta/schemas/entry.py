@@ -23,11 +23,11 @@ class EntryCreate(BaseModel):
 
 class EntryUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=500)
+    content_format: str | None = Field(None, pattern="^(markdown|latex|plain)$")
     layout_hint: str | None = None
     tags: list[str] | None = None
     summary: str | None = None
     license: str | None = None
-    status: str | None = None
 
 
 class EntryListItem(BaseModel):

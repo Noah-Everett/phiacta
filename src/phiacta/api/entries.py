@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.api.entry_guards import get_owned_entry, get_writable_entry
 from phiacta.api.rate_limit import limiter
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.db.session import get_db
@@ -24,6 +25,8 @@ from phiacta.schemas.entry import (
 )
 from phiacta.schemas.entry_ref import EntryRefResponse
 from phiacta.services.entry_service import EntryService
+from phiacta.services.git_service import ForgejoError, GitService, RepoNotFoundError
+from phiacta.services.git_service_dep import get_git_service
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
@@ -95,38 +98,89 @@ async def create_entry(
 
 
 @router.patch("/{entry_id}", response_model=EntryResponse)
+@limiter.limit("30/minute")
 async def update_entry(
+    request: Request,
     entry_id: UUID,
     body: EntryUpdate,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
+    git_service: GitService = Depends(get_git_service),
 ) -> EntryResponse:
-    repo = EntryRepository(db)
-    entry = await repo.get_by_id(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Entry not found")
+    """Update entry metadata via git-first write.
 
-    if entry.created_by != agent.id:
+    Writes the updated ``.phiacta/entry.yaml`` to git. The DB is updated
+    asynchronously by the webhook ingestion pipeline.
+    """
+    entry = await get_writable_entry(entry_id, agent, db)
+
+    service = EntryService(db, git_service)
+    try:
+        await service.update_entry_metadata(entry, body, agent)
+    except RepoNotFoundError as exc:
         raise HTTPException(
-            status_code=403,
-            detail="Only the entry author can update this entry",
+            status_code=404, detail="Entry repository not found",
+        ) from exc
+    except ForgejoError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+
+    return EntryResponse.model_validate(entry)
+
+
+@router.post("/{entry_id}/archive", response_model=EntryResponse)
+@limiter.limit("10/minute")
+async def archive_entry(
+    request: Request,
+    entry_id: UUID,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+    git_service: GitService = Depends(get_git_service),
+) -> EntryResponse:
+    """Archive an entry — makes it read-only, preserving all data."""
+    entry = await get_owned_entry(entry_id, agent, db)
+
+    if entry.repo_status != "ready":
+        raise HTTPException(
+            status_code=409, detail="Entry repository is not yet ready",
         )
 
-    if body.title is not None:
-        entry.title = body.title
-    if body.layout_hint is not None:
-        entry.layout_hint = body.layout_hint
-    if body.tags is not None:
-        entry.tags = body.tags
-    if body.summary is not None:
-        entry.summary = body.summary
-    if body.license is not None:
-        entry.license = body.license
-    if body.status is not None:
-        entry.status = body.status
+    service = EntryService(db, git_service)
+    try:
+        entry = await service.archive_entry(entry)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ForgejoError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
 
-    await db.commit()
-    await db.refresh(entry)
+    return EntryResponse.model_validate(entry)
+
+
+@router.post("/{entry_id}/unarchive", response_model=EntryResponse)
+@limiter.limit("10/minute")
+async def unarchive_entry(
+    request: Request,
+    entry_id: UUID,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+    git_service: GitService = Depends(get_git_service),
+) -> EntryResponse:
+    """Unarchive an entry — restores it to active status."""
+    entry = await get_owned_entry(entry_id, agent, db)
+
+    service = EntryService(db, git_service)
+    try:
+        entry = await service.unarchive_entry(entry)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ForgejoError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+
     return EntryResponse.model_validate(entry)
 
 

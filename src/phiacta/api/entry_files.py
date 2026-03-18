@@ -18,6 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.api.entry_guards import get_writable_entry
 from phiacta.api.rate_limit import limiter
 from phiacta.auth.dependencies import get_current_agent
 from phiacta.config import Settings, get_settings
@@ -41,9 +42,6 @@ from phiacta.services.git_service import (
 from phiacta.services.git_service_dep import get_git_service
 
 router = APIRouter(prefix="/entries", tags=["entries"])
-
-# Statuses that allow file modifications.
-EDITABLE_STATUSES = ("active", "draft")
 
 
 def validate_file_path(path: str) -> None:
@@ -92,29 +90,8 @@ async def _get_writable_entry(
     agent: Agent,
     db: AsyncSession,
 ) -> Entry:
-    """Load an entry and verify it is writable by the given agent.
-
-    Raises HTTPException for missing entry (404), unready repo (409),
-    non-editable status (403), or non-owner (403).
-    """
-    repo = EntryRepository(db)
-    entry = await repo.get_by_id(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Entry not found")
-    if entry.repo_status != "ready":
-        raise HTTPException(
-            status_code=409, detail="Entry repository is not yet ready",
-        )
-    if entry.status not in EDITABLE_STATUSES:
-        raise HTTPException(
-            status_code=403, detail="Entry is not editable",
-        )
-    if entry.created_by != agent.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Only the entry author can modify files in this entry",
-        )
-    return entry
+    """Convenience wrapper for backwards-compatible call sites."""
+    return await get_writable_entry(entry_id, agent, db)
 
 
 # ---------------------------------------------------------------------------

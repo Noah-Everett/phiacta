@@ -5,15 +5,20 @@
 
 from __future__ import annotations
 
-from typing import TypeAlias
 from uuid import uuid4
 
 import httpx
 import pytest
 
-from tests.e2e.conftest import auth_header, register_agent
+from tests.e2e.conftest import (
+    FakeGitService,
+    auth_header,
+    create_entry,
+    register_agent,
+    set_entry_repo_status,
+)
 
-AuthedFixture: TypeAlias = tuple[httpx.AsyncClient, dict, str]
+type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 
 @pytest.fixture
@@ -146,45 +151,63 @@ class TestGetEntry:
 
 
 class TestUpdateEntry:
-    async def test_update_entry(self, authed: AuthedFixture) -> None:
-        client, _, token = authed
+    """Update tests -- PATCH now writes to git. Detailed tests in test_entry_update.py."""
+
+    async def test_update_entry(
+        self,
+        authed: AuthedFixture,
+        e2e_session_factory,
+        fake_git: FakeGitService,
+    ) -> None:
+        client, agent, token = authed
         headers = auth_header(token)
-        create_resp = await client.post("/v1/entries", json={
+        entry = await create_entry(client, token, title="Original")
+        entry_id = entry["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+
+        from uuid import UUID
+
+        import yaml
+        yaml_bytes = yaml.dump({
+            "entry_id": f"ent_{entry_id}",
+            "schema_version": 1,
             "title": "Original",
-        }, headers=headers)
-        entry_id = create_resp.json()["id"]
+            "author": {"id": f"usr_{agent['id']}", "name": "entry-test"},
+            "created_at": "2026-01-01T00:00:00",
+            "content_format": "markdown",
+        }, default_flow_style=False, allow_unicode=True, sort_keys=False).encode()
+        fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = yaml_bytes
 
         resp = await client.patch(f"/v1/entries/{entry_id}", json={
             "title": "Updated",
             "tags": ["new-tag"],
         }, headers=headers)
         assert resp.status_code == 200
-        assert resp.json()["title"] == "Updated"
-        assert resp.json()["tags"] == ["new-tag"]
+        updated = yaml.safe_load(fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")])
+        assert updated["title"] == "Updated"
+        assert updated["tags"] == ["new-tag"]
 
-    async def test_update_entry_wrong_author(self, client: httpx.AsyncClient) -> None:
-        # Agent A creates entry
+    async def test_update_entry_wrong_author(
+        self, client: httpx.AsyncClient, e2e_session_factory,
+    ) -> None:
         auth_a = await register_agent(client, handle="author-a", email="a@example.com")
-        create_resp = await client.post("/v1/entries", json={
-            "title": "A's Entry",
-        }, headers=auth_header(auth_a["access_token"]))
-        entry_id = create_resp.json()["id"]
+        entry = await create_entry(client, auth_a["access_token"], title="A's Entry")
+        await set_entry_repo_status(e2e_session_factory, entry["id"], "ready")
 
-        # Agent B tries to update
         auth_b = await register_agent(client, handle="author-b", email="b@example.com")
-        resp = await client.patch(f"/v1/entries/{entry_id}", json={
+        resp = await client.patch(f"/v1/entries/{entry['id']}", json={
             "title": "Hijacked",
         }, headers=auth_header(auth_b["access_token"]))
         assert resp.status_code == 403
 
-    async def test_update_entry_unauthenticated(self, authed: AuthedFixture) -> None:
+    async def test_update_entry_unauthenticated(
+        self, authed: AuthedFixture, e2e_session_factory,
+    ) -> None:
         client, _, token = authed
-        create_resp = await client.post("/v1/entries", json={
-            "title": "No Auth Update",
-        }, headers=auth_header(token))
-        entry_id = create_resp.json()["id"]
+        entry = await create_entry(client, token, title="No Auth Update")
+        await set_entry_repo_status(e2e_session_factory, entry["id"], "ready")
 
-        resp = await client.patch(f"/v1/entries/{entry_id}", json={
+        resp = await client.patch(f"/v1/entries/{entry['id']}", json={
             "title": "Should Fail",
         })
         assert resp.status_code == 401
