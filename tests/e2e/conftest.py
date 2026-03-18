@@ -19,7 +19,7 @@ from uuid import UUID
 
 import httpx
 import pytest
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -32,7 +32,7 @@ from phiacta.config import Settings, get_settings
 from phiacta.db.session import get_db
 from phiacta.main import app
 from phiacta.models.base import Base
-from phiacta.services.git_service import FileInfo, RepoNotFoundError
+from phiacta.services.git_service import AgentInfo, FileContent, FileInfo, RepoNotFoundError
 from phiacta.services.git_service_dep import get_git_service
 
 # Shared test webhook secret -- webhook tests must use this value.
@@ -59,6 +59,8 @@ class FakeGitService:
     def __init__(self) -> None:
         self.files: dict[tuple[UUID, str], bytes] = {}
         self.file_listings: dict[tuple[UUID, str], list[dict]] = {}
+        self.commits: list[dict] = []
+        self._commit_counter: int = 0
 
     async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
         """Return the file contents or raise RepoNotFoundError."""
@@ -116,8 +118,43 @@ class FakeGitService:
     async def setup_webhook(self, entry_id: UUID) -> None:
         raise NotImplementedError
 
-    async def commit_files(self, entry_id, files, author, message, branch="main"):  # type: ignore[override]
-        raise NotImplementedError
+    async def commit_files(
+        self,
+        entry_id: UUID,
+        files: list[FileContent],
+        author: AgentInfo,
+        message: str,
+        branch: str = "main",
+    ) -> str:
+        """Store files in memory and return a fake commit SHA."""
+        self._commit_counter += 1
+        for fc in files:
+            raw = fc.content if isinstance(fc.content, bytes) else fc.content.encode()
+            self.files[(entry_id, fc.path)] = raw
+        sha = f"fake_sha_{self._commit_counter:04d}"
+        self.commits.append({
+            "sha": sha, "message": message, "author": author,
+            "files": [f.path for f in files],
+        })
+        return sha
+
+    async def delete_file(
+        self,
+        entry_id: UUID,
+        path: str,
+        author: AgentInfo,
+        message: str,
+        branch: str = "main",
+    ) -> str:
+        """Remove a file from memory and return a fake commit SHA."""
+        key = (entry_id, path)
+        if key not in self.files:
+            raise RepoNotFoundError(f"File not found: {path} in repo {entry_id}")
+        del self.files[key]
+        self._commit_counter += 1
+        sha = f"fake_sha_{self._commit_counter:04d}"
+        self.commits.append({"sha": sha, "message": message, "author": author, "files": [path]})
+        return sha
 
     async def list_commits(self, entry_id, branch="main", limit=50, page=1):  # type: ignore[override]
         raise NotImplementedError
@@ -202,6 +239,8 @@ async def client(
     # Override git service so ingestion tests don't hit real Forgejo.
     _fake_git_service.files.clear()
     _fake_git_service.file_listings.clear()
+    _fake_git_service.commits.clear()
+    _fake_git_service._commit_counter = 0
     app.dependency_overrides[get_git_service] = lambda: _fake_git_service
 
     # Disable rate limiting during tests.
@@ -239,6 +278,53 @@ async def register_agent(
 def auth_header(token: str) -> dict[str, str]:
     """Return an Authorization header dict for the given token."""
     return {"Authorization": f"Bearer {token}"}
+
+
+async def create_entry(
+    client: httpx.AsyncClient,
+    token: str,
+    *,
+    title: str = "Test Entry",
+) -> dict:
+    """Create an entry via the API and return the response JSON."""
+    body: dict = {"title": title, "content_format": "markdown"}
+    resp = await client.post("/v1/entries", json=body, headers=auth_header(token))
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def set_entry_repo_status(
+    session_factory: async_sessionmaker[AsyncSession],
+    entry_id: str,
+    repo_status: str,
+) -> None:
+    """Set an entry's repo_status directly in the DB."""
+    from phiacta.models.entry import Entry
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(Entry).where(Entry.id == UUID(entry_id))
+        )
+        entry = result.scalar_one()
+        entry.repo_status = repo_status
+        await session.commit()
+
+
+async def set_entry_status(
+    session_factory: async_sessionmaker[AsyncSession],
+    entry_id: str,
+    status: str,
+) -> None:
+    """Set an entry's status directly in the DB."""
+    from phiacta.models.entry import Entry
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(Entry).where(Entry.id == UUID(entry_id))
+        )
+        entry = result.scalar_one()
+        entry.status = status
+        await session.commit()
 
 
 @pytest.fixture

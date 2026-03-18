@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     forgejo_org: str = "phiacta"
     forgejo_webhook_secret: str = ""
 
+    # File upload limits
+    max_file_size_bytes: int = 25 * 1024 * 1024  # 25 MB
+
     model_config = {"env_file": ".env"}
 
     @model_validator(mode="after")

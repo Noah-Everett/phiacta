@@ -14,19 +14,20 @@ in an entry's git repo, rather than hitting a real Forgejo instance.
 
 from __future__ import annotations
 
-from typing import TypeAlias
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from phiacta.models.entry import Entry
-from phiacta.services.git_service import RepoNotFoundError
-from tests.e2e.conftest import FakeGitService, auth_header, register_agent
+from tests.e2e.conftest import (
+    FakeGitService,
+    create_entry,
+    register_agent,
+    set_entry_repo_status,
+)
 
-AuthedFixture: TypeAlias = tuple[httpx.AsyncClient, dict, str]
+type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 
 @pytest.fixture
@@ -37,34 +38,6 @@ async def authed(client: httpx.AsyncClient) -> AuthedFixture:
         client, handle=f"files-{uid}", email=f"files-{uid}@example.com"
     )
     return client, auth["agent"], auth["access_token"]
-
-
-async def _create_entry(
-    client: httpx.AsyncClient,
-    token: str,
-    *,
-    title: str = "Test Entry",
-) -> dict:
-    """Create an entry via the API and return the response JSON."""
-    body: dict = {"title": title, "content_format": "markdown"}
-    resp = await client.post("/v1/entries", json=body, headers=auth_header(token))
-    assert resp.status_code == 201, resp.text
-    return resp.json()
-
-
-async def _set_entry_repo_status(
-    session_factory: async_sessionmaker[AsyncSession],
-    entry_id: str,
-    repo_status: str,
-) -> None:
-    """Set an entry's repo_status directly in the DB."""
-    async with session_factory() as session:
-        result = await session.execute(
-            select(Entry).where(Entry.id == UUID(entry_id))
-        )
-        entry = result.scalar_one()
-        entry.repo_status = repo_status
-        await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -83,9 +56,9 @@ class TestListEntryFiles:
     ) -> None:
         """GET /files returns 200 with file listing items from FakeGitService."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="File Listing Entry")
+        entry = await create_entry(client, token, title="File Listing Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # Populate the FakeGitService with explicit file listings
         fake_git.file_listings[(UUID(entry_id), "")] = [
@@ -110,9 +83,9 @@ class TestListEntryFiles:
     ) -> None:
         """The .phiacta directory is filtered out of the listing by the API layer."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Phiacta Filter Entry")
+        entry = await create_entry(client, token, title="Phiacta Filter Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # GitService returns .phiacta in the listing, but API must filter it
         fake_git.file_listings[(UUID(entry_id), "")] = [
@@ -138,9 +111,9 @@ class TestListEntryFiles:
     ) -> None:
         """Each item in the file listing has exactly {name, path, type, size}."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Fields Check Entry")
+        entry = await create_entry(client, token, title="Fields Check Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.file_listings[(UUID(entry_id), "")] = [
             {"name": "paper.tex", "path": "paper.tex", "type": "file", "size": 8192},
@@ -165,9 +138,9 @@ class TestListEntryFiles:
     ) -> None:
         """GET /files does not require authentication -- no auth header needed."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Public Files Entry")
+        entry = await create_entry(client, token, title="Public Files Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.file_listings[(UUID(entry_id), "")] = [
             {"name": "README.md", "path": "README.md", "type": "file", "size": 256},
@@ -186,9 +159,9 @@ class TestListEntryFiles:
     ) -> None:
         """Entry with ready repo but no user files returns 200 with []."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Empty Repo Entry")
+        entry = await create_entry(client, token, title="Empty Repo Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # Only .phiacta exists -- after filtering, the list is empty
         fake_git.file_listings[(UUID(entry_id), "")] = [
@@ -208,9 +181,9 @@ class TestListEntryFiles:
     ) -> None:
         """Both files and directories appear in the listing."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Mixed Listing Entry")
+        entry = await create_entry(client, token, title="Mixed Listing Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.file_listings[(UUID(entry_id), "")] = [
             {"name": "README.md", "path": "README.md", "type": "file", "size": 512},
@@ -266,7 +239,7 @@ class TestListEntryFilesErrors:
     ) -> None:
         """Entry with repo_status='provisioning' returns 409."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Provisioning Entry")
+        entry = await create_entry(client, token, title="Provisioning Entry")
         entry_id = entry["id"]
         # Entry is created with repo_status="provisioning" by default
         assert entry["repo_status"] == "provisioning"
@@ -282,9 +255,9 @@ class TestListEntryFilesErrors:
     ) -> None:
         """Entry with repo_status='error' returns 409."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Error Status Entry")
+        entry = await create_entry(client, token, title="Error Status Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "error")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "error")
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 409
@@ -307,9 +280,9 @@ class TestGetFileContent:
     ) -> None:
         """GET /files/README.md returns 200 with the raw file bytes."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="File Content Entry")
+        entry = await create_entry(client, token, title="File Content Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         file_bytes = b"# Hello World\n\nThis is a test file."
         fake_git.files[(UUID(entry_id), "README.md")] = file_bytes
@@ -326,9 +299,9 @@ class TestGetFileContent:
     ) -> None:
         """A .md file returns Content-Type: text/markdown."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="MD Content-Type Entry")
+        entry = await create_entry(client, token, title="MD Content-Type Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.files[(UUID(entry_id), "README.md")] = b"# Title"
 
@@ -345,9 +318,9 @@ class TestGetFileContent:
     ) -> None:
         """A .py file returns Content-Type: text/x-python."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="PY Content-Type Entry")
+        entry = await create_entry(client, token, title="PY Content-Type Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.files[(UUID(entry_id), "script.py")] = b"print('hello')"
 
@@ -364,9 +337,9 @@ class TestGetFileContent:
     ) -> None:
         """A file with an unknown extension returns application/octet-stream."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Unknown Ext Entry")
+        entry = await create_entry(client, token, title="Unknown Ext Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.files[(UUID(entry_id), "data.qzp")] = b"\x00\x01\x02"
 
@@ -383,9 +356,9 @@ class TestGetFileContent:
     ) -> None:
         """A file without an extension (e.g., 'Makefile') returns application/octet-stream."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="No Ext Entry")
+        entry = await create_entry(client, token, title="No Ext Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.files[(UUID(entry_id), "Makefile")] = b"all:\n\techo hello"
 
@@ -402,9 +375,9 @@ class TestGetFileContent:
     ) -> None:
         """GET /files/{path} does not require authentication."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Public File Entry")
+        entry = await create_entry(client, token, title="Public File Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.files[(UUID(entry_id), "public.txt")] = b"public content"
 
@@ -421,9 +394,9 @@ class TestGetFileContent:
     ) -> None:
         """GET /files/subdir/file.txt works for nested paths with slashes."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Nested Path Entry")
+        entry = await create_entry(client, token, title="Nested Path Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         nested_content = b"nested file content"
         fake_git.files[(UUID(entry_id), "subdir/file.txt")] = nested_content
@@ -440,9 +413,9 @@ class TestGetFileContent:
     ) -> None:
         """Binary file content (e.g., PNG) is returned correctly as raw bytes."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Binary Content Entry")
+        entry = await create_entry(client, token, title="Binary Content Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # Minimal PNG header bytes
         png_bytes = (
@@ -483,9 +456,9 @@ class TestGetFileContentErrors:
     ) -> None:
         """GET /files/{path} for a file that does not exist returns 404."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Missing File Entry")
+        entry = await create_entry(client, token, title="Missing File Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # Do NOT populate fake_git with this file
         resp = await client.get(f"/v1/entries/{entry_id}/files/nonexistent.txt")
@@ -509,7 +482,7 @@ class TestGetFileContentErrors:
     ) -> None:
         """Entry with repo_status='provisioning' returns 409."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Provisioning File Entry")
+        entry = await create_entry(client, token, title="Provisioning File Entry")
         entry_id = entry["id"]
         # Default repo_status is "provisioning"
 
@@ -524,9 +497,9 @@ class TestGetFileContentErrors:
     ) -> None:
         """Entry with repo_status='error' returns 409."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Error File Entry")
+        entry = await create_entry(client, token, title="Error File Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "error")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "error")
 
         resp = await client.get(f"/v1/entries/{entry_id}/files/README.md")
         assert resp.status_code == 409
@@ -544,9 +517,9 @@ class TestGetFileContentPathValidation:
     ) -> None:
         """Path with leading '../' returns 400 Invalid file path."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Traversal Entry 1")
+        entry = await create_entry(client, token, title="Traversal Entry 1")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # Use %2E%2E to prevent HTTP client from resolving ../
         resp = await client.get(f"/v1/entries/{entry_id}/files/%2E%2E/etc/passwd")
@@ -561,9 +534,9 @@ class TestGetFileContentPathValidation:
     ) -> None:
         """Path with '..' in the middle returns 400 Invalid file path."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Traversal Entry 2")
+        entry = await create_entry(client, token, title="Traversal Entry 2")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # Use %2E%2E to prevent HTTP client from resolving ../
         resp = await client.get(
@@ -580,9 +553,9 @@ class TestGetFileContentPathValidation:
     ) -> None:
         """Path starting with '/' returns 400 Invalid file path."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Absolute Path Entry")
+        entry = await create_entry(client, token, title="Absolute Path Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # httpx may normalize leading slash; use %2F to ensure it's sent
         resp = await client.get(
@@ -599,9 +572,9 @@ class TestGetFileContentPathValidation:
     ) -> None:
         """Access to .phiacta/entry.yaml returns 404 File not found."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Phiacta Block Entry 1")
+        entry = await create_entry(client, token, title="Phiacta Block Entry 1")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # Even though the file exists in the git service, API blocks access
         fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = b"secret"
@@ -623,9 +596,9 @@ class TestGetFileContentPathValidation:
     ) -> None:
         """Access to path exactly '.phiacta' returns 404."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Phiacta Block Entry 2")
+        entry = await create_entry(client, token, title="Phiacta Block Entry 2")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.files[(UUID(entry_id), ".phiacta")] = b"blocked"
 
@@ -644,9 +617,9 @@ class TestGetFileContentPathValidation:
     ) -> None:
         """Access to .phiacta/refs.yaml returns 404."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Phiacta Block Entry 3")
+        entry = await create_entry(client, token, title="Phiacta Block Entry 3")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.files[(UUID(entry_id), ".phiacta/refs.yaml")] = b"refs"
 
@@ -667,9 +640,9 @@ class TestGetFileContentPathValidation:
     ) -> None:
         """A path like '.phiacta_backup/file.txt' is NOT blocked (only exact .phiacta)."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Phiacta Similar Entry")
+        entry = await create_entry(client, token, title="Phiacta Similar Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.files[(UUID(entry_id), ".phiacta_backup/file.txt")] = b"allowed"
 
@@ -689,9 +662,9 @@ class TestGetFileContentPathValidation:
     ) -> None:
         """URL-encoded '.phiacta/' components that decode to .phiacta/ are blocked."""
         client, _, token = authed
-        entry = await _create_entry(client, token, title="Encoded Phiacta Entry")
+        entry = await create_entry(client, token, title="Encoded Phiacta Entry")
         entry_id = entry["id"]
-        await _set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = b"secret"
 

@@ -1,28 +1,49 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Entry file read API (NEV-124).
+"""Entry file API (NEV-124, NEV-125).
 
-Public endpoints that proxy file reads from entry git repos via the
-GitService. Both endpoints are read-only and require no authentication.
+Public read endpoints and authenticated write endpoints that proxy file
+operations on entry git repos via the GitService.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import mimetypes
 import urllib.parse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.api.rate_limit import limiter
+from phiacta.auth.dependencies import get_current_agent
+from phiacta.config import Settings, get_settings
 from phiacta.db.session import get_db
+from phiacta.models.agent import Agent
+from phiacta.models.entry import Entry
 from phiacta.repositories.entry_repository import EntryRepository
-from phiacta.schemas.entry_file import FileListItem
-from phiacta.services.git_service import ForgejoError, GitService, RepoNotFoundError
+from phiacta.schemas.entry_file import (
+    FileDeleteRequest,
+    FileListItem,
+    FileWriteRequest,
+    FileWriteResponse,
+)
+from phiacta.services.git_service import (
+    AgentInfo,
+    FileContent,
+    ForgejoError,
+    GitService,
+    RepoNotFoundError,
+)
 from phiacta.services.git_service_dep import get_git_service
 
 router = APIRouter(prefix="/entries", tags=["entries"])
+
+# Statuses that allow file modifications.
+EDITABLE_STATUSES = ("active", "draft")
 
 
 def validate_file_path(path: str) -> None:
@@ -53,6 +74,52 @@ def validate_file_path(path: str) -> None:
 
     if segments[0] == ".phiacta":
         raise ValueError("File not found")
+
+
+def _raise_for_invalid_path(path: str) -> None:
+    """Validate a file path and raise the appropriate HTTPException."""
+    try:
+        validate_file_path(path)
+    except ValueError as exc:
+        msg = str(exc)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=404, detail="File not found") from exc
+        raise HTTPException(status_code=400, detail="Invalid file path") from exc
+
+
+async def _get_writable_entry(
+    entry_id: UUID,
+    agent: Agent,
+    db: AsyncSession,
+) -> Entry:
+    """Load an entry and verify it is writable by the given agent.
+
+    Raises HTTPException for missing entry (404), unready repo (409),
+    non-editable status (403), or non-owner (403).
+    """
+    repo = EntryRepository(db)
+    entry = await repo.get_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    if entry.repo_status != "ready":
+        raise HTTPException(
+            status_code=409, detail="Entry repository is not yet ready",
+        )
+    if entry.status not in EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=403, detail="Entry is not editable",
+        )
+    if entry.created_by != agent.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the entry author can modify files in this entry",
+        )
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# Read endpoints (NEV-124) — public, no authentication required
+# ---------------------------------------------------------------------------
 
 
 @router.get("/{entry_id}/files", response_model=list[FileListItem])
@@ -94,13 +161,7 @@ async def get_entry_file_content(
     git_service: GitService = Depends(get_git_service),
 ) -> Response:
     """Get raw file content from an entry's repository."""
-    try:
-        validate_file_path(path)
-    except ValueError as exc:
-        msg = str(exc)
-        if "not found" in msg.lower():
-            raise HTTPException(status_code=404, detail="File not found") from exc
-        raise HTTPException(status_code=400, detail="Invalid file path") from exc
+    _raise_for_invalid_path(path)
 
     repo = EntryRepository(db)
     entry = await repo.get_by_id(entry_id)
@@ -125,3 +186,102 @@ async def get_entry_file_content(
         content_type = "application/octet-stream"
 
     return Response(content=content, media_type=content_type)
+
+
+# ---------------------------------------------------------------------------
+# Write endpoints (NEV-125) — require authentication + ownership
+# ---------------------------------------------------------------------------
+
+
+@router.put(
+    "/{entry_id}/files/{path:path}",
+    response_model=FileWriteResponse,
+)
+@limiter.limit("60/minute")
+async def put_entry_file(
+    request: Request,
+    entry_id: UUID,
+    path: str,
+    body: FileWriteRequest,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+    git_service: GitService = Depends(get_git_service),
+    settings: Settings = Depends(get_settings),
+) -> FileWriteResponse:
+    """Create or update a file in an entry's repository."""
+    _raise_for_invalid_path(path)
+
+    try:
+        decoded = base64.b64decode(body.content)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(
+            status_code=400, detail="Invalid base64 content",
+        ) from exc
+
+    if len(decoded) > settings.max_file_size_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File content exceeds maximum size of {settings.max_file_size_bytes} bytes",
+        )
+
+    await _get_writable_entry(entry_id, agent, db)
+
+    message = body.message or f"Update {path}"
+    author = AgentInfo(name=agent.handle, email=f"{agent.id}@phiacta.local")
+
+    try:
+        sha = await git_service.commit_files(
+            entry_id,
+            [FileContent(path=path, content=decoded)],
+            author,
+            message,
+        )
+    except RepoNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="Entry repository not found",
+        ) from exc
+    except ForgejoError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+
+    return FileWriteResponse(sha=sha)
+
+
+@router.delete(
+    "/{entry_id}/files/{path:path}",
+    response_model=FileWriteResponse,
+)
+@limiter.limit("60/minute")
+async def delete_entry_file(
+    request: Request,
+    entry_id: UUID,
+    path: str,
+    body: FileDeleteRequest | None = None,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+    git_service: GitService = Depends(get_git_service),
+) -> FileWriteResponse:
+    """Delete a file from an entry's repository."""
+    _raise_for_invalid_path(path)
+
+    await _get_writable_entry(entry_id, agent, db)
+
+    message = (body.message if body else None) or f"Delete {path}"
+    author = AgentInfo(name=agent.handle, email=f"{agent.id}@phiacta.local")
+
+    try:
+        sha = await git_service.delete_file(
+            entry_id,
+            path,
+            author,
+            message,
+        )
+    except RepoNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+    except ForgejoError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+
+    return FileWriteResponse(sha=sha)

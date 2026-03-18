@@ -136,6 +136,17 @@ class GitService(Protocol):
         """Commit one or more files. Returns the new commit SHA."""
         ...
 
+    async def delete_file(
+        self,
+        entry_id: UUID,
+        path: str,
+        author: AgentInfo,
+        message: str,
+        branch: str = "main",
+    ) -> str:
+        """Delete a file and commit. Returns the new commit SHA."""
+        ...
+
     async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
         """Read a file's contents at a given ref (branch, tag, or SHA)."""
         ...
@@ -544,6 +555,59 @@ class ForgejoGitService:
             )
             for item in items
         ]
+
+    async def delete_file(
+        self,
+        entry_id: UUID,
+        path: str,
+        author: AgentInfo,
+        message: str,
+        branch: str = "main",
+    ) -> str:
+        """Delete a file and commit. Returns the new commit SHA.
+
+        Uses ``DELETE /repos/{owner}/{repo}/contents/{filepath}`` which
+        requires the file's current blob SHA (obtained via a prior GET).
+        """
+        repo = self._repo_path(entry_id)
+
+        # Get the file's current SHA (required by Forgejo's delete API).
+        resp = await self._request(
+            "GET",
+            f"/repos/{repo}/contents/{path}",
+            params={"ref": branch},
+        )
+        file_sha = resp.json().get("sha")
+
+        payload: dict = {
+            "message": message,
+            "sha": file_sha,
+            "branch": branch,
+            "author": {
+                "name": author.name,
+                "email": author.email,
+            },
+            "committer": {
+                "name": "phiacta-service",
+                "email": "service@phiacta.local",
+            },
+        }
+        resp = await self._request(
+            "DELETE",
+            f"/repos/{repo}/contents/{path}",
+            json=payload,
+        )
+        commit_data = resp.json().get("commit", {})
+        sha = commit_data.get("sha", "")
+
+        logger.info(
+            "Deleted %s from %s@%s (sha=%s)",
+            path,
+            repo,
+            branch,
+            sha[:12] if sha else "?",
+        )
+        return sha
 
     # ------------------------------------------------------------------
     # History
