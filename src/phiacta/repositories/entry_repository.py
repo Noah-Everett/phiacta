@@ -45,6 +45,15 @@ class EntryRepository(BaseRepository[Entry]):
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
+    async def list_all_for_reconciliation(self) -> list[Entry]:
+        """Return all entries (no status filter, no limit) for reconciliation.
+
+        Returns lightweight Entry ORM objects.  Callers should avoid accessing
+        ``content_cache`` (can be large) unless re-ingesting.
+        """
+        result = await self.session.execute(select(Entry))
+        return list(result.scalars().all())
+
     async def update_repo_status(
         self, entry_id: UUID, *, repo_status: str, forgejo_repo_id: int | None = None,
         current_head_sha: str | None = None,

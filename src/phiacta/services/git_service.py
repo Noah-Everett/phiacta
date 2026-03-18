@@ -197,10 +197,29 @@ class GitService(Protocol):
         """List branches. Optionally exclude ``archived/*`` branches."""
         ...
 
-    # --- Health ---
+    # --- Reconciliation ---
+
+    async def list_repos(self) -> list[str]:
+        """List all repository names in the organisation."""
+        ...
+
+    async def get_repo_head_sha(
+        self, entry_id: UUID, branch: str = "main"
+    ) -> str | None:
+        """Get the HEAD SHA for a repo's branch.
+
+        Returns ``None`` if the repo or branch does not exist.
+        """
+        ...
+
+    # --- Health / Lifecycle ---
 
     async def health_check(self) -> bool:
         """Returns ``True`` if Forgejo is reachable and responsive."""
+        ...
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client (if any)."""
         ...
 
 
@@ -721,6 +740,33 @@ class ForgejoGitService:
         if exclude_archived:
             names = [n for n in names if not n.startswith("archived/")]
         return names
+
+    # ------------------------------------------------------------------
+    # Reconciliation
+    # ------------------------------------------------------------------
+
+    async def list_repos(self) -> list[str]:
+        """List all repository names in the organisation."""
+        raw_list = await self._paginate_all(f"/orgs/{self._org}/repos")
+        return [r["name"] for r in raw_list]
+
+    async def get_repo_head_sha(
+        self, entry_id: UUID, branch: str = "main"
+    ) -> str | None:
+        """Get the HEAD SHA for a repo's branch.
+
+        Returns ``None`` if the repo or branch does not exist.
+        """
+        try:
+            resp = await self._request(
+                "GET",
+                f"/repos/{self._repo_path(entry_id)}/branches/{branch}",
+            )
+            data = resp.json()
+            commit = data.get("commit", {})
+            return commit.get("id") or commit.get("sha")
+        except RepoNotFoundError:
+            return None
 
     # ------------------------------------------------------------------
     # Health

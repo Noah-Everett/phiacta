@@ -199,8 +199,28 @@ class FakeGitService:
     async def list_branches(self, entry_id, exclude_archived=True):  # type: ignore[override]
         raise NotImplementedError
 
+    async def list_repos(self) -> list[str]:
+        """Return repo names for all known repos (derived from files keys)."""
+        seen: set[str] = set()
+        for eid, _path in self.files:
+            seen.add(str(eid))
+        return list(seen)
+
+    async def get_repo_head_sha(
+        self, entry_id: UUID, branch: str = "main"
+    ) -> str | None:
+        """Return None — FakeGitService does not track HEAD SHAs by default.
+
+        Tests that need reconciliation use ReconciliationFakeGitService
+        which overrides this.
+        """
+        return None
+
     async def health_check(self) -> bool:
         return True
+
+    async def close(self) -> None:
+        pass
 
 
 # Module-level fake so tests can populate files BEFORE the request.
