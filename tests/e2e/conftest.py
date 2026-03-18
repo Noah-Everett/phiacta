@@ -32,7 +32,14 @@ from phiacta.config import Settings, get_settings
 from phiacta.db.session import get_db
 from phiacta.main import app
 from phiacta.models.base import Base
-from phiacta.services.git_service import AgentInfo, FileContent, FileInfo, RepoNotFoundError
+from phiacta.services.git_service import (
+    AgentInfo,
+    CommitInfo,
+    DiffInfo,
+    FileContent,
+    FileInfo,
+    RepoNotFoundError,
+)
 from phiacta.services.git_service_dep import get_git_service
 
 # Shared test webhook secret -- webhook tests must use this value.
@@ -61,6 +68,8 @@ class FakeGitService:
         self.file_listings: dict[tuple[UUID, str], list[dict]] = {}
         self.commits: list[dict] = []
         self._commit_counter: int = 0
+        self.commit_history: dict[UUID, list[CommitInfo]] = {}
+        self.diffs: dict[tuple[UUID, str, str], DiffInfo] = {}
 
     async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
         """Return the file contents or raise RepoNotFoundError."""
@@ -156,11 +165,26 @@ class FakeGitService:
         self.commits.append({"sha": sha, "message": message, "author": author, "files": [path]})
         return sha
 
-    async def list_commits(self, entry_id, branch="main", limit=50, page=1):  # type: ignore[override]
-        raise NotImplementedError
+    async def list_commits(
+        self,
+        entry_id: UUID,
+        branch: str = "main",
+        limit: int = 50,
+        page: int = 1,
+    ) -> list[CommitInfo]:
+        """Return stored commit history or empty list."""
+        all_commits = self.commit_history.get(entry_id, [])
+        start = (page - 1) * limit
+        return all_commits[start : start + limit]
 
-    async def get_diff(self, entry_id, base, head):  # type: ignore[override]
-        raise NotImplementedError
+    async def get_diff(
+        self, entry_id: UUID, base: str, head: str
+    ) -> DiffInfo:
+        """Return stored diff or raise RepoNotFoundError."""
+        key = (entry_id, base, head)
+        if key not in self.diffs:
+            raise RepoNotFoundError(f"Diff not found: {base}...{head} in repo {entry_id}")
+        return self.diffs[key]
 
     async def create_branch(self, entry_id, name, from_ref="main"):  # type: ignore[override]
         raise NotImplementedError
@@ -241,6 +265,8 @@ async def client(
     _fake_git_service.file_listings.clear()
     _fake_git_service.commits.clear()
     _fake_git_service._commit_counter = 0
+    _fake_git_service.commit_history.clear()
+    _fake_git_service.diffs.clear()
     app.dependency_overrides[get_git_service] = lambda: _fake_git_service
 
     # Disable rate limiting during tests.
