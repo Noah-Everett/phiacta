@@ -316,6 +316,43 @@ def _parse_commit(raw: dict) -> CommitInfo:
     )
 
 
+def _parse_unified_diff(raw: str) -> list[FileDiff]:
+    """Parse a unified diff string into a list of ``FileDiff`` objects.
+
+    Handles the standard ``diff --git a/path b/path`` format returned
+    by Forgejo's ``.diff`` endpoint.
+    """
+    import re
+
+    files: list[FileDiff] = []
+    # Split on diff headers
+    parts = re.split(r"^diff --git ", raw, flags=re.MULTILINE)
+
+    for part in parts[1:]:  # skip the empty first split
+        lines = part.split("\n")
+        # First line: "a/path b/path"
+        header = lines[0]
+        match = re.match(r"a/(.+?) b/(.+)", header)
+        path = match.group(2) if match else header
+
+        # Collect the patch text (everything after the header)
+        patch_lines = lines[1:]
+        patch = "\n".join(patch_lines).rstrip()
+
+        # Count additions and deletions from hunk lines
+        additions = sum(1 for l in patch_lines if l.startswith("+") and not l.startswith("+++"))
+        deletions = sum(1 for l in patch_lines if l.startswith("-") and not l.startswith("---"))
+
+        files.append(FileDiff(
+            path=path,
+            patch=patch,
+            additions=additions,
+            deletions=deletions,
+        ))
+
+    return files
+
+
 class ForgejoGitService:
     """``GitService`` implementation backed by the Forgejo REST API.
 
@@ -985,39 +1022,28 @@ class ForgejoGitService:
     ) -> DiffInfo:
         """Get the diff for a pull request.
 
-        Fetches the PR to get the head commit SHA, then uses the single
-        commit endpoint to get file-level changes.  The compare endpoint
-        does not reliably return ``files`` in all Forgejo versions.
+        Uses Forgejo's ``GET /repos/{owner}/{repo}/pulls/{number}.diff``
+        endpoint which returns the full unified diff across all commits
+        in the PR.  The raw diff is parsed into ``FileDiff`` objects.
         """
         repo = self._repo_path(entry_id)
-        # Get the PR's raw JSON to extract head SHA.
-        resp = await self._request(
+
+        # Get PR metadata for SHAs.
+        pr_resp = await self._request(
             "GET", f"/repos/{repo}/pulls/{number}",
         )
-        pr_data = resp.json()
+        pr_data = pr_resp.json()
         head_sha = pr_data.get("head", {}).get("sha", "")
         base_sha = pr_data.get("base", {}).get("sha", "")
 
-        if not head_sha:
-            return DiffInfo(base_sha=base_sha, head_sha="", files_changed=[])
+        # Fetch the full PR diff.
+        diff_resp = await self._request(
+            "GET", f"/repos/{repo}/pulls/{number}.diff",
+        )
+        raw_diff = diff_resp.text
 
-        # Fetch the head commit to get file changes.
-        files_changed: list[FileDiff] = []
-        try:
-            commit_resp = await self._request(
-                "GET", f"/repos/{repo}/git/commits/{head_sha}",
-            )
-            for f in commit_resp.json().get("files", []):
-                files_changed.append(
-                    FileDiff(
-                        path=f.get("filename", ""),
-                        patch=f.get("patch", ""),
-                        additions=f.get("additions", 0),
-                        deletions=f.get("deletions", 0),
-                    )
-                )
-        except (RepoNotFoundError, ForgejoError):
-            pass
+        # Parse unified diff into FileDiff objects.
+        files_changed = _parse_unified_diff(raw_diff)
 
         return DiffInfo(
             base_sha=base_sha,
