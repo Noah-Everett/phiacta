@@ -54,6 +54,7 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
+limiter.enabled = get_settings().rate_limit_enabled
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(

@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     forgejo_admin_password: str = ""
     forgejo_org: str = "phiacta"
     forgejo_webhook_secret: str = ""
+    webhook_callback_url: str = "http://backend:8000/webhooks/forgejo"
+
+    # Rate limiting
+    rate_limit_enabled: bool = True
 
     # File upload limits
     max_file_size_bytes: int = 25 * 1024 * 1024  # 25 MB

@@ -518,8 +518,7 @@ class ForgejoGitService:
 
     async def setup_webhook(self, entry_id: UUID) -> None:
         """Register the Phiacta push webhook on the repo."""
-        settings = get_settings()
-        callback_url = "http://phiacta-api:8000/webhooks/forgejo"
+        callback_url = get_settings().webhook_callback_url
 
         repo = self._repo_path(entry_id)
         await self._request(

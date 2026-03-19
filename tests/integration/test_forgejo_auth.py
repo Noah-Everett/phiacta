@@ -1,0 +1,193 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Phiacta Contributors
+
+"""Integration tests for auth and agents against real Postgres.
+
+These tests require the Docker stack to be running:
+    docker compose up -d
+
+Run with:
+    pytest tests/integration/test_forgejo_auth.py -m forgejo
+"""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+import httpx
+import pytest
+
+BASE_URL = "http://localhost:8000"
+
+pytestmark = [pytest.mark.forgejo, pytest.mark.anyio]
+
+
+def _unique_agent() -> dict[str, str]:
+    """Return a unique RegisterRequest payload."""
+    uid = uuid4().hex[:12]
+    return {
+        "handle": f"test_{uid}",
+        "email": f"test_{uid}@example.com",
+        "password": "S3cur3P@ssword!",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Registration + login
+# ---------------------------------------------------------------------------
+
+
+async def test_register_and_login() -> None:
+    """Register, login, verify /auth/me returns correct agent data."""
+    payload = _unique_agent()
+
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        resp = await client.post("/v1/auth/register", json=payload)
+        assert resp.status_code == 201, resp.text
+
+        reg_body = resp.json()
+        assert "access_token" in reg_body
+        assert reg_body["token_type"] == "bearer"
+        agent_data = reg_body["agent"]
+        assert agent_data["handle"] == payload["handle"]
+        assert agent_data["agent_type"] == "human"
+        assert agent_data["is_active"] is True
+
+        reg_token = reg_body["access_token"]
+
+        login_resp = await client.post(
+            "/v1/auth/login",
+            json={"email": payload["email"], "password": payload["password"]},
+        )
+        assert login_resp.status_code == 200, login_resp.text
+        login_body = login_resp.json()
+        assert "access_token" in login_body
+        assert login_body["agent"]["handle"] == payload["handle"]
+
+        me_resp = await client.get(
+            "/v1/auth/me",
+            headers={"Authorization": f"Bearer {reg_token}"},
+        )
+        assert me_resp.status_code == 200, me_resp.text
+        me_body = me_resp.json()
+        assert me_body["handle"] == payload["handle"]
+        assert me_body["id"] == agent_data["id"]
+
+
+async def test_register_duplicate_handle_rejected() -> None:
+    """Same handle rejected on second registration."""
+    payload = _unique_agent()
+
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        resp = await client.post("/v1/auth/register", json=payload)
+        assert resp.status_code == 201
+
+        duplicate = {
+            "handle": payload["handle"],
+            "email": f"other_{uuid4().hex[:12]}@example.com",
+            "password": payload["password"],
+        }
+        dup_resp = await client.post("/v1/auth/register", json=duplicate)
+        assert dup_resp.status_code in (409, 422), dup_resp.text
+
+
+async def test_register_duplicate_email_rejected() -> None:
+    """Same email rejected on second registration."""
+    payload = _unique_agent()
+
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        resp = await client.post("/v1/auth/register", json=payload)
+        assert resp.status_code == 201
+
+        duplicate = {
+            "handle": f"other_{uuid4().hex[:12]}",
+            "email": payload["email"],
+            "password": payload["password"],
+        }
+        dup_resp = await client.post("/v1/auth/register", json=duplicate)
+        assert dup_resp.status_code in (409, 422), dup_resp.text
+
+
+# ---------------------------------------------------------------------------
+# Login failure cases
+# ---------------------------------------------------------------------------
+
+
+async def test_login_wrong_password() -> None:
+    """Wrong password returns 401."""
+    payload = _unique_agent()
+
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        await client.post("/v1/auth/register", json=payload)
+
+        resp = await client.post(
+            "/v1/auth/login",
+            json={"email": payload["email"], "password": "Wr0ngP@ssword!"},
+        )
+        assert resp.status_code == 401
+
+
+async def test_login_nonexistent_email() -> None:
+    """Nonexistent email returns 401."""
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        resp = await client.post(
+            "/v1/auth/login",
+            json={
+                "email": f"ghost_{uuid4().hex}@example.com",
+                "password": "S3cur3P@ssword!",
+            },
+        )
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# /auth/me token validation
+# ---------------------------------------------------------------------------
+
+
+async def test_me_without_token() -> None:
+    """No Authorization header returns 401."""
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        resp = await client.get("/v1/auth/me")
+        assert resp.status_code == 401
+
+
+async def test_me_with_invalid_token() -> None:
+    """Garbage JWT returns 401."""
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        resp = await client.get(
+            "/v1/auth/me",
+            headers={"Authorization": "Bearer this.is.not.a.valid.jwt"},
+        )
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Agent public profile
+# ---------------------------------------------------------------------------
+
+
+async def test_get_agent_by_id() -> None:
+    """GET /agents/{id} returns public profile without email."""
+    payload = _unique_agent()
+
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        reg = await client.post("/v1/auth/register", json=payload)
+        assert reg.status_code == 201
+
+        agent_id = reg.json()["agent"]["id"]
+        profile_resp = await client.get(f"/v1/agents/{agent_id}")
+        assert profile_resp.status_code == 200
+
+        profile = profile_resp.json()
+        assert profile["id"] == agent_id
+        assert profile["handle"] == payload["handle"]
+        assert profile["agent_type"] == "human"
+        assert profile["is_active"] is True
+
+
+async def test_get_nonexistent_agent() -> None:
+    """Random UUID returns 404."""
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        resp = await client.get(f"/v1/agents/{uuid4()}")
+        assert resp.status_code == 404
