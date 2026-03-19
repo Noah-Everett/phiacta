@@ -23,6 +23,10 @@ services:
       FORGEJO__server__HTTP_PORT: "3000"
       FORGEJO__service__DISABLE_REGISTRATION: "false"
       FORGEJO__security__INSTALL_LOCK: "true"
+      # Allow webhooks to Docker-internal hostnames (private IPs).
+      # Forgejo defaults ALLOWED_HOST_LIST to "external", which blocks
+      # deliveries to RFC 1918 addresses like 172.x.x.x used by Docker.
+      FORGEJO__webhook__ALLOWED_HOST_LIST: "*"
       FORGEJO_ADMIN_USER: phiacta-admin
       FORGEJO_ADMIN_PASSWORD: phiacta-dev-password
       FORGEJO_ADMIN_EMAIL: admin@phiacta.local

@@ -221,8 +221,8 @@ async def test_merge_updates_entry_sha() -> None:
             headers=_auth(owner_token),
         )
 
-        # Poll for SHA change
-        for _ in range(15):
+        # Poll for SHA change — webhook delivery after merge can take time
+        for _ in range(30):
             await asyncio.sleep(2)
             resp = await client.get(f"/v1/entries/{entry['id']}")
             if resp.json()["current_head_sha"] != original_sha:

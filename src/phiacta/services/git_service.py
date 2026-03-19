@@ -491,16 +491,18 @@ class ForgejoGitService:
         Rules:
         - No force pushes
         - No branch deletion
-        - Push restricted to the service account (only via API)
+        - Only the service account (admin) can push to main (file writes + PR merges)
         """
         repo = self._repo_path(entry_id)
+        settings = get_settings()
         await self._request(
             "POST",
             f"/repos/{repo}/branch_protections",
             json={
                 "branch_name": "main",
                 "enable_push": True,
-                "enable_push_whitelist": False,
+                "enable_push_whitelist": True,
+                "push_whitelist_usernames": [settings.forgejo_admin_user],
                 "enable_force_push": False,
                 "enable_force_push_whitelist": False,
                 "enable_merge_whitelist": False,
