@@ -27,6 +27,8 @@ services:
       # Forgejo defaults ALLOWED_HOST_LIST to "external", which blocks
       # deliveries to RFC 1918 addresses like 172.x.x.x used by Docker.
       FORGEJO__webhook__ALLOWED_HOST_LIST: "*"
+      # Flush webhook queue immediately instead of waiting for a batch of 20.
+      FORGEJO__queue__BATCH_LENGTH: "1"
       FORGEJO_ADMIN_USER: phiacta-admin
       FORGEJO_ADMIN_PASSWORD: phiacta-dev-password
       FORGEJO_ADMIN_EMAIL: admin@phiacta.local
