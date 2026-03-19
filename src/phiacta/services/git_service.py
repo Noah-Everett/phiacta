@@ -723,15 +723,52 @@ class ForgejoGitService:
         limit: int = 50,
         page: int = 1,
     ) -> list[CommitInfo]:
-        """List commits on a branch, newest first."""
+        """List commits on a branch, newest first.
+
+        Uses ``GET /repos/{owner}/{repo}/commits`` (the commit log endpoint),
+        not ``/git/commits`` which is the low-level git objects endpoint and
+        returns 404 for branch-based queries.
+        """
         repo = self._repo_path(entry_id)
         raw_list = await self._paginate(
-            f"/repos/{repo}/git/commits",
+            f"/repos/{repo}/commits",
             params={"sha": branch},
             limit=limit,
             page=page,
         )
         return [_parse_commit(c) for c in raw_list]
+
+    async def _resolve_ref(self, repo: str, ref: str) -> str:
+        """Resolve a ref (branch, tag, SHA, or ``{sha}~N`` parent notation) to a SHA.
+
+        Forgejo's compare endpoint does not support the ``~N`` parent-ref
+        syntax used by git CLI.  This method resolves ``{sha}~1`` (and
+        ``~N`` in general) by fetching the commit and walking up N parents.
+        Plain SHAs or branch names are returned unchanged.
+        """
+        # Detect and handle "{sha}~N" parent-ref syntax.
+        if "~" in ref:
+            parts = ref.rsplit("~", 1)
+            base_ref = parts[0]
+            try:
+                steps = int(parts[1]) if parts[1] else 1
+            except ValueError:
+                steps = 1
+
+            # Resolve the base ref first, then walk N parents.
+            current_sha = base_ref
+            for _ in range(steps):
+                resp = await self._request("GET", f"/repos/{repo}/git/commits/{current_sha}")
+                data = resp.json()
+                parents = data.get("parents", [])
+                if not parents:
+                    raise RepoNotFoundError(
+                        f"Commit {current_sha!r} has no parent — cannot resolve {ref!r}"
+                    )
+                current_sha = parents[0].get("sha", parents[0].get("url", "")).rsplit("/", 1)[-1]
+            return current_sha
+
+        return ref
 
     async def get_diff(
         self, entry_id: UUID, base: str, head: str
@@ -740,11 +777,18 @@ class ForgejoGitService:
 
         Uses the Forgejo compare endpoint:
         ``GET /repos/{owner}/{repo}/compare/{base}...{head}``
+
+        The ``base`` and ``head`` refs are resolved before use so that
+        git-CLI parent notation (e.g. ``{sha}~1``) — which Forgejo's
+        compare endpoint does not support — is translated to a real SHA.
         """
         repo = self._repo_path(entry_id)
+        resolved_base = await self._resolve_ref(repo, base)
+        resolved_head = await self._resolve_ref(repo, head)
+
         resp = await self._request(
             "GET",
-            f"/repos/{repo}/compare/{base}...{head}",
+            f"/repos/{repo}/compare/{resolved_base}...{resolved_head}",
         )
         data = resp.json()
 
@@ -759,10 +803,11 @@ class ForgejoGitService:
                 )
             )
 
-        # Extract SHAs from the compare response.
+        # Use the resolved SHAs directly — the compare response's commits
+        # list may be empty for the initial commit diff.
         commits = data.get("commits", [])
-        base_sha = commits[0]["sha"] if commits else base
-        head_sha = commits[-1]["sha"] if commits else head
+        base_sha = commits[0]["sha"] if commits else resolved_base
+        head_sha = commits[-1]["sha"] if commits else resolved_head
 
         return DiffInfo(
             base_sha=base_sha,
