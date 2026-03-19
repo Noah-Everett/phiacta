@@ -560,3 +560,342 @@ class TestCrossAgentAccess:
                 f"Expected 403 for cross-agent file write, "
                 f"got {put_resp.status_code}: {put_resp.text}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Commit Diff Detail (GET /v1/entries/{id}/history/{sha})
+# ---------------------------------------------------------------------------
+
+
+class TestCommitDiffDetail:
+    """GET /v1/entries/{id}/history/{sha} returns per-file diff for a commit."""
+
+    async def test_commit_diff_detail(self) -> None:
+        """Create entry, wait ready, write a file, fetch history to get the
+        latest commit SHA, then GET /entries/{id}/history/{sha}.
+
+        Verify the response has ``base_sha``, ``head_sha``, and
+        ``files_changed`` (a non-empty list).  Each file diff item must
+        contain ``path``, ``patch``, ``additions``, and ``deletions``.
+        """
+        content_b64 = base64.b64encode(b"diff trigger content").decode()
+
+        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
+            token, entry_id, _ = await _setup_ready_entry(
+                client, title="Commit Diff Detail Test",
+            )
+
+            # Write a file to produce a commit that has a meaningful diff.
+            put_resp = await client.put(
+                f"/v1/entries/{entry_id}/files/diff_target.txt",
+                json={"content": content_b64, "message": "Add diff_target.txt"},
+                headers=_auth_header(token),
+            )
+            assert put_resp.status_code == 200, f"PUT failed: {put_resp.text}"
+
+            # Retrieve history and grab the latest (first) commit SHA.
+            history_resp = await client.get(f"/v1/entries/{entry_id}/history")
+            assert history_resp.status_code == 200, (
+                f"GET history failed: {history_resp.text}"
+            )
+            commits = history_resp.json()
+            assert isinstance(commits, list) and len(commits) >= 1, (
+                f"Expected at least 1 commit in history, got: {commits}"
+            )
+            latest_sha = commits[0]["sha"]
+
+            # Fetch the diff for that specific commit.
+            diff_resp = await client.get(
+                f"/v1/entries/{entry_id}/history/{latest_sha}",
+            )
+            assert diff_resp.status_code == 200, (
+                f"GET history/{latest_sha} failed: {diff_resp.text}"
+            )
+
+            diff = diff_resp.json()
+            assert "base_sha" in diff, f"Response missing 'base_sha': {diff}"
+            assert "head_sha" in diff, f"Response missing 'head_sha': {diff}"
+            assert "files_changed" in diff, (
+                f"Response missing 'files_changed': {diff}"
+            )
+            assert diff["head_sha"] == latest_sha, (
+                f"head_sha mismatch: expected {latest_sha!r}, "
+                f"got {diff['head_sha']!r}"
+            )
+
+            files_changed = diff["files_changed"]
+            assert isinstance(files_changed, list), (
+                f"'files_changed' must be a list, got: {type(files_changed)}"
+            )
+            assert len(files_changed) >= 1, (
+                f"Expected at least 1 changed file in diff, got: {files_changed}"
+            )
+
+            for file_diff in files_changed:
+                for field in ("path", "patch", "additions", "deletions"):
+                    assert field in file_diff, (
+                        f"File diff missing '{field}': {file_diff}"
+                    )
+                assert isinstance(file_diff["additions"], int), (
+                    f"'additions' must be int: {file_diff['additions']!r}"
+                )
+                assert isinstance(file_diff["deletions"], int), (
+                    f"'deletions' must be int: {file_diff['deletions']!r}"
+                )
+
+
+# ---------------------------------------------------------------------------
+# Entry References (GET /v1/entries/{id}/references)
+# ---------------------------------------------------------------------------
+
+
+class TestEntryReferences:
+    """GET /v1/entries/{id}/references returns ref lists."""
+
+    async def test_entry_references_empty(self) -> None:
+        """Create entry, wait ready, GET /entries/{id}/references.
+
+        A brand-new entry has no refs, so the endpoint must return an empty
+        list with HTTP 200.
+        """
+        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
+            _token, entry_id, _ = await _setup_ready_entry(
+                client, title="References Empty Test",
+            )
+
+            refs_resp = await client.get(f"/v1/entries/{entry_id}/references")
+            assert refs_resp.status_code == 200, (
+                f"GET references failed: {refs_resp.text}"
+            )
+            refs = refs_resp.json()
+            assert isinstance(refs, list), (
+                f"Expected list, got: {type(refs)}"
+            )
+            assert refs == [], (
+                f"Expected empty list for new entry, got: {refs}"
+            )
+
+    async def test_entry_references_direction_filter(self) -> None:
+        """direction query param is accepted without error.
+
+        For a new entry the result is always an empty list regardless of
+        direction, so this test only checks that the parameter is accepted
+        and a valid list is returned for all three values.
+        """
+        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
+            _token, entry_id, _ = await _setup_ready_entry(
+                client, title="References Direction Test",
+            )
+
+            for direction in ("incoming", "outgoing", "both"):
+                resp = await client.get(
+                    f"/v1/entries/{entry_id}/references",
+                    params={"direction": direction},
+                )
+                assert resp.status_code == 200, (
+                    f"GET references?direction={direction} failed: {resp.text}"
+                )
+                assert isinstance(resp.json(), list), (
+                    f"Expected list for direction={direction!r}: {resp.json()}"
+                )
+
+
+# ---------------------------------------------------------------------------
+# Entry List with Filters (GET /v1/entries)
+# ---------------------------------------------------------------------------
+
+
+class TestEntryListFilters:
+    """GET /v1/entries with limit/offset pagination and default listing."""
+
+    async def test_list_entries_default(self) -> None:
+        """Create an entry, GET /entries, verify the entry appears in the list
+        with the correct top-level fields.
+        """
+        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
+            title = f"List Default Test {uuid4().hex[:8]}"
+            _token, entry_id, _ = await _setup_ready_entry(client, title=title)
+
+            list_resp = await client.get("/v1/entries")
+            assert list_resp.status_code == 200, (
+                f"GET /entries failed: {list_resp.text}"
+            )
+
+            body = list_resp.json()
+            # PaginatedResponse shape: items, total, limit, offset, has_more
+            assert "items" in body, f"Response missing 'items': {body}"
+            assert "total" in body, f"Response missing 'total': {body}"
+            assert "has_more" in body, f"Response missing 'has_more': {body}"
+
+            item_ids = [item["id"] for item in body["items"]]
+            assert entry_id in item_ids, (
+                f"Newly created entry {entry_id!r} not found in list. "
+                f"IDs: {item_ids}"
+            )
+
+            # Find our entry and verify key fields are present.
+            our_item = next(i for i in body["items"] if i["id"] == entry_id)
+            for field in (
+                "id", "title", "status", "repo_status",
+                "content_format", "created_at", "updated_at",
+            ):
+                assert field in our_item, (
+                    f"EntryListItem missing field '{field}': {our_item}"
+                )
+            assert our_item["title"] == title, (
+                f"title mismatch: expected {title!r}, got {our_item['title']!r}"
+            )
+
+    async def test_list_entries_pagination(self) -> None:
+        """Create 3 entries, GET /entries?limit=2, verify 2 items and
+        has_more=true, then GET /entries?limit=2&offset=2 and verify the
+        remaining 1 item appears and has_more=false.
+
+        This test registers a fresh agent and creates entries with unique
+        titles to make it easy to find them in the paginated results without
+        depending on the total count of entries in the database.
+        """
+        uid = uuid4().hex[:8]
+
+        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
+            auth = await register_agent(client)
+            token = auth["access_token"]
+
+            # Create 3 entries from this agent, all ready before we paginate.
+            titles = [f"Pagination Test {uid} {i}" for i in range(3)]
+            entry_ids: list[str] = []
+            for t in titles:
+                entry = await create_entry(client, token, title=t)
+                entry_ids.append(entry["id"])
+
+            for eid in entry_ids:
+                await wait_for_ready(client, eid)
+
+            # Fetch the full list to determine the baseline total.
+            baseline_resp = await client.get(
+                "/v1/entries", params={"limit": 200, "offset": 0},
+            )
+            assert baseline_resp.status_code == 200
+            total = baseline_resp.json()["total"]
+
+            # We need at least 3 entries in the DB for pagination to be
+            # meaningful; the 3 we just created guarantee this.
+            assert total >= 3, (
+                f"Expected at least 3 entries in DB, got {total}"
+            )
+
+            # Page 1: limit=2
+            page1_resp = await client.get(
+                "/v1/entries", params={"limit": 2, "offset": 0},
+            )
+            assert page1_resp.status_code == 200, (
+                f"GET /entries?limit=2 failed: {page1_resp.text}"
+            )
+            page1 = page1_resp.json()
+            assert len(page1["items"]) == 2, (
+                f"Expected 2 items with limit=2, got {len(page1['items'])}"
+            )
+            if total > 2:
+                assert page1["has_more"] is True, (
+                    f"Expected has_more=true with total={total} and limit=2, "
+                    f"got has_more={page1['has_more']!r}"
+                )
+
+            # Page 2: limit=2, offset=2 — should return (total - 2) capped at 2.
+            page2_resp = await client.get(
+                "/v1/entries", params={"limit": 2, "offset": 2},
+            )
+            assert page2_resp.status_code == 200, (
+                f"GET /entries?limit=2&offset=2 failed: {page2_resp.text}"
+            )
+            page2 = page2_resp.json()
+            expected_page2_count = min(2, max(0, total - 2))
+            assert len(page2["items"]) == expected_page2_count, (
+                f"Expected {expected_page2_count} items on page 2 "
+                f"(total={total}), got {len(page2['items'])}"
+            )
+
+            # IDs on page 1 and page 2 must not overlap.
+            ids_page1 = {i["id"] for i in page1["items"]}
+            ids_page2 = {i["id"] for i in page2["items"]}
+            overlap = ids_page1 & ids_page2
+            assert not overlap, (
+                f"Pages 1 and 2 share IDs (pagination is broken): {overlap}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Proposal Detail Diff Content (GET /v1/entries/{id}/edits/{number})
+# ---------------------------------------------------------------------------
+
+
+class TestProposalDetailDiff:
+    """GET /v1/entries/{id}/edits/{number} returns diff for the proposal."""
+
+    async def test_proposal_detail_has_diff(self) -> None:
+        """Create entry, create a proposal with a file change, GET the proposal
+        detail by number, and verify the ``diff`` field is a non-empty list
+        whose items each have ``path``, ``patch``, ``additions``,
+        ``deletions``.
+        """
+        content_b64 = base64.b64encode(b"proposal file content").decode()
+
+        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
+            token, entry_id, _ = await _setup_ready_entry(
+                client, title="Proposal Diff Detail Test",
+            )
+
+            # Create an edit proposal with a single file change.
+            proposal_title = f"Add proposal file {uuid4().hex[:8]}"
+            create_resp = await client.post(
+                f"/v1/entries/{entry_id}/edits",
+                json={
+                    "title": proposal_title,
+                    "body": "Testing proposal diff content",
+                    "files": [
+                        {"path": "proposal_file.txt", "content": content_b64},
+                    ],
+                },
+                headers=_auth_header(token),
+            )
+            assert create_resp.status_code == 201, (
+                f"Create proposal failed: {create_resp.text}"
+            )
+            proposal_number = create_resp.json()["number"]
+
+            # Fetch the proposal detail.
+            detail_resp = await client.get(
+                f"/v1/entries/{entry_id}/edits/{proposal_number}",
+            )
+            assert detail_resp.status_code == 200, (
+                f"GET proposal detail failed: {detail_resp.text}"
+            )
+
+            detail = detail_resp.json()
+            assert "diff" in detail, f"Response missing 'diff' field: {detail}"
+
+            diff = detail["diff"]
+            assert isinstance(diff, list), (
+                f"'diff' must be a list, got: {type(diff)}"
+            )
+            assert len(diff) >= 1, (
+                f"Expected at least 1 file in proposal diff, got: {diff}"
+            )
+
+            for file_diff in diff:
+                for field in ("path", "patch", "additions", "deletions"):
+                    assert field in file_diff, (
+                        f"File diff item missing '{field}': {file_diff}"
+                    )
+                assert isinstance(file_diff["additions"], int), (
+                    f"'additions' must be int: {file_diff['additions']!r}"
+                )
+                assert isinstance(file_diff["deletions"], int), (
+                    f"'deletions' must be int: {file_diff['deletions']!r}"
+                )
+
+            # The proposal should reference the file we added.
+            diff_paths = [f["path"] for f in diff]
+            assert "proposal_file.txt" in diff_paths, (
+                f"Expected 'proposal_file.txt' in diff paths, got: {diff_paths}"
+            )

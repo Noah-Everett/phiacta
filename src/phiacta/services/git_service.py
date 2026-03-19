@@ -775,17 +775,17 @@ class ForgejoGitService:
     ) -> DiffInfo:
         """Get the diff between two refs.
 
-        Uses the Forgejo compare endpoint:
-        ``GET /repos/{owner}/{repo}/compare/{base}...{head}``
-
-        The ``base`` and ``head`` refs are resolved before use so that
-        git-CLI parent notation (e.g. ``{sha}~1``) — which Forgejo's
-        compare endpoint does not support — is translated to a real SHA.
+        Uses the Forgejo compare endpoint first; if it returns no file
+        diffs (Forgejo's compare endpoint omits ``files`` in some
+        versions), falls back to fetching the head commit directly
+        via ``GET /repos/{owner}/{repo}/git/commits/{sha}`` which
+        always includes file-level changes.
         """
         repo = self._repo_path(entry_id)
         resolved_base = await self._resolve_ref(repo, base)
         resolved_head = await self._resolve_ref(repo, head)
 
+        # Try the compare endpoint first.
         resp = await self._request(
             "GET",
             f"/repos/{repo}/compare/{resolved_base}...{resolved_head}",
@@ -803,8 +803,26 @@ class ForgejoGitService:
                 )
             )
 
-        # Use the resolved SHAs directly — the compare response's commits
-        # list may be empty for the initial commit diff.
+        # Fallback: if compare returned no files, fetch the head commit
+        # directly — its ``files`` field always includes changes.
+        if not files_changed:
+            try:
+                commit_resp = await self._request(
+                    "GET", f"/repos/{repo}/git/commits/{resolved_head}",
+                )
+                commit_data = commit_resp.json()
+                for f in commit_data.get("files", []):
+                    files_changed.append(
+                        FileDiff(
+                            path=f.get("filename", ""),
+                            patch=f.get("patch", ""),
+                            additions=f.get("additions", 0),
+                            deletions=f.get("deletions", 0),
+                        )
+                    )
+            except (RepoNotFoundError, ForgejoError):
+                pass  # Best-effort — return empty diff
+
         commits = data.get("commits", [])
         base_sha = commits[0]["sha"] if commits else resolved_base
         head_sha = commits[-1]["sha"] if commits else resolved_head
@@ -967,10 +985,45 @@ class ForgejoGitService:
     ) -> DiffInfo:
         """Get the diff for a pull request.
 
-        Uses the PR's head/base refs with the compare endpoint.
+        Fetches the PR to get the head commit SHA, then uses the single
+        commit endpoint to get file-level changes.  The compare endpoint
+        does not reliably return ``files`` in all Forgejo versions.
         """
-        pr = await self.get_pull_request(entry_id, number)
-        return await self.get_diff(entry_id, pr.base_branch, pr.head_branch)
+        repo = self._repo_path(entry_id)
+        # Get the PR's raw JSON to extract head SHA.
+        resp = await self._request(
+            "GET", f"/repos/{repo}/pulls/{number}",
+        )
+        pr_data = resp.json()
+        head_sha = pr_data.get("head", {}).get("sha", "")
+        base_sha = pr_data.get("base", {}).get("sha", "")
+
+        if not head_sha:
+            return DiffInfo(base_sha=base_sha, head_sha="", files_changed=[])
+
+        # Fetch the head commit to get file changes.
+        files_changed: list[FileDiff] = []
+        try:
+            commit_resp = await self._request(
+                "GET", f"/repos/{repo}/git/commits/{head_sha}",
+            )
+            for f in commit_resp.json().get("files", []):
+                files_changed.append(
+                    FileDiff(
+                        path=f.get("filename", ""),
+                        patch=f.get("patch", ""),
+                        additions=f.get("additions", 0),
+                        deletions=f.get("deletions", 0),
+                    )
+                )
+        except (RepoNotFoundError, ForgejoError):
+            pass
+
+        return DiffInfo(
+            base_sha=base_sha,
+            head_sha=head_sha,
+            files_changed=files_changed,
+        )
 
     async def merge_pull_request(
         self, entry_id: UUID, number: int, merge_style: str = "merge",
