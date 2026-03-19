@@ -376,7 +376,17 @@ class OutboxWorker:
         # Step 1: Create the repository (idempotent — checks if exists)
         repo_id = await self._git.create_repo(entry_id)
 
-        # Step 2: Commit initial .phiacta/entry.yaml + README
+        # Step 2: Register webhook BEFORE committing files so the initial
+        # push triggers ingestion (populates content_cache, current_head_sha).
+        try:
+            await self._git.setup_webhook(entry_id)
+        except ForgejoError as exc:
+            if "422" in str(exc) or "409" in str(exc):
+                logger.info("Webhook already exists for %s", entry_id)
+            else:
+                raise
+
+        # Step 3: Commit initial .phiacta/entry.yaml + README
         entry_yaml = generate_entry_yaml(
             entry_id=entry_id,
             title=title,
@@ -402,7 +412,7 @@ class OutboxWorker:
             entry_id, files, author, f"Initial entry: {title}"
         )
 
-        # Step 3: Setup branch protection on main
+        # Step 4: Setup branch protection on main
         try:
             await self._git.setup_branch_protection(entry_id)
         except ForgejoError as exc:
@@ -412,18 +422,11 @@ class OutboxWorker:
             else:
                 raise
 
-        # Step 4: Register webhook
-        try:
-            await self._git.setup_webhook(entry_id)
-        except ForgejoError as exc:
-            # Idempotent: if webhook already exists, log and continue
-            if "422" in str(exc) or "409" in str(exc):
-                logger.info("Webhook already exists for %s", entry_id)
-            else:
-                raise
-
-        # Step 5: Update entry record with Forgejo state (via repository
-        # so ORM onupdate for updated_at fires correctly)
+        # Step 5: Update entry record with Forgejo state and set
+        # content_cache directly from the README we just committed.
+        # Forgejo may not fire a webhook for the very first push to a
+        # new repo, so we populate content_cache here instead of relying
+        # on webhook-driven ingestion.
         async with self._session_factory() as session:
             repo = EntryRepository(session)
             await repo.update_repo_status(
@@ -432,6 +435,9 @@ class OutboxWorker:
                 forgejo_repo_id=repo_id,
                 current_head_sha=sha,
             )
+            entry = await repo.get_by_id(entry_id)
+            if entry is not None:
+                entry.content_cache = readme_content
             await session.commit()
 
     async def _handle_commit_files(self, payload: dict) -> None:
