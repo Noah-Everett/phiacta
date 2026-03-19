@@ -52,6 +52,52 @@ async def get_writable_entry(
     return entry
 
 
+async def get_proposable_entry(
+    entry_id: UUID,
+    db: AsyncSession,
+) -> Entry:
+    """Load an entry and verify it can receive edit proposals.
+
+    Checks that the entry exists (404), repo is ready (409), and status
+    is editable (403).  Does NOT check ownership — any authenticated
+    agent can create a proposal.
+    """
+    repo = EntryRepository(db)
+    entry = await repo.get_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    if entry.repo_status != "ready":
+        raise HTTPException(
+            status_code=409, detail="Entry repository is not yet ready",
+        )
+    if entry.status not in EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=403, detail="Entry is not editable",
+        )
+    return entry
+
+
+async def get_readable_entry(
+    entry_id: UUID,
+    db: AsyncSession,
+) -> Entry:
+    """Load an entry and verify its repo is ready for read operations.
+
+    Checks that the entry exists (404) and repo is ready (409).
+    Does NOT check ownership or editable status — used for public
+    read endpoints like listing proposals on any entry (including archived).
+    """
+    repo = EntryRepository(db)
+    entry = await repo.get_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    if entry.repo_status != "ready":
+        raise HTTPException(
+            status_code=409, detail="Entry repository is not yet ready",
+        )
+    return entry
+
+
 async def get_owned_entry(
     entry_id: UUID,
     agent: Agent,

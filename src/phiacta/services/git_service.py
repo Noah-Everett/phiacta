@@ -75,6 +75,23 @@ class DiffInfo:
     files_changed: list[FileDiff]
 
 
+@dataclass(frozen=True, slots=True)
+class PullRequestInfo:
+    """Metadata for a pull request / edit proposal."""
+
+    number: int
+    title: str
+    body: str
+    state: str  # "open", "closed", "merged"
+    is_draft: bool
+    head_branch: str
+    base_branch: str
+    author_name: str
+    created_at: datetime
+    updated_at: datetime
+    merged_at: datetime | None
+
+
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
@@ -195,6 +212,54 @@ class GitService(Protocol):
         self, entry_id: UUID, exclude_archived: bool = True
     ) -> list[str]:
         """List branches. Optionally exclude ``archived/*`` branches."""
+        ...
+
+    # --- Pull Requests ---
+
+    async def create_pull_request(
+        self,
+        entry_id: UUID,
+        title: str,
+        body: str,
+        head_branch: str,
+        base_branch: str = "main",
+        author_name: str = "",
+    ) -> PullRequestInfo:
+        """Create a pull request and return its info."""
+        ...
+
+    async def list_pull_requests(
+        self,
+        entry_id: UUID,
+        state: str | None = None,
+        limit: int = 50,
+        page: int = 1,
+    ) -> list[PullRequestInfo]:
+        """List pull requests, optionally filtered by state."""
+        ...
+
+    async def get_pull_request(
+        self, entry_id: UUID, number: int
+    ) -> PullRequestInfo:
+        """Get a single pull request by number."""
+        ...
+
+    async def get_pull_request_diff(
+        self, entry_id: UUID, number: int
+    ) -> DiffInfo:
+        """Get the diff for a pull request."""
+        ...
+
+    async def merge_pull_request(
+        self, entry_id: UUID, number: int, merge_style: str = "merge"
+    ) -> str:
+        """Merge a pull request. Returns the merge commit SHA."""
+        ...
+
+    async def close_pull_request(
+        self, entry_id: UUID, number: int
+    ) -> None:
+        """Close a pull request without merging."""
         ...
 
     # --- Reconciliation ---
@@ -740,6 +805,150 @@ class ForgejoGitService:
         if exclude_archived:
             names = [n for n in names if not n.startswith("archived/")]
         return names
+
+    # ------------------------------------------------------------------
+    # Pull Requests
+    # ------------------------------------------------------------------
+
+    def _parse_pull_request(self, raw: dict) -> PullRequestInfo:
+        """Convert a Forgejo PR JSON object to ``PullRequestInfo``."""
+        # Forgejo uses state="closed" + merged=true for merged PRs.
+        merged = raw.get("merged", False)
+        raw_state = raw.get("state", "open")
+        if raw_state == "closed" and merged:
+            state = "merged"
+        elif raw_state == "closed":
+            state = "closed"
+        else:
+            state = "open"
+
+        user = raw.get("user", {})
+        head = raw.get("head", {})
+        base = raw.get("base", {})
+
+        return PullRequestInfo(
+            number=raw.get("number", 0),
+            title=raw.get("title", ""),
+            body=raw.get("body", "") or "",
+            state=state,
+            is_draft=raw.get("draft", False),
+            head_branch=head.get("ref", "") if isinstance(head, dict) else "",
+            base_branch=base.get("ref", "") if isinstance(base, dict) else "",
+            author_name=user.get("login", "") if isinstance(user, dict) else "",
+            created_at=_parse_datetime(raw.get("created_at")),
+            updated_at=_parse_datetime(raw.get("updated_at")),
+            merged_at=_parse_datetime(raw.get("merged_at")) if raw.get("merged_at") else None,
+        )
+
+    async def create_pull_request(
+        self,
+        entry_id: UUID,
+        title: str,
+        body: str,
+        head_branch: str,
+        base_branch: str = "main",
+        author_name: str = "",
+    ) -> PullRequestInfo:
+        """Create a pull request on a repo."""
+        repo = self._repo_path(entry_id)
+        resp = await self._request(
+            "POST",
+            f"/repos/{repo}/pulls",
+            json={
+                "title": title,
+                "body": body,
+                "head": head_branch,
+                "base": base_branch,
+            },
+        )
+        pr = self._parse_pull_request(resp.json())
+        logger.info("Created PR #%d on %s (%s -> %s)", pr.number, repo, head_branch, base_branch)
+        return pr
+
+    async def list_pull_requests(
+        self,
+        entry_id: UUID,
+        state: str | None = None,
+        limit: int = 50,
+        page: int = 1,
+    ) -> list[PullRequestInfo]:
+        """List pull requests, optionally filtered by state.
+
+        Forgejo only supports ``state=open|closed|all``.  For
+        ``state="merged"`` or ``state="closed"`` (rejected), we
+        fetch closed PRs and filter client-side.
+        """
+        repo = self._repo_path(entry_id)
+        params: dict[str, str] = {}
+
+        if state == "open":
+            params["state"] = "open"
+        elif state in ("closed", "merged"):
+            params["state"] = "closed"
+        else:
+            params["state"] = "all"
+
+        raw_list = await self._paginate(
+            f"/repos/{repo}/pulls", params=params, limit=limit, page=page,
+        )
+        prs = [self._parse_pull_request(r) for r in raw_list]
+
+        # Client-side filter for merged vs closed (rejected).
+        if state == "merged":
+            prs = [p for p in prs if p.state == "merged"]
+        elif state == "closed":
+            prs = [p for p in prs if p.state == "closed"]
+
+        return prs
+
+    async def get_pull_request(
+        self, entry_id: UUID, number: int,
+    ) -> PullRequestInfo:
+        """Get a single pull request by number."""
+        repo = self._repo_path(entry_id)
+        resp = await self._request(
+            "GET", f"/repos/{repo}/pulls/{number}",
+        )
+        return self._parse_pull_request(resp.json())
+
+    async def get_pull_request_diff(
+        self, entry_id: UUID, number: int,
+    ) -> DiffInfo:
+        """Get the diff for a pull request.
+
+        Uses the PR's head/base refs with the compare endpoint.
+        """
+        pr = await self.get_pull_request(entry_id, number)
+        return await self.get_diff(entry_id, pr.base_branch, pr.head_branch)
+
+    async def merge_pull_request(
+        self, entry_id: UUID, number: int, merge_style: str = "merge",
+    ) -> str:
+        """Merge a pull request. Returns the merge commit SHA."""
+        repo = self._repo_path(entry_id)
+        resp = await self._request(
+            "POST",
+            f"/repos/{repo}/pulls/{number}/merge",
+            json={"Do": merge_style},
+        )
+        # Forgejo may return 204 (no body) on some merge styles.
+        sha = ""
+        if resp.status_code != 204 and resp.content:
+            sha = resp.json().get("sha", "")
+        logger.info("Merged PR #%d on %s (sha=%s)", number, repo, sha[:12] if sha else "?")
+        return sha
+
+    async def close_pull_request(
+        self, entry_id: UUID, number: int,
+    ) -> None:
+        """Close a pull request without merging."""
+        repo = self._repo_path(entry_id)
+        await self._request(
+            "PATCH",
+            f"/repos/{repo}/pulls/{number}",
+            json={"state": "closed"},
+        )
+        logger.info("Closed PR #%d on %s", number, repo)
 
     # ------------------------------------------------------------------
     # Reconciliation

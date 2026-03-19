@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
@@ -37,7 +38,9 @@ from phiacta.services.git_service import (
     CommitInfo,
     DiffInfo,
     FileContent,
+    FileDiff,
     FileInfo,
+    PullRequestInfo,
     RepoNotFoundError,
 )
 from phiacta.services.git_service_dep import get_git_service
@@ -71,6 +74,12 @@ class FakeGitService:
         self.commit_history: dict[UUID, list[CommitInfo]] = {}
         self.diffs: dict[tuple[UUID, str, str], DiffInfo] = {}
         self.archived_repos: set[UUID] = set()
+        # Pull request support for edit proposals (NEV-126/NEV-162).
+        self.pull_requests: dict[UUID, list[dict]] = {}  # entry_id -> list of PR dicts
+        self.branches: dict[UUID, dict[str, str]] = {}  # entry_id -> {branch_name: base_sha}
+        # (entry_id, branch, path) -> content
+        self.branch_files: dict[tuple[UUID, str, str], bytes] = {}
+        self._pr_counter: dict[UUID, int] = {}  # entry_id -> next PR number
 
     async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
         """Return the file contents or raise RepoNotFoundError."""
@@ -139,15 +148,22 @@ class FakeGitService:
         message: str,
         branch: str = "main",
     ) -> str:
-        """Store files in memory and return a fake commit SHA."""
+        """Store files in memory and return a fake commit SHA.
+
+        Branch-aware: files committed to a non-main branch are stored in
+        ``branch_files`` rather than ``files``, so they don't appear on main.
+        """
         self._commit_counter += 1
         for fc in files:
             raw = fc.content if isinstance(fc.content, bytes) else fc.content.encode()
-            self.files[(entry_id, fc.path)] = raw
+            if branch == "main":
+                self.files[(entry_id, fc.path)] = raw
+            else:
+                self.branch_files[(entry_id, branch, fc.path)] = raw
         sha = f"fake_sha_{self._commit_counter:04d}"
         self.commits.append({
             "sha": sha, "message": message, "author": author,
-            "files": [f.path for f in files],
+            "files": [f.path for f in files], "branch": branch,
         })
         return sha
 
@@ -190,14 +206,231 @@ class FakeGitService:
             raise RepoNotFoundError(f"Diff not found: {base}...{head} in repo {entry_id}")
         return self.diffs[key]
 
-    async def create_branch(self, entry_id, name, from_ref="main"):  # type: ignore[override]
-        raise NotImplementedError
+    async def create_branch(self, entry_id: UUID, name: str, from_ref: str = "main") -> None:
+        """Create a branch in memory."""
+        if entry_id not in self.branches:
+            self.branches[entry_id] = {}
+        self.branches[entry_id][name] = from_ref
 
-    async def rename_branch(self, entry_id, old_name, new_name):  # type: ignore[override]
-        raise NotImplementedError
+    async def rename_branch(self, entry_id: UUID, old_name: str, new_name: str) -> None:
+        """Rename a branch in memory."""
+        repo_branches = self.branches.get(entry_id, {})
+        if old_name in repo_branches:
+            repo_branches[new_name] = repo_branches.pop(old_name)
 
-    async def list_branches(self, entry_id, exclude_archived=True):  # type: ignore[override]
-        raise NotImplementedError
+    async def list_branches(self, entry_id: UUID, exclude_archived: bool = True) -> list[str]:
+        """List branches in memory."""
+        repo_branches = self.branches.get(entry_id, {})
+        names = list(repo_branches.keys())
+        if exclude_archived:
+            names = [n for n in names if not n.startswith("archived/")]
+        return names
+
+    # ------------------------------------------------------------------
+    # Pull request support (NEV-126 / NEV-162)
+    # ------------------------------------------------------------------
+
+    async def create_pull_request(
+        self,
+        entry_id: UUID,
+        title: str,
+        body: str,
+        head_branch: str,
+        base_branch: str = "main",
+        author_name: str = "",
+    ) -> PullRequestInfo:
+        """Create a fake pull request and return its info."""
+        if entry_id not in self._pr_counter:
+            self._pr_counter[entry_id] = 0
+        self._pr_counter[entry_id] += 1
+        number = self._pr_counter[entry_id]
+
+        now = datetime.now(UTC)
+        pr = {
+            "number": number,
+            "title": title,
+            "body": body,
+            "state": "open",
+            "is_draft": False,
+            "merged": False,
+            "head_branch": head_branch,
+            "base_branch": base_branch,
+            "author_name": author_name,
+            "created_at": now,
+            "updated_at": now,
+            "merged_at": None,
+            "merge_sha": None,
+        }
+        if entry_id not in self.pull_requests:
+            self.pull_requests[entry_id] = []
+        self.pull_requests[entry_id].append(pr)
+
+        return PullRequestInfo(
+            number=number,
+            title=title,
+            body=body,
+            state="open",
+            is_draft=False,
+            head_branch=head_branch,
+            base_branch=base_branch,
+            author_name=author_name,
+            created_at=now,
+            updated_at=now,
+            merged_at=None,
+        )
+
+    async def list_pull_requests(
+        self,
+        entry_id: UUID,
+        state: str | None = None,
+        limit: int = 50,
+        page: int = 1,
+    ) -> list[PullRequestInfo]:
+        """List fake pull requests, optionally filtered by state."""
+        prs = self.pull_requests.get(entry_id, [])
+
+        # Map internal state to the spec's state enum
+        def _effective_state(pr: dict) -> str:
+            if pr["state"] == "closed" and pr["merged"]:
+                return "merged"
+            if pr["state"] == "closed" and not pr["merged"]:
+                return "closed"
+            return "open"
+
+        if state is not None:
+            prs = [pr for pr in prs if _effective_state(pr) == state]
+
+        start = (page - 1) * limit
+        page_prs = prs[start: start + limit]
+
+        return [
+            PullRequestInfo(
+                number=pr["number"],
+                title=pr["title"],
+                body=pr["body"],
+                state=_effective_state(pr),
+                is_draft=pr["is_draft"],
+                head_branch=pr["head_branch"],
+                base_branch=pr["base_branch"],
+                author_name=pr["author_name"],
+                created_at=pr["created_at"],
+                updated_at=pr["updated_at"],
+                merged_at=pr["merged_at"],
+            )
+            for pr in page_prs
+        ]
+
+    async def get_pull_request(
+        self, entry_id: UUID, number: int
+    ) -> PullRequestInfo:
+        """Get a single pull request by number, or raise RepoNotFoundError."""
+        prs = self.pull_requests.get(entry_id, [])
+        for pr in prs:
+            if pr["number"] == number:
+                # Determine effective state
+                if pr["state"] == "closed" and pr["merged"]:
+                    eff_state = "merged"
+                elif pr["state"] == "closed" and not pr["merged"]:
+                    eff_state = "closed"
+                else:
+                    eff_state = "open"
+                return PullRequestInfo(
+                    number=pr["number"],
+                    title=pr["title"],
+                    body=pr["body"],
+                    state=eff_state,
+                    is_draft=pr["is_draft"],
+                    head_branch=pr["head_branch"],
+                    base_branch=pr["base_branch"],
+                    author_name=pr["author_name"],
+                    created_at=pr["created_at"],
+                    updated_at=pr["updated_at"],
+                    merged_at=pr["merged_at"],
+                )
+        raise RepoNotFoundError(f"PR #{number} not found in repo {entry_id}")
+
+    async def get_pull_request_diff(
+        self, entry_id: UUID, number: int
+    ) -> DiffInfo:
+        """Get the diff for a pull request.
+
+        Derives the diff from branch_files committed to the PR's head branch.
+        """
+        prs = self.pull_requests.get(entry_id, [])
+        pr = None
+        for p in prs:
+            if p["number"] == number:
+                pr = p
+                break
+        if pr is None:
+            raise RepoNotFoundError(f"PR #{number} not found in repo {entry_id}")
+
+        head_branch = pr["head_branch"]
+        files_changed: list[FileDiff] = []
+        for (eid, branch, path), content in self.branch_files.items():
+            if eid == entry_id and branch == head_branch:
+                files_changed.append(FileDiff(
+                    path=path,
+                    patch=(
+                        f"--- a/{path}\n+++ b/{path}\n"
+                        f"@@ -0,0 +1 @@\n+{content.decode(errors='replace')}"
+                    ),
+                    additions=1,
+                    deletions=0,
+                ))
+
+        return DiffInfo(
+            base_sha="base_sha_fake",
+            head_sha=f"head_sha_pr_{number}",
+            files_changed=files_changed,
+        )
+
+    async def merge_pull_request(
+        self, entry_id: UUID, number: int, merge_style: str = "merge"
+    ) -> str:
+        """Merge a fake pull request and return the merge commit SHA."""
+        prs = self.pull_requests.get(entry_id, [])
+        for pr in prs:
+            if pr["number"] == number:
+                if pr["state"] == "closed" and pr["merged"]:
+                    raise RepoNotFoundError(f"PR #{number} already merged")
+                if pr["state"] == "closed" and not pr["merged"]:
+                    raise RepoNotFoundError(f"PR #{number} is closed")
+                if pr["is_draft"]:
+                    raise RepoNotFoundError(f"PR #{number} is a draft")
+                pr["state"] = "closed"
+                pr["merged"] = True
+                pr["merged_at"] = datetime.now(UTC)
+                self._commit_counter += 1
+                merge_sha = f"merge_sha_{self._commit_counter:04d}"
+                pr["merge_sha"] = merge_sha
+                pr["updated_at"] = datetime.now(UTC)
+
+                # Move branch files to main
+                head_branch = pr["head_branch"]
+                for (eid, branch, path), content in list(self.branch_files.items()):
+                    if eid == entry_id and branch == head_branch:
+                        self.files[(entry_id, path)] = content
+                return merge_sha
+        raise RepoNotFoundError(f"PR #{number} not found in repo {entry_id}")
+
+    async def close_pull_request(self, entry_id: UUID, number: int) -> None:
+        """Close a fake pull request without merging.
+
+        Idempotent: closing an already-closed PR is a no-op.
+        Closing a merged PR is also a no-op (merged state is preserved).
+        """
+        prs = self.pull_requests.get(entry_id, [])
+        for pr in prs:
+            if pr["number"] == number:
+                # Don't overwrite merged state — merged PRs stay merged.
+                if pr["merged"]:
+                    return
+                if pr["state"] != "closed":
+                    pr["state"] = "closed"
+                    pr["updated_at"] = datetime.now(UTC)
+                return
+        raise RepoNotFoundError(f"PR #{number} not found in repo {entry_id}")
 
     async def list_repos(self) -> list[str]:
         """Return repo names for all known repos (derived from files keys)."""
@@ -292,6 +525,10 @@ async def client(
     _fake_git_service.commit_history.clear()
     _fake_git_service.diffs.clear()
     _fake_git_service.archived_repos.clear()
+    _fake_git_service.pull_requests.clear()
+    _fake_git_service.branches.clear()
+    _fake_git_service.branch_files.clear()
+    _fake_git_service._pr_counter.clear()
     app.dependency_overrides[get_git_service] = lambda: _fake_git_service
 
     # Disable rate limiting during tests.
