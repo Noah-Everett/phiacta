@@ -574,7 +574,12 @@ class ForgejoGitService:
                     f"/repos/{repo}/contents/{fc.path}",
                     params={"ref": branch},
                 )
-                existing_sha = resp.json().get("sha")
+                data = resp.json()
+                # Forgejo may return a list (directory listing) instead of a
+                # file object for paths containing directories.  If so, the
+                # specific file doesn't exist yet at this exact path.
+                if isinstance(data, dict):
+                    existing_sha = data.get("sha")
             except RepoNotFoundError:
                 pass  # file does not exist yet
 
