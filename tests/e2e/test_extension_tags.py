@@ -807,6 +807,158 @@ class TestTagNormalization:
 
 
 # ---------------------------------------------------------------------------
+# Idempotency, isolation, and edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestTagsIdempotencyAndIsolation:
+    """Idempotency, entry isolation, and edge cases for tags."""
+
+    async def test_put_same_tags_twice_is_idempotent(
+        self,
+        ready_entry: tuple[AuthedFixture, dict],
+    ) -> None:
+        """PUT the same tag set twice produces the same result."""
+        (client, _, token), entry = ready_entry
+        entry_id = entry["id"]
+        tags_body = {"tags": ["alpha", "beta", "gamma"]}
+
+        resp1 = await client.put(
+            f"/v1/extensions/tags/{entry_id}",
+            json=tags_body,
+            headers=auth_header(token),
+        )
+        resp2 = await client.put(
+            f"/v1/extensions/tags/{entry_id}",
+            json=tags_body,
+            headers=auth_header(token),
+        )
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        tags1 = sorted(t["tag"] for t in resp1.json()["tags"])
+        tags2 = sorted(t["tag"] for t in resp2.json()["tags"])
+        assert tags1 == tags2 == ["alpha", "beta", "gamma"]
+
+    async def test_tags_isolated_between_entries(
+        self,
+        client: httpx.AsyncClient,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Tags on entry A do not appear when listing tags for entry B."""
+        auth = await register_agent(
+            client, handle="isolation", email="isolation@example.com"
+        )
+        token = auth["access_token"]
+
+        entry_a = await create_entry(client, token, title="Entry A")
+        await set_entry_repo_status(e2e_session_factory, entry_a["id"], "ready")
+        entry_b = await create_entry(client, token, title="Entry B")
+        await set_entry_repo_status(e2e_session_factory, entry_b["id"], "ready")
+
+        # Tag only entry A
+        await client.put(
+            f"/v1/extensions/tags/{entry_a['id']}",
+            json={"tags": ["only-on-a"]},
+            headers=auth_header(token),
+        )
+
+        # Entry B should have no tags
+        resp = await client.get(
+            "/v1/extensions/tags/",
+            params={"entry_id": entry_b["id"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["tags"] == []
+
+    async def test_list_tags_for_nonexistent_entry(
+        self,
+        client: httpx.AsyncClient,
+    ) -> None:
+        """GET /?entry_id={nonexistent} returns empty tags, not an error."""
+        fake_id = str(uuid4())
+        resp = await client.get(
+            "/v1/extensions/tags/",
+            params={"entry_id": fake_id},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["entry_id"] == fake_id
+        assert resp.json()["tags"] == []
+
+    async def test_search_missing_tags_param_returns_422(
+        self,
+        client: httpx.AsyncClient,
+    ) -> None:
+        """GET /entries without the required tags param returns 422."""
+        resp = await client.get("/v1/extensions/tags/entries")
+        assert resp.status_code == 422
+
+    async def test_search_default_mode_is_or(
+        self,
+        client: httpx.AsyncClient,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Omitting mode defaults to OR — entries with any tag match."""
+        auth = await register_agent(
+            client, handle="default-mode", email="defaultmode@example.com"
+        )
+        token = auth["access_token"]
+
+        entry_a = await create_entry(client, token, title="Default OR A")
+        await set_entry_repo_status(e2e_session_factory, entry_a["id"], "ready")
+        await client.put(
+            f"/v1/extensions/tags/{entry_a['id']}",
+            json={"tags": ["tag-x"]},
+            headers=auth_header(token),
+        )
+
+        entry_b = await create_entry(client, token, title="Default OR B")
+        await set_entry_repo_status(e2e_session_factory, entry_b["id"], "ready")
+        await client.put(
+            f"/v1/extensions/tags/{entry_b['id']}",
+            json={"tags": ["tag-y"]},
+            headers=auth_header(token),
+        )
+
+        # No mode param — should default to OR
+        resp = await client.get(
+            "/v1/extensions/tags/entries",
+            params={"tags": "tag-x,tag-y"},
+        )
+        assert resp.status_code == 200
+        found_ids = [item["entry_id"] for item in resp.json()["items"]]
+        assert entry_a["id"] in found_ids
+        assert entry_b["id"] in found_ids
+
+    async def test_search_duplicate_tags_deduplicated(
+        self,
+        client: httpx.AsyncClient,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Duplicate tags in search query are deduplicated — ?tags=a,a&mode=and works."""
+        auth = await register_agent(
+            client, handle="dedup-search", email="dedupsearch@example.com"
+        )
+        token = auth["access_token"]
+
+        entry = await create_entry(client, token, title="Dedup Search Entry")
+        await set_entry_repo_status(e2e_session_factory, entry["id"], "ready")
+        await client.put(
+            f"/v1/extensions/tags/{entry['id']}",
+            json={"tags": ["physics"]},
+            headers=auth_header(token),
+        )
+
+        # Search with duplicated tag in AND mode — should still find it
+        resp = await client.get(
+            "/v1/extensions/tags/entries",
+            params={"tags": "physics,physics", "mode": "and"},
+        )
+        assert resp.status_code == 200
+        found_ids = [item["entry_id"] for item in resp.json()["items"]]
+        assert entry["id"] in found_ids
+
+
+# ---------------------------------------------------------------------------
 # Tags persist independently of entry metadata
 # ---------------------------------------------------------------------------
 
