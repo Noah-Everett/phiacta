@@ -92,7 +92,8 @@ class EntryService:
 
         Returns the new commit SHA.
         """
-        assert self._git is not None, "GitService required for metadata updates"
+        if self._git is None:
+            raise RuntimeError("GitService required for metadata updates")
 
         # Collect only the fields that were actually provided
         updates = body.model_dump(exclude_unset=True)
@@ -125,7 +126,8 @@ class EntryService:
 
         Raises ``ValueError`` if the entry is not in an archivable state.
         """
-        assert self._git is not None, "GitService required for archival"
+        if self._git is None:
+            raise RuntimeError("GitService required for archival")
 
         if entry.status not in ("active", "draft"):
             raise ValueError(
@@ -144,7 +146,8 @@ class EntryService:
         Unarchives Forgejo first so that if the DB update fails, the repo
         stays archived (safe state). Raises ``ValueError`` if not archived.
         """
-        assert self._git is not None, "GitService required for unarchival"
+        if self._git is None:
+            raise RuntimeError("GitService required for unarchival")
 
         if entry.status != "archived":
             raise ValueError(
