@@ -105,8 +105,7 @@ class TestViewVersionDefaults:
             select(ViewVersion).where(ViewVersion.id == vv.id)
         )
         fetched = result.scalar_one()
-        assert fetched.parameters == {} or fetched.parameters is None
-        # After migration lands, this should be exactly {}
+        assert fetched.parameters == {}
 
     async def test_created_at_is_auto_set(
         self, db_session: AsyncSession

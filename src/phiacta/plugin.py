@@ -12,20 +12,29 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
+import sys
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fastapi import APIRouter
+
 if TYPE_CHECKING:
-    from fastapi import APIRouter
     from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 
 
 class PluginType(Enum):
-    """Type of plugin: extension, view, or tool."""
+    """Type of plugin: extension, view, or tool.
+
+    This is a closed infrastructure set defined by the platform architecture,
+    not open-ended domain data. The anti-pattern prohibition on Python enums
+    applies to domain values like ``layout_hint`` or ``agent_type`` where
+    future values are unknowable.
+    """
 
     EXTENSION = "extension"
     VIEW = "view"
@@ -50,6 +59,7 @@ class PluginRegistration:
 
     manifest: PluginManifest
     router: APIRouter | None = None
+    # Plugin-specific settings instance; type varies per plugin.
     settings: Any = None
 
 
@@ -78,6 +88,8 @@ _DIR_KEY_TO_TYPE: dict[str, PluginType] = {
 class PluginRegistry:
     """Discovers, validates, and registers plugins at startup.
 
+    Call :meth:`discover` first, then :meth:`resolve_dependencies`.
+
     Parameters
     ----------
     plugin_dirs
@@ -97,8 +109,8 @@ class PluginRegistry:
     ) -> None:
         self._plugins: dict[str, PluginRegistration] = {}
         self._enabled_plugins: list[str] = enabled_plugins or []
+        self._use_file_loader = plugin_dirs is not None
 
-        self._custom_dirs = plugin_dirs is not None
         if plugin_dirs is not None:
             self._plugin_dirs = plugin_dirs
         else:
@@ -149,7 +161,7 @@ class PluginRegistry:
     ) -> None:
         module_path = f"phiacta.{dirname}.{name}"
         try:
-            if self._custom_dirs:
+            if self._use_file_loader:
                 # Load from filesystem path (for testing with tmp_path)
                 init_file = plugin_dir / "__init__.py"
                 spec = importlib.util.spec_from_file_location(
@@ -158,10 +170,12 @@ class PluginRegistry:
                 if spec is None or spec.loader is None:
                     raise ImportError(f"Cannot load module from {init_file}")
                 module = importlib.util.module_from_spec(spec)
-                import sys
-
                 sys.modules[module_path] = module
-                spec.loader.exec_module(module)
+                try:
+                    spec.loader.exec_module(module)
+                except Exception:
+                    sys.modules.pop(module_path, None)
+                    raise
             else:
                 module = importlib.import_module(module_path)
         except Exception:
@@ -179,6 +193,13 @@ class PluginRegistry:
             raise ValueError(
                 f"Plugin directory '{name}' does not match "
                 f"manifest name '{manifest.name}'"
+            )
+
+        if manifest.type != ptype:
+            raise ValueError(
+                f"Plugin '{name}' is in directory '{dirname}' "
+                f"(type={ptype.value}) but manifest declares "
+                f"type={manifest.type.value}"
             )
 
         if manifest.name in self._plugins:
@@ -221,7 +242,6 @@ class PluginRegistry:
 
         # Kahn's algorithm for topological sort
         in_degree: dict[str, int] = {n: 0 for n in self._plugins}
-        # adjacency: dep -> list of dependents
         dependents: dict[str, list[str]] = {n: [] for n in self._plugins}
 
         for name, reg in self._plugins.items():
@@ -229,11 +249,13 @@ class PluginRegistry:
                 in_degree[name] += 1
                 dependents[dep].append(name)
 
-        queue = [n for n, d in in_degree.items() if d == 0]
+        queue: deque[str] = deque(
+            n for n, d in in_degree.items() if d == 0
+        )
         order: list[str] = []
 
         while queue:
-            node = queue.pop(0)
+            node = queue.popleft()
             order.append(node)
             for dependent in dependents[node]:
                 in_degree[dependent] -= 1
@@ -249,9 +271,9 @@ class PluginRegistry:
 
         return order
 
-    def get_routers(self) -> list[tuple[str, Any]]:
+    def get_routers(self) -> list[tuple[str, APIRouter]]:
         """Return ``(prefix, router)`` tuples for all plugins with routers."""
-        result: list[tuple[str, Any]] = []
+        result: list[tuple[str, APIRouter]] = []
         for name, reg in self._plugins.items():
             if reg.router is not None:
                 prefix = f"{_TYPE_TO_PREFIX[reg.manifest.type]}/{name}"

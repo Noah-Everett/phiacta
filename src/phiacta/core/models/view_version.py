@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import JSON, DateTime, Index, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from phiacta.core.models.base import Base, UUIDMixin, _utcnow
+from phiacta.core.models.base import Base, UUIDMixin
 
 
 class ViewVersion(UUIDMixin, Base):
@@ -20,13 +21,11 @@ class ViewVersion(UUIDMixin, Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="active"
     )
-    parameters: Mapped[dict] = mapped_column(
+    parameters: Mapped[dict[str, Any]] = mapped_column(
         JSON().with_variant(JSONB, "postgresql"), nullable=False, server_default="{}"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=_utcnow,
-        server_default=func.now(),
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
     __table_args__ = (

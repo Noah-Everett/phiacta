@@ -105,9 +105,9 @@ class TestPluginManifestConstruction:
         assert manifest.type == PluginType.VIEW
         assert manifest.version == "0.1.0"
         # depends_on defaults to empty list
-        assert manifest.depends_on == [] or manifest.depends_on is None
-        # description may default to empty string or None
-        assert manifest.description is None or manifest.description == ""
+        assert manifest.depends_on == []
+        # description defaults to empty string
+        assert manifest.description == ""
         # settings_class defaults to None
         assert manifest.settings_class is None
 
