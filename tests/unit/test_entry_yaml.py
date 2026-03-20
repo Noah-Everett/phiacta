@@ -16,7 +16,7 @@ from uuid import uuid4
 import pytest
 import yaml
 
-from phiacta.services.entry_yaml import generate_entry_yaml, parse_entry_yaml
+from phiacta.core.services.entry_yaml import generate_entry_yaml, parse_entry_yaml
 
 
 class TestGenerateEntryYaml:

@@ -5,11 +5,11 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from phiacta.models.agent import Agent
-from phiacta.models.base import Base, TimestampMixin, UUIDMixin
-from phiacta.models.entry import Entry
-from phiacta.models.entry_ref import EntryRef
-from phiacta.models.outbox import Outbox
+from phiacta.core.models.agent import Agent
+from phiacta.core.models.base import Base, TimestampMixin, UUIDMixin
+from phiacta.core.models.entry import Entry
+from phiacta.core.models.entry_ref import EntryRef
+from phiacta.core.models.outbox import Outbox
 
 
 class TestEntryDefaults:

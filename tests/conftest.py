@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from phiacta.models.base import Base
+from phiacta.core.models.base import Base
 
 
 def _get_test_database_url() -> str:

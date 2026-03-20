@@ -39,9 +39,9 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from phiacta.models.entry import Entry
-from phiacta.models.entry_ref import EntryRef
-from phiacta.services.reconciliation import ReconciliationReport, ReconciliationService
+from phiacta.core.models.entry import Entry
+from phiacta.core.models.entry_ref import EntryRef
+from phiacta.core.services.reconciliation import ReconciliationReport, ReconciliationService
 from tests.e2e.conftest import (
     FakeGitService,
     create_entry,

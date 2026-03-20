@@ -10,7 +10,7 @@ from uuid import UUID
 
 import yaml
 
-from phiacta.services.entry_yaml import generate_entry_yaml, update_entry_yaml
+from phiacta.core.services.entry_yaml import generate_entry_yaml, update_entry_yaml
 
 
 def _base_yaml() -> str:

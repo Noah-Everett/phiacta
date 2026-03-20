@@ -15,7 +15,7 @@ from uuid import uuid4
 import pytest
 import yaml
 
-from phiacta.services.refs_yaml import parse_refs_yaml
+from phiacta.core.services.refs_yaml import parse_refs_yaml
 
 
 class TestParseRefsYamlHappyPath:

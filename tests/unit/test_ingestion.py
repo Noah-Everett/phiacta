@@ -22,10 +22,10 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.models.agent import Agent
-from phiacta.models.entry import Entry
-from phiacta.models.entry_ref import EntryRef
-from phiacta.services.ingestion import ingest_entry
+from phiacta.core.models.agent import Agent
+from phiacta.core.models.entry import Entry
+from phiacta.core.models.entry_ref import EntryRef
+from phiacta.core.services.ingestion import ingest_entry
 from tests.conftest import make_agent, make_entry
 from tests.e2e.conftest import FakeGitService
 
@@ -398,7 +398,7 @@ class TestIngestEntryErrors:
         """Missing entry.yaml should cause ingest_entry to raise."""
         import pytest
 
-        from phiacta.services.git_service import RepoNotFoundError
+        from phiacta.core.services.git_service import RepoNotFoundError
 
         entry, _ = await _create_test_entry(db_session)
         fake_git = FakeGitService()

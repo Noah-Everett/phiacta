@@ -28,12 +28,12 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from phiacta.api.rate_limit import limiter
+from phiacta.core.api.rate_limit import limiter
 from phiacta.config import Settings, get_settings
-from phiacta.db.session import get_db
+from phiacta.core.db.session import get_db
 from phiacta.main import app
-from phiacta.models.base import Base
-from phiacta.services.git_service import (
+from phiacta.core.models.base import Base
+from phiacta.core.services.git_service import (
     AgentInfo,
     CommitInfo,
     DiffInfo,
@@ -43,7 +43,7 @@ from phiacta.services.git_service import (
     PullRequestInfo,
     RepoNotFoundError,
 )
-from phiacta.services.git_service_dep import get_git_service
+from phiacta.core.services.git_service_dep import get_git_service
 
 # Shared test webhook secret -- webhook tests must use this value.
 TEST_WEBHOOK_SECRET = "test-webhook-secret-for-e2e-testing"
@@ -587,7 +587,7 @@ async def set_entry_repo_status(
     repo_status: str,
 ) -> None:
     """Set an entry's repo_status directly in the DB."""
-    from phiacta.models.entry import Entry
+    from phiacta.core.models.entry import Entry
 
     async with session_factory() as session:
         result = await session.execute(
@@ -604,7 +604,7 @@ async def set_entry_status(
     status: str,
 ) -> None:
     """Set an entry's status directly in the DB."""
-    from phiacta.models.entry import Entry
+    from phiacta.core.models.entry import Entry
 
     async with session_factory() as session:
         result = await session.execute(

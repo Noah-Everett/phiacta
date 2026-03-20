@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
-from phiacta.services.reconciliation import ReconciliationReport
+from phiacta.core.services.reconciliation import ReconciliationReport
 
 
 class TestReconciliationReportDefaults:

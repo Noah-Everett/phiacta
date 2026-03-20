@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from phiacta.schemas.entry_edit import EditProposalCreate
+from phiacta.core.schemas.entry_edit import EditProposalCreate
 
 
 class TestEditProposalCreateValidTitle:

@@ -21,8 +21,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from phiacta.models.entry import Entry
-from phiacta.models.outbox import Outbox
+from phiacta.core.models.entry import Entry
+from phiacta.core.models.outbox import Outbox
 from tests.e2e.conftest import auth_header, register_agent
 
 AuthedFixture: TypeAlias = tuple[httpx.AsyncClient, dict, str]
