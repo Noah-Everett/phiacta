@@ -35,7 +35,6 @@ def _make_entry_yaml(
     content_format: str = "markdown",
     author_id: str = "usr_placeholder",
     author_name: str = "test-agent",
-    tags: list[str] | None = None,
     summary: str | None = None,
     license_: str | None = None,
     layout_hint: str | None = None,
@@ -49,8 +48,6 @@ def _make_entry_yaml(
         "created_at": "2026-01-01T00:00:00",
         "content_format": content_format,
     }
-    if tags:
-        data["tags"] = tags
     if summary is not None:
         data["summary"] = summary
     if license_ is not None:
@@ -85,7 +82,6 @@ async def ready_entry(
         title="Original Title",
         author_id=f"usr_{agent['id']}",
         author_name="update-test",
-        tags=["original"],
         summary="Original summary",
     )
     fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = yaml_bytes
@@ -128,7 +124,6 @@ class TestUpdateMetadata:
             f"/v1/entries/{entry['id']}",
             json={
                 "title": "Multi Update",
-                "tags": ["physics", "updated"],
                 "summary": "New summary",
             },
             headers=auth_header(token),
@@ -138,7 +133,6 @@ class TestUpdateMetadata:
         yaml_bytes = fake_git.files[(UUID(entry["id"]), ".phiacta/entry.yaml")]
         parsed = yaml.safe_load(yaml_bytes)
         assert parsed["title"] == "Multi Update"
-        assert parsed["tags"] == ["physics", "updated"]
         assert parsed["summary"] == "New summary"
 
     async def test_update_preserves_unchanged_fields(
@@ -146,7 +140,7 @@ class TestUpdateMetadata:
     ) -> None:
         (client, _, token), entry = ready_entry
 
-        # Only update title — tags, summary, author should be preserved
+        # Only update title — summary, author should be preserved
         resp = await client.patch(
             f"/v1/entries/{entry['id']}",
             json={"title": "Only Title Changed"},
@@ -158,7 +152,6 @@ class TestUpdateMetadata:
         parsed = yaml.safe_load(yaml_bytes)
         assert parsed["title"] == "Only Title Changed"
         # Original values preserved
-        assert parsed["tags"] == ["original"]
         assert parsed["summary"] == "Original summary"
         assert "author" in parsed
         assert parsed["entry_id"] == f"ent_{entry['id']}"

@@ -22,7 +22,6 @@ def _base_yaml() -> str:
         author_id=UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
         author_handle="test-author",
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
-        tags=["physics", "original"],
         summary="Original summary",
         license="CC-BY-4.0",
         layout_hint="theorem",
@@ -34,11 +33,6 @@ class TestUpdateEntryYaml:
         result = update_entry_yaml(_base_yaml(), {"title": "New Title"})
         parsed = yaml.safe_load(result)
         assert parsed["title"] == "New Title"
-
-    def test_update_tags(self) -> None:
-        result = update_entry_yaml(_base_yaml(), {"tags": ["math", "updated"]})
-        parsed = yaml.safe_load(result)
-        assert parsed["tags"] == ["math", "updated"]
 
     def test_update_summary(self) -> None:
         result = update_entry_yaml(_base_yaml(), {"summary": "New summary"})
@@ -78,24 +72,15 @@ class TestUpdateEntryYaml:
     def test_multiple_updates_at_once(self) -> None:
         result = update_entry_yaml(_base_yaml(), {
             "title": "New",
-            "tags": ["new"],
             "summary": "New summary",
             "layout_hint": "law",
         })
         parsed = yaml.safe_load(result)
         assert parsed["title"] == "New"
-        assert parsed["tags"] == ["new"]
         assert parsed["summary"] == "New summary"
         assert parsed["layout_hint"] == "law"
         # Unchanged
         assert parsed["license"] == "CC-BY-4.0"
-
-    def test_clear_optional_field_with_empty_tags(self) -> None:
-        """Setting tags to empty list should remove them from YAML."""
-        result = update_entry_yaml(_base_yaml(), {"tags": []})
-        parsed = yaml.safe_load(result)
-        # Empty tags should be omitted or empty
-        assert parsed.get("tags") is None or parsed.get("tags") == []
 
     def test_yaml_injection_safety(self) -> None:
         """User-supplied strings with YAML special chars are safe."""

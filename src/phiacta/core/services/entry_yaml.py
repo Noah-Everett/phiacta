@@ -25,7 +25,6 @@ def generate_entry_yaml(
     author_id: UUID,
     author_handle: str,
     created_at: datetime,
-    tags: list[str] | None = None,
     summary: str | None = None,
     license: str | None = None,
     layout_hint: str | None = None,
@@ -50,8 +49,6 @@ def generate_entry_yaml(
     # Optional fields — only include if provided
     if license is not None:
         data["license"] = license
-    if tags is not None and len(tags) > 0:
-        data["tags"] = tags
     if summary is not None:
         data["summary"] = summary
     if layout_hint is not None:
@@ -61,7 +58,7 @@ def generate_entry_yaml(
 
 
 # Fields that callers may update via update_entry_yaml().
-_UPDATABLE_FIELDS = {"title", "content_format", "tags", "summary", "license", "layout_hint"}
+_UPDATABLE_FIELDS = {"title", "content_format", "summary", "license", "layout_hint"}
 
 # Fields that must never be changed after creation.
 _IMMUTABLE_FIELDS = {"entry_id", "schema_version", "author", "created_at"}
@@ -84,9 +81,6 @@ def update_entry_yaml(existing_yaml: str, updates: dict[str, Any]) -> str:
 
     for key, value in updates.items():
         if key not in _UPDATABLE_FIELDS:
-            continue
-        if key == "tags" and (value is None or value == []):
-            data.pop("tags", None)
             continue
         if value is None:
             continue

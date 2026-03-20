@@ -41,7 +41,6 @@ def _make_entry_yaml_bytes(
     content_format: str = "markdown",
     author_id: UUID | None = None,
     author_handle: str = "test-author",
-    tags: list[str] | None = None,
     summary: str | None = None,
     license_: str | None = None,
     layout_hint: str | None = None,
@@ -58,8 +57,6 @@ def _make_entry_yaml_bytes(
         "created_at": "2026-01-01T00:00:00",
         "content_format": content_format,
     }
-    if tags:
-        data["tags"] = tags
     if summary:
         data["summary"] = summary
     if license_:
@@ -85,7 +82,6 @@ async def _create_test_entry(
     title: str = "Test Entry",
     status: str = "active",
     content_format: str = "markdown",
-    tags: list[str] | None = None,
 ) -> tuple[Entry, Agent]:
     """Create an agent and entry in the test DB, return (entry, agent)."""
     agent = Agent(**make_agent())
@@ -97,7 +93,6 @@ async def _create_test_entry(
         title=title,
         status=status,
         content_format=content_format,
-        tags=tags,
     )
     entry = Entry(**entry_kwargs)
     db_session.add(entry)
@@ -125,22 +120,6 @@ class TestIngestEntryMetadata:
         await ingest_entry(entry, sha, db_session, fake_git)
 
         assert entry.title == "New Title From Git"
-
-    async def test_updates_tags_from_yaml(self, db_session: AsyncSession) -> None:
-        entry, agent = await _create_test_entry(db_session, title="Tags Entry")
-        fake_git = FakeGitService()
-        sha = "a" * 40
-
-        fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
-            entry.id,
-            title="Tags Entry",
-            author_id=agent.id,
-            tags=["physics", "quantum"],
-        )
-
-        await ingest_entry(entry, sha, db_session, fake_git)
-
-        assert entry.tags == ["physics", "quantum"]
 
     async def test_updates_summary_from_yaml(self, db_session: AsyncSession) -> None:
         entry, agent = await _create_test_entry(db_session)

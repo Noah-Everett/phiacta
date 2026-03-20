@@ -52,7 +52,6 @@ async def _create_entry(
     layout_hint: str | None = None,
     status: str = "active",
     content_format: str = "markdown",
-    tags: list[str] | None = None,
 ) -> Entry:
     """Create an entry in the DB and return it."""
     entry = Entry(
@@ -62,7 +61,6 @@ async def _create_entry(
             layout_hint=layout_hint,
             status=status,
             content_format=content_format,
-            tags=tags,
         )
     )
     return await repo.create(entry)
@@ -360,7 +358,6 @@ class TestGetByIdFields:
             title="Full Fields Entry",
             layout_hint="paper",
             content_format="latex",
-            tags=["test", "integration"],
         )
 
         fetched = await repo.get_by_id(entry.id)
@@ -369,7 +366,6 @@ class TestGetByIdFields:
         assert fetched.title == "Full Fields Entry"
         assert fetched.layout_hint == "paper"
         assert fetched.content_format == "latex"
-        assert fetched.tags == ["test", "integration"]
         assert fetched.status == "active"
         assert fetched.repo_status == "provisioning"
         assert fetched.schema_version == 1

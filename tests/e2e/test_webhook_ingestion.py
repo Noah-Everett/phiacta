@@ -370,7 +370,6 @@ def _build_entry_yaml(
     *,
     title: str = "Ingested Entry Title",
     content_format: str = "markdown",
-    tags: list[str] | None = None,
     summary: str | None = None,
     license_: str | None = None,
     layout_hint: str | None = None,
@@ -385,8 +384,6 @@ def _build_entry_yaml(
         "author": {"id": f"usr_{uuid4()}", "name": "test-author"},
         "created_at": "2026-03-15T12:00:00+00:00",
     }
-    if tags is not None:
-        data["tags"] = tags
     if summary is not None:
         data["summary"] = summary
     if license_ is not None:
@@ -492,14 +489,13 @@ class TestIngestionEntryYamlHappyPath:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Push ingests all metadata fields: title, tags, summary, license, layout_hint,
+        """Push ingests all metadata fields: title, summary, license, layout_hint,
         content_format, schema_version."""
         entry_id, repo_name, _ = await _create_entry_for_webhook(client)
         entry_yaml = _build_entry_yaml(
             entry_id,
             title="Comprehensive Quantum Study",
             content_format="latex",
-            tags=["quantum", "entanglement", "decoherence"],
             summary="A deep dive into quantum entanglement phenomena.",
             license_="CC-BY-SA-4.0",
             layout_hint="research-paper",
@@ -518,7 +514,6 @@ class TestIngestionEntryYamlHappyPath:
             entry = result.scalar_one()
             assert entry.title == "Comprehensive Quantum Study"
             assert entry.content_format == "latex"
-            assert entry.tags == ["quantum", "entanglement", "decoherence"]
             assert entry.summary == "A deep dive into quantum entanglement phenomena."
             assert entry.license == "CC-BY-SA-4.0"
             assert entry.layout_hint == "research-paper"
@@ -640,7 +635,6 @@ class TestIngestionEntryYamlHappyPath:
             entry_id,
             title="\u91cf\u5b50\u529b\u5b66\u306e\u57fa\u790e",
             summary="\u6982\u8981: \u91cf\u5b50\u529b\u5b66\u306e\u57fa\u672c\u7684\u306a\u6982\u5ff5",
-            tags=["\u7269\u7406\u5b66", "\u91cf\u5b50"],
         )
         _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
@@ -1468,7 +1462,6 @@ class TestIngestionFullJourney:
             entry_a_id,
             title="Quantum Entanglement: A Comprehensive Study",
             content_format="markdown",
-            tags=["quantum", "entanglement", "physics"],
             summary="An in-depth analysis of quantum entanglement.",
             license_="CC-BY-SA-4.0",
             layout_hint="research-paper",
@@ -1506,7 +1499,6 @@ class TestIngestionFullJourney:
             entry = result.scalar_one()
             assert entry.title == "Quantum Entanglement: A Comprehensive Study"
             assert entry.content_format == "markdown"
-            assert entry.tags == ["quantum", "entanglement", "physics"]
             assert entry.summary == "An in-depth analysis of quantum entanglement."
             assert entry.license == "CC-BY-SA-4.0"
             assert entry.layout_hint == "research-paper"
@@ -1568,7 +1560,6 @@ class TestIngestionFullJourney:
             entry_a_id,
             title="Version 2 Updated",
             summary="Updated version",
-            tags=["new-tag"],
         )
         readme_v2 = "# Version 2 Updated Content\n"
         refs_yaml_v2 = _build_refs_yaml([
@@ -1591,7 +1582,6 @@ class TestIngestionFullJourney:
             entry = result.scalar_one()
             assert entry.title == "Version 2 Updated"
             assert entry.summary == "Updated version"
-            assert entry.tags == ["new-tag"]
             assert entry.content_cache == readme_v2
             assert entry.current_head_sha == "2" * 40
 

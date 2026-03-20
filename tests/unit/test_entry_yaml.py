@@ -54,7 +54,6 @@ class TestGenerateEntryYaml:
             author_id=author_id,
             author_handle="bob-researcher",
             created_at=created_at,
-            tags=["quantum-mechanics", "entanglement"],
             summary="A comprehensive study of quantum entanglement.",
             license="CC-BY-SA-4.0",
             layout_hint="research-paper",
@@ -62,7 +61,6 @@ class TestGenerateEntryYaml:
         parsed = yaml.safe_load(result)
         assert parsed["title"] == "Full Entry with All Fields"
         assert parsed["content_format"] == "latex"
-        assert parsed["tags"] == ["quantum-mechanics", "entanglement"]
         assert parsed["summary"] == "A comprehensive study of quantum entanglement."
         assert parsed["license"] == "CC-BY-SA-4.0"
         assert parsed["layout_hint"] == "research-paper"
@@ -132,7 +130,6 @@ class TestGenerateEntryYaml:
             author_id=uuid4(),
             author_handle="eve",
             created_at=datetime.now(tz=timezone.utc),
-            tags=None,
             summary=None,
             license=None,
             layout_hint=None,
@@ -142,42 +139,11 @@ class TestGenerateEntryYaml:
         assert parsed["title"] == "Null Fields Test"
         assert parsed["content_format"] == "markdown"
         # Optional fields either absent or explicitly null
-        for field in ("tags", "summary", "license", "layout_hint"):
+        for field in ("summary", "license", "layout_hint"):
             if field in parsed:
                 assert parsed[field] is None or parsed[field] == [], (
                     f"{field} should be None or [] when not provided, got {parsed[field]!r}"
                 )
-
-    def test_entry_yaml_tags_as_list(self) -> None:
-        """Tags must be serialized as a YAML list, not a string."""
-        result = generate_entry_yaml(
-            entry_id=uuid4(),
-            title="Tags Test",
-            content_format="markdown",
-            author_id=uuid4(),
-            author_handle="frank",
-            created_at=datetime.now(tz=timezone.utc),
-            tags=["alpha", "beta", "gamma"],
-        )
-        parsed = yaml.safe_load(result)
-        assert isinstance(parsed["tags"], list)
-        assert parsed["tags"] == ["alpha", "beta", "gamma"]
-
-    def test_entry_yaml_empty_tags_list(self) -> None:
-        """Empty tags list serializes correctly."""
-        result = generate_entry_yaml(
-            entry_id=uuid4(),
-            title="Empty Tags Test",
-            content_format="markdown",
-            author_id=uuid4(),
-            author_handle="grace",
-            created_at=datetime.now(tz=timezone.utc),
-            tags=[],
-        )
-        parsed = yaml.safe_load(result)
-        # Either absent, null, or empty list -- all are acceptable
-        tags = parsed.get("tags")
-        assert tags is None or tags == []
 
     def test_entry_yaml_created_at_present(self) -> None:
         """created_at must be in the generated YAML."""
@@ -209,7 +175,6 @@ class TestParseEntryYaml:
             author_id=author_id,
             author_handle="ivan",
             created_at=created_at,
-            tags=["physics", "cosmology"],
             summary="Testing the roundtrip.",
             license="MIT",
             layout_hint="paper",
@@ -217,7 +182,6 @@ class TestParseEntryYaml:
         parsed = parse_entry_yaml(yaml_str)
         assert parsed["title"] == "Roundtrip Test Entry"
         assert parsed["content_format"] == "latex"
-        assert parsed["tags"] == ["physics", "cosmology"]
         assert parsed["summary"] == "Testing the roundtrip."
         assert parsed["license"] == "MIT"
         assert parsed["layout_hint"] == "paper"

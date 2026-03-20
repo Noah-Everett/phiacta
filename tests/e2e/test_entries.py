@@ -34,13 +34,11 @@ class TestCreateEntry:
         resp = await client.post("/v1/entries", json={
             "title": "Newton's First Law",
             "layout_hint": "law",
-            "tags": ["physics"],
         }, headers=auth_header(token))
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Newton's First Law"
         assert data["layout_hint"] == "law"
-        assert data["tags"] == ["physics"]
         assert data["content_format"] == "markdown"
         assert data["status"] == "active"
         assert data["repo_status"] == "provisioning"
@@ -73,7 +71,6 @@ class TestCreateEntry:
             "title": "Full Entry",
             "content_format": "latex",
             "layout_hint": "theorem",
-            "tags": ["math", "analysis"],
             "summary": "A complete entry with all fields.",
             "license": "CC-BY-4.0",
         }, headers=auth_header(token))
@@ -180,12 +177,10 @@ class TestUpdateEntry:
 
         resp = await client.patch(f"/v1/entries/{entry_id}", json={
             "title": "Updated",
-            "tags": ["new-tag"],
         }, headers=headers)
         assert resp.status_code == 200
         updated = yaml.safe_load(fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")])
         assert updated["title"] == "Updated"
-        assert updated["tags"] == ["new-tag"]
 
     async def test_update_entry_wrong_author(
         self, client: httpx.AsyncClient, e2e_session_factory,

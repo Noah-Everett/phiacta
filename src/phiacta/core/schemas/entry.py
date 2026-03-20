@@ -15,7 +15,6 @@ class EntryCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     content_format: str = Field("markdown", pattern="^(markdown|latex|plain)$")
     layout_hint: str | None = None
-    tags: list[str] = Field(default_factory=list)
     summary: str | None = None
     license: str | None = None
     content: str | None = Field(None, max_length=100_000)
@@ -25,7 +24,6 @@ class EntryUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=500)
     content_format: str | None = Field(None, pattern="^(markdown|latex|plain)$")
     layout_hint: str | None = None
-    tags: list[str] | None = None
     summary: str | None = None
     license: str | None = None
 
@@ -38,7 +36,6 @@ class EntryListItem(BaseModel):
     id: UUID
     title: str
     layout_hint: str | None
-    tags: list[str]
     summary: str | None
     license: str | None
     content_format: str
@@ -59,7 +56,6 @@ class EntryResponse(BaseModel):
     id: UUID
     title: str
     layout_hint: str | None
-    tags: list[str]
     summary: str | None
     license: str | None
     content_format: str

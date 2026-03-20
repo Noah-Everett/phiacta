@@ -100,10 +100,6 @@ def update_entry_metadata(entry: Entry, parsed: dict) -> None:
     if isinstance(content_format, str):
         entry.content_format = content_format[:20]
 
-    tags = parsed.get("tags")
-    if isinstance(tags, list):
-        entry.tags = [str(t)[:200] for t in tags]
-
     summary = parsed.get("summary")
     if summary is not None:
         entry.summary = str(summary) if summary else None

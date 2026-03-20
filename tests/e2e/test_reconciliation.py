@@ -92,7 +92,6 @@ def _make_entry_yaml(
     content_format: str = "markdown",
     author_id: UUID | None = None,
     author_handle: str = "test-agent",
-    tags: list[str] | None = None,
     summary: str | None = None,
 ) -> bytes:
     """Build valid entry.yaml bytes for an entry."""
@@ -107,8 +106,6 @@ def _make_entry_yaml(
         "created_at": "2026-01-01T00:00:00",
         "content_format": content_format,
     }
-    if tags:
-        data["tags"] = tags
     if summary:
         data["summary"] = summary
     return yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False).encode()
@@ -206,7 +203,6 @@ class TestReconciliationHappyPath:
             title="Reconciled Title",
             author_id=UUID(agent_id),
             author_handle="recon-1",
-            tags=["reconciled"],
         )
         fake_git.files[(UUID(entry_id), "README.md")] = b"# Reconciled Content"
 
@@ -226,7 +222,6 @@ class TestReconciliationHappyPath:
         entry = await _get_entry(e2e_session_factory, entry_id)
         assert entry.current_head_sha == new_sha
         assert entry.title == "Reconciled Title"
-        assert entry.tags == ["reconciled"]
         assert entry.content_cache == "# Reconciled Content"
 
     async def test_up_to_date_entry_not_re_ingested(

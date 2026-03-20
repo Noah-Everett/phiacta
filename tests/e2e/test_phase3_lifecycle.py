@@ -124,7 +124,7 @@ class TestFullEntryLifecycle:
         )
         resp = await client.patch(
             f"/v1/entries/{entry_id}",
-            json={"title": "Updated Lifecycle Entry", "tags": ["lifecycle"]},
+            json={"title": "Updated Lifecycle Entry"},
             headers=headers,
         )
         assert resp.status_code == 200
@@ -133,7 +133,6 @@ class TestFullEntryLifecycle:
             fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")]
         )
         assert yaml_data["title"] == "Updated Lifecycle Entry"
-        assert yaml_data["tags"] == ["lifecycle"]
 
         # 8. Archive entry
         resp = await client.post(

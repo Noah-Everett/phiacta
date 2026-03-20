@@ -60,7 +60,7 @@ class TestCreateEntryMinimal:
         assert data["summary"] is None
         assert data["license"] is None
         assert data["content_cache"] is None
-        assert data["tags"] == []
+        assert "tags" not in data
         assert data["forgejo_repo_id"] is None
         assert data["current_head_sha"] is None
 
@@ -92,7 +92,6 @@ class TestCreateEntryFull:
                 "title": "Comprehensive Thermodynamics Review",
                 "content_format": "latex",
                 "layout_hint": "review-paper",
-                "tags": ["thermodynamics", "statistical-mechanics", "review"],
                 "summary": "A comprehensive review of modern thermodynamics.",
                 "license": "CC-BY-SA-4.0",
                 "content": "\\section{Introduction}\nThermodynamics is...",
@@ -104,7 +103,6 @@ class TestCreateEntryFull:
         assert data["title"] == "Comprehensive Thermodynamics Review"
         assert data["content_format"] == "latex"
         assert data["layout_hint"] == "review-paper"
-        assert data["tags"] == ["thermodynamics", "statistical-mechanics", "review"]
         assert data["summary"] == "A comprehensive review of modern thermodynamics."
         assert data["license"] == "CC-BY-SA-4.0"
         assert data["repo_status"] == "provisioning"
@@ -236,7 +234,6 @@ class TestCreateEntryOutbox:
                 "title": "Payload Completeness Test",
                 "content_format": "latex",
                 "layout_hint": "theorem",
-                "tags": ["algebra", "group-theory"],
                 "summary": "A foundational theorem.",
                 "license": "CC-BY-4.0",
                 "content": "\\begin{theorem}\nLet G be a group...\n\\end{theorem}",
@@ -260,7 +257,6 @@ class TestCreateEntryOutbox:
             assert payload["content_format"] == "latex"
             assert payload["author_id"] == agent["id"]
             assert payload["author_handle"] == agent["handle"]
-            assert payload["tags"] == ["algebra", "group-theory"]
             assert payload["summary"] == "A foundational theorem."
             assert payload["license"] == "CC-BY-4.0"
             assert payload["layout_hint"] == "theorem"
@@ -300,7 +296,6 @@ class TestCreateEntryOutbox:
             assert payload["author_handle"] == agent["handle"]
             assert "created_at" in payload
             # Optional fields present (as null or empty)
-            assert "tags" in payload
             assert "summary" in payload
             assert "license" in payload
             assert "layout_hint" in payload

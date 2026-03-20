@@ -45,7 +45,6 @@ async def _create_entry(
     *,
     title: str = "Test Entry",
     layout_hint: str | None = None,
-    tags: list[str] | None = None,
     content_format: str = "markdown",
     summary: str | None = None,
     license_: str | None = None,
@@ -54,8 +53,6 @@ async def _create_entry(
     body: dict = {"title": title, "content_format": content_format}
     if layout_hint is not None:
         body["layout_hint"] = layout_hint
-    if tags is not None:
-        body["tags"] = tags
     if summary is not None:
         body["summary"] = summary
     if license_ is not None:
@@ -199,7 +196,6 @@ class TestListEntriesWithData:
             token,
             title="Shape Check Entry",
             layout_hint="theorem",
-            tags=["math", "algebra"],
             content_format="latex",
             summary="A theorem about groups.",
             license_="CC-BY-4.0",
@@ -213,7 +209,6 @@ class TestListEntriesWithData:
         assert "id" in item
         assert "title" in item
         assert "layout_hint" in item
-        assert "tags" in item
         assert "summary" in item
         assert "license" in item
         assert "content_format" in item
@@ -230,7 +225,6 @@ class TestListEntriesWithData:
         # Verify field values are correct, not just present
         assert item["title"] == "Shape Check Entry"
         assert item["layout_hint"] == "theorem"
-        assert item["tags"] == ["math", "algebra"]
         assert item["content_format"] == "latex"
         assert item["summary"] == "A theorem about groups."
         assert item["license"] == "CC-BY-4.0"
@@ -620,7 +614,6 @@ class TestGetEntryDetail:
             token,
             title="Detailed Entry",
             layout_hint="review-paper",
-            tags=["physics", "optics"],
             content_format="latex",
             summary="A detailed review.",
             license_="CC-BY-SA-4.0",
@@ -634,7 +627,6 @@ class TestGetEntryDetail:
         assert data["id"] == entry["id"]
         assert data["title"] == "Detailed Entry"
         assert data["layout_hint"] == "review-paper"
-        assert data["tags"] == ["physics", "optics"]
         assert data["content_format"] == "latex"
         assert data["summary"] == "A detailed review."
         assert data["license"] == "CC-BY-SA-4.0"
@@ -941,7 +933,6 @@ class TestListAndDetailConsistency:
             token,
             title="Consistency Check",
             layout_hint="law",
-            tags=["consistency"],
             content_format="markdown",
             summary="Consistent summary.",
             license_="CC-BY-4.0",
@@ -958,7 +949,7 @@ class TestListAndDetailConsistency:
 
         # All shared fields must match
         for field in [
-            "id", "title", "layout_hint", "tags", "summary", "license",
+            "id", "title", "layout_hint", "summary", "license",
             "content_format", "schema_version", "forgejo_repo_id", "repo_name",
             "current_head_sha", "repo_status", "status", "created_by",
             "created_at", "updated_at",

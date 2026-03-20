@@ -345,7 +345,6 @@ class OutboxWorker:
         author_id_str = payload.get("author_id", "service")
 
         # Optional fields from the creation payload
-        tags = payload.get("tags") or []
         summary = payload.get("summary")
         entry_license = payload.get("license")
         layout_hint = payload.get("layout_hint")
@@ -394,7 +393,6 @@ class OutboxWorker:
             author_id=author_id,
             author_handle=author_handle,
             created_at=created_at,
-            tags=tags if tags else None,
             summary=summary,
             license=entry_license,
             layout_hint=layout_hint,
