@@ -7,13 +7,13 @@ from unittest.mock import MagicMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.models.agent import Agent
-from phiacta.models.entry import Entry
-from phiacta.models.entry_ref import EntryRef
-from phiacta.repositories.agent_repository import AgentRepository
-from phiacta.repositories.base import BaseRepository
-from phiacta.repositories.entry_ref_repository import EntryRefRepository
-from phiacta.repositories.entry_repository import EntryRepository
+from phiacta.core.models.agent import Agent
+from phiacta.core.models.entry import Entry
+from phiacta.core.models.entry_ref import EntryRef
+from phiacta.core.repositories.agent_repository import AgentRepository
+from phiacta.core.repositories.base import BaseRepository
+from phiacta.core.repositories.entry_ref_repository import EntryRefRepository
+from phiacta.core.repositories.entry_repository import EntryRepository
 
 
 class TestBaseRepositoryInstantiation:

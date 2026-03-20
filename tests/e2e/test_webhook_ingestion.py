@@ -26,8 +26,8 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from phiacta.models.entry import Entry
-from phiacta.models.entry_ref import EntryRef
+from phiacta.core.models.entry import Entry
+from phiacta.core.models.entry_ref import EntryRef
 from tests.e2e.conftest import (
     TEST_WEBHOOK_SECRET,
     FakeGitService,

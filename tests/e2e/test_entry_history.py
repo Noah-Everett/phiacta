@@ -19,7 +19,7 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from phiacta.services.git_service import AgentInfo, CommitInfo, DiffInfo, FileDiff
+from phiacta.core.services.git_service import AgentInfo, CommitInfo, DiffInfo, FileDiff
 from tests.e2e.conftest import (
     FakeGitService,
     create_entry,

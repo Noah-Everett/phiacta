@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "Running database migrations..."
-alembic upgrade head
+alembic upgrade heads
 
 echo "Starting uvicorn..."
 exec uvicorn phiacta.main:app --host 0.0.0.0 --port 8000 --workers 4

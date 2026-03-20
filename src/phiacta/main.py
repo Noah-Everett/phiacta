@@ -11,12 +11,13 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from phiacta.api.rate_limit import limiter
-from phiacta.api.router import v1_router
 from phiacta.config import get_settings
-from phiacta.db.session import get_engine
-from phiacta.services.outbox_worker import start_outbox_worker
-from phiacta.webhooks.forgejo import router as webhook_router
+from phiacta.core.api.rate_limit import limiter
+from phiacta.core.api.router import v1_router
+from phiacta.core.db.session import get_engine
+from phiacta.core.services.outbox_worker import start_outbox_worker
+from phiacta.core.webhooks.forgejo import router as webhook_router
+from phiacta.plugin import PluginRegistry
 
 
 @asynccontextmanager
@@ -24,11 +25,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown hooks."""
     settings = get_settings()
 
+    # Plugin discovery and router mounting
+    registry = PluginRegistry(enabled_plugins=settings.enabled_plugins)
+    registry.discover()
+    registry.resolve_dependencies()
+    for prefix, router in registry.get_routers():
+        app.include_router(router, prefix=prefix, tags=[prefix.rsplit("/", 1)[-1]])
+    app.state.plugin_registry = registry
+
     # Startup: auto-migrate in development mode
     if settings.environment == "development":
         import subprocess
 
-        subprocess.run(["alembic", "upgrade", "head"], check=True)
+        subprocess.run(["alembic", "upgrade", "heads"], check=True)
 
     # Create async engine
     engine = create_async_engine(settings.database_url)

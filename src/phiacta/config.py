@@ -3,7 +3,7 @@
 
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -34,6 +34,9 @@ class Settings(BaseSettings):
 
     # File upload limits
     max_file_size_bytes: int = 25 * 1024 * 1024  # 25 MB
+
+    # Plugins
+    enabled_plugins: list[str] = Field(default_factory=list)
 
     model_config = {"env_file": ".env"}
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from phiacta.api.entry_files import validate_file_path
+from phiacta.core.api.entry_files import validate_file_path
 
 
 class TestValidateFilePathAcceptsValidPaths:

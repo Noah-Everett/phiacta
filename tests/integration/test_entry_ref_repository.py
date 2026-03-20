@@ -8,10 +8,10 @@ import os
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.models.agent import Agent
-from phiacta.models.entry import Entry
-from phiacta.models.entry_ref import EntryRef
-from phiacta.repositories.entry_ref_repository import EntryRefRepository
+from phiacta.core.models.agent import Agent
+from phiacta.core.models.entry import Entry
+from phiacta.core.models.entry_ref import EntryRef
+from phiacta.core.repositories.entry_ref_repository import EntryRefRepository
 from tests.conftest import make_agent, make_entry, make_entry_ref
 
 needs_db = pytest.mark.skipif(
