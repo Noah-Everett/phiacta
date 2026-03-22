@@ -92,6 +92,32 @@ class PullRequestInfo:
     merged_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class IssueInfo:
+    """Metadata for a Forgejo issue."""
+
+    number: int
+    title: str
+    body: str
+    state: str  # "open", "closed"
+    author_name: str
+    comments_count: int
+    created_at: datetime
+    updated_at: datetime
+    closed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class IssueCommentInfo:
+    """A single comment on an issue."""
+
+    id: int
+    body: str
+    author_name: str
+    created_at: datetime
+    updated_at: datetime
+
+
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
@@ -260,6 +286,52 @@ class GitService(Protocol):
         self, entry_id: UUID, number: int
     ) -> None:
         """Close a pull request without merging."""
+        ...
+
+    # --- Issues ---
+
+    async def create_issue(
+        self,
+        entry_id: UUID,
+        title: str,
+        body: str,
+        author_name: str = "",
+    ) -> IssueInfo:
+        """Create an issue on an entry's repository."""
+        ...
+
+    async def list_issues(
+        self,
+        entry_id: UUID,
+        state: str | None = None,
+        limit: int = 50,
+        page: int = 1,
+    ) -> list[IssueInfo]:
+        """List issues, optionally filtered by state."""
+        ...
+
+    async def get_issue(
+        self, entry_id: UUID, number: int
+    ) -> IssueInfo:
+        """Get a single issue by number."""
+        ...
+
+    async def get_issue_comments(
+        self, entry_id: UUID, number: int
+    ) -> list[IssueCommentInfo]:
+        """Get comments on an issue."""
+        ...
+
+    async def create_issue_comment(
+        self, entry_id: UUID, number: int, body: str
+    ) -> IssueCommentInfo:
+        """Add a comment to an issue."""
+        ...
+
+    async def close_issue(
+        self, entry_id: UUID, number: int
+    ) -> None:
+        """Close an issue."""
         ...
 
     # --- Reconciliation ---
@@ -1079,6 +1151,121 @@ class ForgejoGitService:
             json={"state": "closed"},
         )
         logger.info("Closed PR #%d on %s", number, repo)
+
+    # ------------------------------------------------------------------
+    # Issues
+    # ------------------------------------------------------------------
+
+    def _parse_issue(self, raw: dict) -> IssueInfo:
+        """Convert a Forgejo issue JSON object to ``IssueInfo``."""
+        user = raw.get("user", {})
+        return IssueInfo(
+            number=raw.get("number", 0),
+            title=raw.get("title", ""),
+            body=raw.get("body", "") or "",
+            state=raw.get("state", "open"),
+            author_name=user.get("login", "") if isinstance(user, dict) else "",
+            comments_count=raw.get("comments", 0),
+            created_at=_parse_datetime(raw.get("created_at")),
+            updated_at=_parse_datetime(raw.get("updated_at")),
+            closed_at=_parse_datetime(raw.get("closed_at")) if raw.get("closed_at") else None,
+        )
+
+    def _parse_issue_comment(self, raw: dict) -> IssueCommentInfo:
+        """Convert a Forgejo comment JSON object to ``IssueCommentInfo``."""
+        user = raw.get("user", {})
+        return IssueCommentInfo(
+            id=raw.get("id", 0),
+            body=raw.get("body", "") or "",
+            author_name=user.get("login", "") if isinstance(user, dict) else "",
+            created_at=_parse_datetime(raw.get("created_at")),
+            updated_at=_parse_datetime(raw.get("updated_at")),
+        )
+
+    async def create_issue(
+        self,
+        entry_id: UUID,
+        title: str,
+        body: str,
+        author_name: str = "",
+    ) -> IssueInfo:
+        """Create an issue on an entry's repository."""
+        repo = self._repo_path(entry_id)
+        resp = await self._request(
+            "POST",
+            f"/repos/{repo}/issues",
+            json={"title": title, "body": body},
+        )
+        issue = self._parse_issue(resp.json())
+        logger.info("Created issue #%d on %s", issue.number, repo)
+        return issue
+
+    async def list_issues(
+        self,
+        entry_id: UUID,
+        state: str | None = None,
+        limit: int = 50,
+        page: int = 1,
+    ) -> list[IssueInfo]:
+        """List issues, optionally filtered by state."""
+        repo = self._repo_path(entry_id)
+        params: dict[str, str] = {"type": "issues"}
+        if state in ("open", "closed"):
+            params["state"] = state
+        else:
+            params["state"] = "all"
+
+        raw_list = await self._paginate(
+            f"/repos/{repo}/issues",
+            params=params, limit=limit, page=page,
+        )
+        return [self._parse_issue(r) for r in raw_list]
+
+    async def get_issue(
+        self, entry_id: UUID, number: int,
+    ) -> IssueInfo:
+        """Get a single issue by number."""
+        repo = self._repo_path(entry_id)
+        resp = await self._request(
+            "GET", f"/repos/{repo}/issues/{number}",
+        )
+        return self._parse_issue(resp.json())
+
+    async def get_issue_comments(
+        self, entry_id: UUID, number: int,
+    ) -> list[IssueCommentInfo]:
+        """Get comments on an issue."""
+        repo = self._repo_path(entry_id)
+        raw_list = await self._paginate_all(
+            f"/repos/{repo}/issues/{number}/comments",
+        )
+        return [self._parse_issue_comment(r) for r in raw_list]
+
+    async def create_issue_comment(
+        self, entry_id: UUID, number: int, body: str,
+    ) -> IssueCommentInfo:
+        """Add a comment to an issue."""
+        repo = self._repo_path(entry_id)
+        resp = await self._request(
+            "POST",
+            f"/repos/{repo}/issues/{number}/comments",
+            json={"body": body},
+        )
+        comment = self._parse_issue_comment(resp.json())
+        logger.info("Added comment #%d to issue #%d on %s", comment.id, number, repo)
+        return comment
+
+    async def close_issue(
+        self, entry_id: UUID, number: int,
+    ) -> None:
+        """Close an issue."""
+        repo = self._repo_path(entry_id)
+        await self._request(
+            "PATCH",
+            f"/repos/{repo}/issues/{number}",
+            json={"state": "closed"},
+        )
+        logger.info("Closed issue #%d on %s", number, repo)
 
     # ------------------------------------------------------------------
     # Reconciliation

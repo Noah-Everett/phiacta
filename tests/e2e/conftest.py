@@ -79,6 +79,8 @@ class FakeGitService:
         self.branches: dict[UUID, dict[str, str]] = {}  # entry_id -> {branch_name: base_sha}
         # (entry_id, branch, path) -> content
         self.branch_files: dict[tuple[UUID, str, str], bytes] = {}
+        # Issue support
+        self.issues: dict[UUID, list[dict]] = {}
         self._pr_counter: dict[UUID, int] = {}  # entry_id -> next PR number
 
     async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
@@ -432,6 +434,78 @@ class FakeGitService:
                 return
         raise RepoNotFoundError(f"PR #{number} not found in repo {entry_id}")
 
+    # --- Issues (fake) ---
+
+    async def create_issue(
+        self, entry_id: UUID, title: str, body: str, author_name: str = "",
+    ) -> "IssueInfo":
+        from phiacta.core.services.git_service import IssueInfo
+        issues = self.issues.setdefault(entry_id, [])  # type: ignore[attr-defined]
+        number = len(issues) + 1
+        now = datetime.now(UTC)
+        info = IssueInfo(
+            number=number, title=title, body=body, state="open",
+            author_name=author_name, comments_count=0,
+            created_at=now, updated_at=now, closed_at=None,
+        )
+        issues.append({"info": info, "comments": []})
+        return info
+
+    async def list_issues(
+        self, entry_id: UUID, state: str | None = None,
+        limit: int = 50, page: int = 1,
+    ) -> list["IssueInfo"]:
+        issues = getattr(self, "issues", {}).get(entry_id, [])
+        result = [i["info"] for i in issues]
+        if state:
+            result = [i for i in result if i.state == state]
+        return result
+
+    async def get_issue(self, entry_id: UUID, number: int) -> "IssueInfo":
+        from phiacta.core.services.git_service import RepoNotFoundError as RNF
+        for i in getattr(self, "issues", {}).get(entry_id, []):
+            if i["info"].number == number:
+                return i["info"]
+        raise RNF(f"Issue #{number} not found")
+
+    async def get_issue_comments(self, entry_id: UUID, number: int) -> list:
+        for i in getattr(self, "issues", {}).get(entry_id, []):
+            if i["info"].number == number:
+                return i["comments"]
+        return []
+
+    async def create_issue_comment(
+        self, entry_id: UUID, number: int, body: str,
+    ) -> "IssueCommentInfo":
+        from phiacta.core.services.git_service import IssueCommentInfo
+        for i in getattr(self, "issues", {}).get(entry_id, []):
+            if i["info"].number == number:
+                now = datetime.now(UTC)
+                comment = IssueCommentInfo(
+                    id=len(i["comments"]) + 1, body=body,
+                    author_name="test", created_at=now, updated_at=now,
+                )
+                i["comments"].append(comment)
+                return comment
+        from phiacta.core.services.git_service import RepoNotFoundError as RNF
+        raise RNF(f"Issue #{number} not found")
+
+    async def close_issue(self, entry_id: UUID, number: int) -> None:
+        from phiacta.core.services.git_service import IssueInfo, RepoNotFoundError as RNF
+        issues = getattr(self, "issues", {}).get(entry_id, [])
+        for idx, i in enumerate(issues):
+            if i["info"].number == number:
+                old = i["info"]
+                now = datetime.now(UTC)
+                issues[idx]["info"] = IssueInfo(
+                    number=old.number, title=old.title, body=old.body,
+                    state="closed", author_name=old.author_name,
+                    comments_count=old.comments_count,
+                    created_at=old.created_at, updated_at=now, closed_at=now,
+                )
+                return
+        raise RNF(f"Issue #{number} not found")
+
     async def list_repos(self) -> list[str]:
         """Return repo names for all known repos (derived from files keys)."""
         seen: set[str] = set()
@@ -547,16 +621,14 @@ async def client(
 # ---------------------------------------------------------------------------
 
 
-async def register_agent(
+async def register_user(
     client: httpx.AsyncClient,
-    handle: str = "test-agent",
-    email: str = "test@example.com",
+    handle: str = "test-user",
     password: str = "TestPassword123!",
 ) -> dict:
-    """Register an agent and return the full auth response."""
+    """Register a user and return the full auth response."""
     resp = await client.post("/v1/auth/register", json={
         "handle": handle,
-        "email": email,
         "password": password,
     })
     assert resp.status_code == 201, resp.text
