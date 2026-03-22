@@ -8,16 +8,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_agent
+from phiacta.core.auth.dependencies import get_current_user
 from phiacta.core.auth.passwords import hash_password, verify_password
 from phiacta.core.auth.tokens import create_access_token
 from phiacta.core.db.session import get_db
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.schemas.auth import (
-    AgentResponse,
     AuthResponse,
     LoginRequest,
     RegisterRequest,
+    UserResponse,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -33,36 +33,26 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
-    # Check email uniqueness
-    result = await db.execute(select(Agent).where(Agent.email == body.email))
-    if result.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
-        )
-
     # Check handle uniqueness
-    result = await db.execute(select(Agent).where(Agent.handle == body.handle))
+    result = await db.execute(select(User).where(User.handle == body.handle))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Handle already taken",
         )
 
-    agent = Agent(
-        agent_type="human",
+    user = User(
         handle=body.handle,
-        email=body.email,
         password_hash=hash_password(body.password),
     )
-    db.add(agent)
+    db.add(user)
     await db.commit()
-    await db.refresh(agent)
+    await db.refresh(user)
 
-    token = create_access_token(agent.id)
+    token = create_access_token(user.id)
     return AuthResponse(
         access_token=token,
-        agent=AgentResponse.model_validate(agent),
+        user=UserResponse.model_validate(user),
     )
 
 
@@ -73,38 +63,32 @@ async def login(
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
-    result = await db.execute(select(Agent).where(Agent.email == body.email))
-    agent = result.scalar_one_or_none()
+    result = await db.execute(select(User).where(User.handle == body.handle))
+    user = result.scalar_one_or_none()
 
-    if agent is None:
+    if user is None:
         # Timing-safe: still run bcrypt verify against dummy hash
         verify_password(body.password, _DUMMY_HASH)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid handle or password",
         )
 
-    if not verify_password(body.password, agent.password_hash):
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid handle or password",
         )
 
-    if not agent.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
-
-    token = create_access_token(agent.id)
+    token = create_access_token(user.id)
     return AuthResponse(
         access_token=token,
-        agent=AgentResponse.model_validate(agent),
+        user=UserResponse.model_validate(user),
     )
 
 
-@router.get("/me", response_model=AgentResponse)
+@router.get("/me", response_model=UserResponse)
 async def me(
-    agent: Agent = Depends(get_current_agent),
-) -> AgentResponse:
-    return AgentResponse.model_validate(agent)
+    user: User = Depends(get_current_user),
+) -> UserResponse:
+    return UserResponse.model_validate(user)

@@ -20,10 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.entry_guards import get_writable_entry
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_agent
+from phiacta.core.auth.dependencies import get_current_user
 from phiacta.config import Settings, get_settings
 from phiacta.core.db.session import get_db
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.entry_file import (
@@ -87,11 +87,11 @@ def _raise_for_invalid_path(path: str) -> None:
 
 async def _get_writable_entry(
     entry_id: UUID,
-    agent: Agent,
+    user: User,
     db: AsyncSession,
 ) -> Entry:
     """Convenience wrapper for backwards-compatible call sites."""
-    return await get_writable_entry(entry_id, agent, db)
+    return await get_writable_entry(entry_id, user, db)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ async def put_entry_file(
     entry_id: UUID,
     path: str,
     body: FileWriteRequest,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
     settings: Settings = Depends(get_settings),
@@ -201,10 +201,10 @@ async def put_entry_file(
             detail=f"File content exceeds maximum size of {settings.max_file_size_bytes} bytes",
         )
 
-    await _get_writable_entry(entry_id, agent, db)
+    await _get_writable_entry(entry_id, user, db)
 
     message = body.message or f"Update {path}"
-    author = AgentInfo(name=agent.handle, email=f"{agent.id}@phiacta.local")
+    author = AgentInfo(name=user.handle, email=f"{user.id}@phiacta.local")
 
     try:
         sha = await git_service.commit_files(
@@ -235,17 +235,17 @@ async def delete_entry_file(
     entry_id: UUID,
     path: str,
     body: FileDeleteRequest | None = None,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> FileWriteResponse:
     """Delete a file from an entry's repository."""
     _raise_for_invalid_path(path)
 
-    await _get_writable_entry(entry_id, agent, db)
+    await _get_writable_entry(entry_id, user, db)
 
     message = (body.message if body else None) or f"Delete {path}"
-    author = AgentInfo(name=agent.handle, email=f"{agent.id}@phiacta.local")
+    author = AgentInfo(name=user.handle, email=f"{user.id}@phiacta.local")
 
     try:
         sha = await git_service.delete_file(

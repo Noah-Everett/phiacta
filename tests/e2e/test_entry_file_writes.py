@@ -25,7 +25,7 @@ from tests.e2e.conftest import (
     FakeGitService,
     auth_header,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
     set_entry_status,
 )
@@ -35,12 +35,12 @@ type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
+    """Register a user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_agent(
-        client, handle=f"writer-{uid}", email=f"writer-{uid}@example.com"
+    auth = await register_user(
+        client, handle=f"writer-{uid}"
     )
-    return client, auth["agent"], auth["access_token"]
+    return client, auth["user"], auth["access_token"]
 
 
 def _b64(content: bytes | str) -> str:
@@ -220,16 +220,16 @@ class TestPutFileErrors:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """PUT by a different authenticated agent returns 403."""
+        """PUT by a different authenticated user returns 403."""
         client, _, token_a = authed
         entry = await create_entry(client, token_a, title="Non-Owner Put Entry")
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        # Register a second agent
+        # Register a second user
         uid = uuid4().hex[:8]
-        auth_b = await register_agent(
-            client, handle=f"other-{uid}", email=f"other-{uid}@example.com"
+        auth_b = await register_user(
+            client, handle=f"other-{uid}"
         )
         token_b = auth_b["access_token"]
 
@@ -527,7 +527,7 @@ class TestDeleteFileErrors:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """DELETE by a different agent returns 403."""
+        """DELETE by a different user returns 403."""
         client, _, token_a = authed
         entry = await create_entry(client, token_a, title="Non-Owner Delete")
         entry_id = entry["id"]
@@ -536,8 +536,8 @@ class TestDeleteFileErrors:
         fake_git.files[(UUID(entry_id), "README.md")] = b"content"
 
         uid = uuid4().hex[:8]
-        auth_b = await register_agent(
-            client, handle=f"other-del-{uid}", email=f"other-del-{uid}@example.com"
+        auth_b = await register_user(
+            client, handle=f"other-del-{uid}"
         )
         token_b = auth_b["access_token"]
 

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Integration tests for auth and agents against real Postgres.
+"""Integration tests for auth and users against real Postgres.
 
 These tests require the Docker stack to be running:
     docker compose up -d
@@ -22,12 +22,11 @@ BASE_URL = "http://localhost:8000"
 pytestmark = [pytest.mark.forgejo, pytest.mark.anyio]
 
 
-def _unique_agent() -> dict[str, str]:
+def _unique_user() -> dict[str, str]:
     """Return a unique RegisterRequest payload."""
     uid = uuid4().hex[:12]
     return {
         "handle": f"test_{uid}",
-        "email": f"test_{uid}@example.com",
         "password": "S3cur3P@ssword!",
     }
 
@@ -38,8 +37,8 @@ def _unique_agent() -> dict[str, str]:
 
 
 async def test_register_and_login() -> None:
-    """Register, login, verify /auth/me returns correct agent data."""
-    payload = _unique_agent()
+    """Register, login, verify /auth/me returns correct user data."""
+    payload = _unique_user()
 
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
         resp = await client.post("/v1/auth/register", json=payload)
@@ -48,21 +47,19 @@ async def test_register_and_login() -> None:
         reg_body = resp.json()
         assert "access_token" in reg_body
         assert reg_body["token_type"] == "bearer"
-        agent_data = reg_body["agent"]
-        assert agent_data["handle"] == payload["handle"]
-        assert agent_data["agent_type"] == "human"
-        assert agent_data["is_active"] is True
+        user_data = reg_body["user"]
+        assert user_data["handle"] == payload["handle"]
 
         reg_token = reg_body["access_token"]
 
         login_resp = await client.post(
             "/v1/auth/login",
-            json={"email": payload["email"], "password": payload["password"]},
+            json={"handle": payload["handle"], "password": payload["password"]},
         )
         assert login_resp.status_code == 200, login_resp.text
         login_body = login_resp.json()
         assert "access_token" in login_body
-        assert login_body["agent"]["handle"] == payload["handle"]
+        assert login_body["user"]["handle"] == payload["handle"]
 
         me_resp = await client.get(
             "/v1/auth/me",
@@ -71,12 +68,12 @@ async def test_register_and_login() -> None:
         assert me_resp.status_code == 200, me_resp.text
         me_body = me_resp.json()
         assert me_body["handle"] == payload["handle"]
-        assert me_body["id"] == agent_data["id"]
+        assert me_body["id"] == user_data["id"]
 
 
 async def test_register_duplicate_handle_rejected() -> None:
     """Same handle rejected on second registration."""
-    payload = _unique_agent()
+    payload = _unique_user()
 
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
         resp = await client.post("/v1/auth/register", json=payload)
@@ -84,24 +81,6 @@ async def test_register_duplicate_handle_rejected() -> None:
 
         duplicate = {
             "handle": payload["handle"],
-            "email": f"other_{uuid4().hex[:12]}@example.com",
-            "password": payload["password"],
-        }
-        dup_resp = await client.post("/v1/auth/register", json=duplicate)
-        assert dup_resp.status_code in (409, 422), dup_resp.text
-
-
-async def test_register_duplicate_email_rejected() -> None:
-    """Same email rejected on second registration."""
-    payload = _unique_agent()
-
-    async with httpx.AsyncClient(base_url=BASE_URL) as client:
-        resp = await client.post("/v1/auth/register", json=payload)
-        assert resp.status_code == 201
-
-        duplicate = {
-            "handle": f"other_{uuid4().hex[:12]}",
-            "email": payload["email"],
             "password": payload["password"],
         }
         dup_resp = await client.post("/v1/auth/register", json=duplicate)
@@ -115,25 +94,25 @@ async def test_register_duplicate_email_rejected() -> None:
 
 async def test_login_wrong_password() -> None:
     """Wrong password returns 401."""
-    payload = _unique_agent()
+    payload = _unique_user()
 
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
         await client.post("/v1/auth/register", json=payload)
 
         resp = await client.post(
             "/v1/auth/login",
-            json={"email": payload["email"], "password": "Wr0ngP@ssword!"},
+            json={"handle": payload["handle"], "password": "Wr0ngP@ssword!"},
         )
         assert resp.status_code == 401
 
 
-async def test_login_nonexistent_email() -> None:
-    """Nonexistent email returns 401."""
+async def test_login_nonexistent_handle() -> None:
+    """Nonexistent handle returns 401."""
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
         resp = await client.post(
             "/v1/auth/login",
             json={
-                "email": f"ghost_{uuid4().hex}@example.com",
+                "handle": f"ghost_{uuid4().hex}",
                 "password": "S3cur3P@ssword!",
             },
         )
@@ -163,31 +142,29 @@ async def test_me_with_invalid_token() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Agent public profile
+# User public profile
 # ---------------------------------------------------------------------------
 
 
-async def test_get_agent_by_id() -> None:
-    """GET /agents/{id} returns public profile without email."""
-    payload = _unique_agent()
+async def test_get_user_by_id() -> None:
+    """GET /users/{id} returns public profile."""
+    payload = _unique_user()
 
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
         reg = await client.post("/v1/auth/register", json=payload)
         assert reg.status_code == 201
 
-        agent_id = reg.json()["agent"]["id"]
-        profile_resp = await client.get(f"/v1/agents/{agent_id}")
+        user_id = reg.json()["user"]["id"]
+        profile_resp = await client.get(f"/v1/users/{user_id}")
         assert profile_resp.status_code == 200
 
         profile = profile_resp.json()
-        assert profile["id"] == agent_id
+        assert profile["id"] == user_id
         assert profile["handle"] == payload["handle"]
-        assert profile["agent_type"] == "human"
-        assert profile["is_active"] is True
 
 
-async def test_get_nonexistent_agent() -> None:
+async def test_get_nonexistent_user() -> None:
     """Random UUID returns 404."""
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
-        resp = await client.get(f"/v1/agents/{uuid4()}")
+        resp = await client.get(f"/v1/users/{uuid4()}")
         assert resp.status_code == 404

@@ -45,7 +45,7 @@ from phiacta.core.services.reconciliation import ReconciliationReport, Reconcili
 from tests.e2e.conftest import (
     FakeGitService,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
     set_entry_status,
 )
@@ -91,7 +91,7 @@ def _make_entry_yaml(
     title: str = "Test Entry",
     content_format: str = "markdown",
     author_id: UUID | None = None,
-    author_handle: str = "test-agent",
+    author_handle: str = "test-user",
     summary: str | None = None,
 ) -> bytes:
     """Build valid entry.yaml bytes for an entry."""
@@ -183,9 +183,9 @@ class TestReconciliationHappyPath:
         and current_head_sha is updated to match Forgejo."""
 
         # Create entry via API
-        auth = await register_agent(client, handle="recon-1", email="recon-1@example.com")
+        auth = await register_user(client, handle="recon-1")
         token = auth["access_token"]
-        agent_id = auth["agent"]["id"]
+        user_id = auth["user"]["id"]
         entry_data = await create_entry(client, token, title="Drift Entry")
         entry_id = entry_data["id"]
 
@@ -201,7 +201,7 @@ class TestReconciliationHappyPath:
         fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = _make_entry_yaml(
             UUID(entry_id),
             title="Reconciled Title",
-            author_id=UUID(agent_id),
+            author_id=UUID(user_id),
             author_handle="recon-1",
         )
         fake_git.files[(UUID(entry_id), "README.md")] = b"# Reconciled Content"
@@ -231,7 +231,7 @@ class TestReconciliationHappyPath:
     ) -> None:
         """Scenario: SHAs match -> entry is skipped, no changes made."""
 
-        auth = await register_agent(client, handle="recon-2", email="recon-2@example.com")
+        auth = await register_user(client, handle="recon-2")
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Up To Date")
         entry_id = entry_data["id"]
@@ -268,9 +268,9 @@ class TestReconciliationContentCacheAndRefs:
         the current git state, not stale DB values."""
 
         # Create two entries -- one will reference the other
-        auth = await register_agent(client, handle="recon-j", email="recon-j@example.com")
+        auth = await register_user(client, handle="recon-j")
         token = auth["access_token"]
-        agent_id = auth["agent"]["id"]
+        user_id = auth["user"]["id"]
 
         entry_a_data = await create_entry(client, token, title="Entry A")
         entry_a_id = entry_a_data["id"]
@@ -294,7 +294,7 @@ class TestReconciliationContentCacheAndRefs:
         fake_git.files[(UUID(entry_a_id), ".phiacta/entry.yaml")] = _make_entry_yaml(
             UUID(entry_a_id),
             title="Entry A Reconciled",
-            author_id=UUID(agent_id),
+            author_id=UUID(user_id),
             author_handle="recon-j",
             summary="Updated via reconciliation",
         )
@@ -336,9 +336,9 @@ class TestReconciliationProvisioningStates:
         """Scenario: Entry has repo_status=provisioning but Forgejo repo
         exists with commits -> re-ingest and set repo_status=ready."""
 
-        auth = await register_agent(client, handle="recon-stuck", email="recon-stuck@example.com")
+        auth = await register_user(client, handle="recon-stuck")
         token = auth["access_token"]
-        agent_id = auth["agent"]["id"]
+        user_id = auth["user"]["id"]
         entry_data = await create_entry(client, token, title="Stuck Entry")
         entry_id = entry_data["id"]
 
@@ -351,7 +351,7 @@ class TestReconciliationProvisioningStates:
         fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = _make_entry_yaml(
             UUID(entry_id),
             title="Stuck Entry Fixed",
-            author_id=UUID(agent_id),
+            author_id=UUID(user_id),
             author_handle="recon-stuck",
         )
         fake_git.files[(UUID(entry_id), "README.md")] = b"# Unstuck"
@@ -377,8 +377,8 @@ class TestReconciliationProvisioningStates:
         but get_repo_head_sha returns None (empty repo). Classified as
         still_provisioning, not crashed."""
 
-        auth = await register_agent(
-            client, handle="recon-still", email="recon-still@example.com"
+        auth = await register_user(
+            client, handle="recon-still"
         )
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Still Provisioning")
@@ -411,8 +411,8 @@ class TestReconciliationMissingAndOrphanRepos:
         get_repo_head_sha returns None (no Forgejo repo). Classified as
         missing_repo."""
 
-        auth = await register_agent(
-            client, handle="recon-miss", email="recon-miss@example.com"
+        auth = await register_user(
+            client, handle="recon-miss"
         )
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Missing Repo Entry")
@@ -438,8 +438,8 @@ class TestReconciliationMissingAndOrphanRepos:
         """Scenario: Forgejo has a UUID-named repo that has no corresponding
         DB entry -> reported as orphan."""
 
-        auth = await register_agent(
-            client, handle="recon-orph", email="recon-orph@example.com"
+        auth = await register_user(
+            client, handle="recon-orph"
         )
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Real Entry")
@@ -467,8 +467,8 @@ class TestReconciliationMissingAndOrphanRepos:
         These are silently filtered out and NOT reported as orphans. Only UUID-named
         repos without DB entries are reported as orphans."""
 
-        auth = await register_agent(
-            client, handle="recon-nonuuid", email="recon-nonuuid@example.com"
+        auth = await register_user(
+            client, handle="recon-nonuuid"
         )
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Normal Entry")
@@ -511,8 +511,8 @@ class TestReconciliationArchivedEntries:
         """Scenario (D): Archived entry has SHA drift but is NOT re-ingested.
         Its metadata and refs remain unchanged."""
 
-        auth = await register_agent(
-            client, handle="recon-arch", email="recon-arch@example.com"
+        auth = await register_user(
+            client, handle="recon-arch"
         )
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Archived Entry")
@@ -551,8 +551,8 @@ class TestReconciliationArchivedEntries:
     ) -> None:
         """Retracted entries are also skipped, same as archived."""
 
-        auth = await register_agent(
-            client, handle="recon-retract", email="recon-retract@example.com"
+        auth = await register_user(
+            client, handle="recon-retract"
         )
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Retracted Entry")
@@ -584,11 +584,11 @@ class TestReconciliationDryRun:
     ) -> None:
         """Scenario (H): Dry run detects drift but does NOT update the DB."""
 
-        auth = await register_agent(
-            client, handle="recon-dry", email="recon-dry@example.com"
+        auth = await register_user(
+            client, handle="recon-dry"
         )
         token = auth["access_token"]
-        agent_id = auth["agent"]["id"]
+        user_id = auth["user"]["id"]
         entry_data = await create_entry(client, token, title="Dry Run Entry")
         entry_id = entry_data["id"]
 
@@ -602,7 +602,7 @@ class TestReconciliationDryRun:
         fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = _make_entry_yaml(
             UUID(entry_id),
             title="Dry Run Should Not Apply",
-            author_id=UUID(agent_id),
+            author_id=UUID(user_id),
             author_handle="recon-dry",
         )
 
@@ -633,8 +633,8 @@ class TestReconciliationErrorHandling:
         current_head_sha stays at old value and entry appears in errors list.
         Next reconciliation run WILL re-try this entry."""
 
-        auth = await register_agent(
-            client, handle="recon-bad-yaml", email="recon-bad-yaml@example.com"
+        auth = await register_user(
+            client, handle="recon-bad-yaml"
         )
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Bad YAML Entry")
@@ -672,11 +672,11 @@ class TestReconciliationErrorHandling:
         malformed YAML. Good one gets repaired, bad one goes to errors.
         Reconciliation continues past the first failure."""
 
-        auth = await register_agent(
-            client, handle="recon-partial", email="recon-partial@example.com"
+        auth = await register_user(
+            client, handle="recon-partial"
         )
         token = auth["access_token"]
-        agent_id = auth["agent"]["id"]
+        user_id = auth["user"]["id"]
 
         # Entry with valid YAML
         good_entry = await create_entry(client, token, title="Good Entry")
@@ -701,7 +701,7 @@ class TestReconciliationErrorHandling:
         fake_git.files[(UUID(good_id), ".phiacta/entry.yaml")] = _make_entry_yaml(
             UUID(good_id),
             title="Good Entry Reconciled",
-            author_id=UUID(agent_id),
+            author_id=UUID(user_id),
             author_handle="recon-partial",
         )
         fake_git.files[(UUID(good_id), "README.md")] = b"# Good"
@@ -744,8 +744,8 @@ class TestReconciliationRaceCondition:
         the per-entry transaction runs (i.e., the "scan" saw stale data but
         the re-check inside the lock sees current data)."""
 
-        auth = await register_agent(
-            client, handle="recon-race", email="recon-race@example.com"
+        auth = await register_user(
+            client, handle="recon-race"
         )
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Race Entry")
@@ -807,8 +807,8 @@ class TestReconciliationEmptyState:
         """Entries exist in DB but Forgejo has zero repos.
         Active entries should be classified as missing_repos."""
 
-        auth = await register_agent(
-            client, handle="recon-empty", email="recon-empty@example.com"
+        auth = await register_user(
+            client, handle="recon-empty"
         )
         token = auth["access_token"]
         entry_data = await create_entry(client, token, title="Lonely Entry")
@@ -836,11 +836,11 @@ class TestReconciliationEntryIdFilter:
         """When entry_ids are specified, only those entries are checked.
         Other drifted entries are ignored."""
 
-        auth = await register_agent(
-            client, handle="recon-filter", email="recon-filter@example.com"
+        auth = await register_user(
+            client, handle="recon-filter"
         )
         token = auth["access_token"]
-        agent_id = auth["agent"]["id"]
+        user_id = auth["user"]["id"]
 
         # Create two entries, both with drift
         entry_a = await create_entry(client, token, title="Filter A")
@@ -861,7 +861,7 @@ class TestReconciliationEntryIdFilter:
             fake_git.files[(UUID(eid), ".phiacta/entry.yaml")] = _make_entry_yaml(
                 UUID(eid),
                 title=title,
-                author_id=UUID(agent_id),
+                author_id=UUID(user_id),
                 author_handle="recon-filter",
             )
             fake_git.files[(UUID(eid), "README.md")] = b"# Content"
@@ -892,11 +892,11 @@ class TestReconciliationReportStructure:
         """Set up a scenario with multiple drift categories and verify
         the report correctly tallies each one."""
 
-        auth = await register_agent(
-            client, handle="recon-report", email="recon-report@example.com"
+        auth = await register_user(
+            client, handle="recon-report"
         )
         token = auth["access_token"]
-        agent_id = auth["agent"]["id"]
+        user_id = auth["user"]["id"]
 
         # 1. Up-to-date entry
         up_to_date = await create_entry(client, token, title="Up To Date")
@@ -929,7 +929,7 @@ class TestReconciliationReportStructure:
         fake_git.files[(UUID(drifted["id"]), ".phiacta/entry.yaml")] = _make_entry_yaml(
             UUID(drifted["id"]),
             title="Drifted Repaired",
-            author_id=UUID(agent_id),
+            author_id=UUID(user_id),
             author_handle="recon-report",
         )
 
@@ -941,7 +941,7 @@ class TestReconciliationReportStructure:
         fake_git.files[(UUID(stuck["id"]), ".phiacta/entry.yaml")] = _make_entry_yaml(
             UUID(stuck["id"]),
             title="Stuck Repaired",
-            author_id=UUID(agent_id),
+            author_id=UUID(user_id),
             author_handle="recon-report",
         )
 

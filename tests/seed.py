@@ -5,7 +5,7 @@
 
 Exercises every major API feature: entry CRUD, tags extension, file uploads,
 edit proposals (create + merge + close), entry updates, archive/unarchive,
-entry references with notes, and a second collaborator agent.
+entry references with notes, and a second collaborator user.
 
 This is a test/development tool — not for production data.  Historical
 knowledge should be added by agents using the API directly.
@@ -30,13 +30,11 @@ import httpx
 # ---------------------------------------------------------------------------
 
 DEFAULT_BASE_URL = "https://api.phiacta.com"
-SEED_AGENT_HANDLE = "seed-agent"
-SEED_AGENT_EMAIL = "seed@phiacta.com"
-SEED_AGENT_PASSWORD = os.environ.get("PHIACTA_SEED_PASSWORD", "SeedAgent!2026")
+SEED_USER_HANDLE = "seed-user"
+SEED_USER_PASSWORD = os.environ.get("PHIACTA_SEED_PASSWORD", "SeedAgent!2026")
 
-COLLAB_AGENT_HANDLE = "collab-agent"
-COLLAB_AGENT_EMAIL = "collab@phiacta.com"
-COLLAB_AGENT_PASSWORD = os.environ.get("PHIACTA_COLLAB_PASSWORD", "CollabAgent!2026")
+COLLAB_USER_HANDLE = "collab-user"
+COLLAB_USER_PASSWORD = os.environ.get("PHIACTA_COLLAB_PASSWORD", "CollabAgent!2026")
 
 TIMEOUT = 30.0
 
@@ -121,20 +119,19 @@ def register_or_login(
     client: httpx.Client,
     base: str,
     handle: str,
-    email: str,
     password: str,
 ) -> tuple[str, str]:
-    """Register an agent or login if already exists.  Returns (token, agent_id)."""
+    """Register a user or login if already exists.  Returns (token, user_id)."""
     try:
         auth = post(client, f"{base}/auth/register", {
-            "handle": handle, "email": email, "password": password,
+            "handle": handle, "password": password,
         })
-        return auth["access_token"], auth["agent"]["id"]
+        return auth["access_token"], auth["user"]["id"]
     except httpx.HTTPStatusError:
         auth = post(client, f"{base}/auth/login", {
-            "email": email, "password": password,
+            "handle": handle, "password": password,
         })
-        return auth["access_token"], auth["agent"]["id"]
+        return auth["access_token"], auth["user"]["id"]
 
 
 def wait_for_ready(
@@ -944,17 +941,17 @@ def seed(base_url: str) -> None:
         "updates": 0,
     }
 
-    # -- 1. Register & login both agents -----------------------------------
-    print("=== Registering agents ===")
+    # -- 1. Register & login both users ------------------------------------
+    print("=== Registering users ===")
     token, agent_id = register_or_login(
-        client, base, SEED_AGENT_HANDLE, SEED_AGENT_EMAIL, SEED_AGENT_PASSWORD,
+        client, base, SEED_USER_HANDLE, SEED_USER_PASSWORD,
     )
-    print(f"  seed-agent: {agent_id}")
+    print(f"  seed-user: {agent_id}")
 
     collab_token, collab_id = register_or_login(
-        client, base, COLLAB_AGENT_HANDLE, COLLAB_AGENT_EMAIL, COLLAB_AGENT_PASSWORD,
+        client, base, COLLAB_USER_HANDLE, COLLAB_USER_PASSWORD,
     )
-    print(f"  collab-agent: {collab_id}")
+    print(f"  collab-user: {collab_id}")
 
     # -- 2. Create entries -------------------------------------------------
     print("\n=== Creating entries ===")
@@ -1096,7 +1093,7 @@ def seed(base_url: str) -> None:
         else:
             print(f"  {ARCHIVE_KEY}: skipped (repo not ready)")
 
-    # -- 8. Create edit proposals (as collab-agent) ------------------------
+    # -- 8. Create edit proposals (as collab-user) ------------------------
     print("\n=== Creating edit proposals ===")
     for entry_key, title, body, files in EDIT_PROPOSALS:
         if entry_key not in entry_ids:
@@ -1148,8 +1145,8 @@ def seed(base_url: str) -> None:
     print(f"  Files uploaded: {counters['files']}")
     print(f"  Edit proposals: {counters['edits']}")
     print(f"  Entry updates:  {counters['updates']}")
-    print(f"\n  seed-agent:  {SEED_AGENT_EMAIL} / {SEED_AGENT_PASSWORD}")
-    print(f"  collab-agent: {COLLAB_AGENT_EMAIL} / {COLLAB_AGENT_PASSWORD}")
+    print(f"\n  seed-user:  {SEED_USER_HANDLE} / {SEED_USER_PASSWORD}")
+    print(f"  collab-user: {COLLAB_USER_HANDLE} / {COLLAB_USER_PASSWORD}")
 
 
 # ---------------------------------------------------------------------------

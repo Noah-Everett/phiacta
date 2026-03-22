@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Phiacta Contributors
 
 """Integration tests covering entry update, archival, history, webhook HMAC
-verification, content format, and cross-agent access.
+verification, content format, and cross-user access.
 
 These tests require the full Docker stack to be running:
 
@@ -12,7 +12,7 @@ Run with:
 
     pytest tests/integration/test_forgejo_remaining.py -m forgejo
 
-Each test registers its own agent (uuid4-prefixed handles/emails) and is
+Each test registers its own user (uuid4-prefixed handles) and is
 fully self-contained. No imports from phiacta source.
 """
 
@@ -38,22 +38,20 @@ pytestmark = [pytest.mark.forgejo, pytest.mark.anyio]
 # ---------------------------------------------------------------------------
 
 
-async def register_agent(
+async def register_user(
     client: httpx.AsyncClient,
     handle: str | None = None,
-    email: str | None = None,
     password: str = "Integration1!",
 ) -> dict:
-    """Register a new agent and return the full auth response dict.
+    """Register a new user and return the full auth response dict.
 
-    Uses a uuid4 prefix by default so every call produces a unique agent.
+    Uses a uuid4 prefix by default so every call produces a unique user.
     """
     uid = uuid4().hex[:12]
     resp = await client.post(
         "/v1/auth/register",
         json={
-            "handle": handle or f"agent-{uid}",
-            "email": email or f"agent-{uid}@example.com",
+            "handle": handle or f"user-{uid}",
             "password": password,
         },
     )
@@ -114,11 +112,11 @@ async def _setup_ready_entry(
     title: str = "Integration Test Entry",
     content_format: str = "markdown",
 ) -> tuple[str, str, dict]:
-    """Register agent, create entry, wait for ready.
+    """Register user, create entry, wait for ready.
 
     Returns ``(token, entry_id, entry_dict)``.
     """
-    auth = await register_agent(client)
+    auth = await register_user(client)
     token = auth["access_token"]
     entry = await create_entry(client, token, title=title, content_format=content_format)
     entry_id = entry["id"]
@@ -205,15 +203,15 @@ class TestEntryUpdate:
             )
 
     async def test_update_non_owner_rejected(self) -> None:
-        """A second agent trying to PATCH an entry they don't own gets 403."""
+        """A second user trying to PATCH an entry they don't own gets 403."""
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            # Agent A creates the entry.
+            # User A creates the entry.
             token_a, entry_id, _ = await _setup_ready_entry(
                 client, title="Non-Owner PATCH Test",
             )
 
-            # Agent B registers separately.
-            auth_b = await register_agent(client)
+            # User B registers separately.
+            auth_b = await register_user(client)
             token_b = auth_b["access_token"]
 
             patch_resp = await client.patch(
@@ -318,13 +316,13 @@ class TestArchival:
     async def test_archive_non_owner_rejected(self) -> None:
         """A non-owner trying to archive an entry gets 403."""
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            # Agent A creates the entry.
+            # User A creates the entry.
             _token_a, entry_id, _ = await _setup_ready_entry(
                 client, title="Non-Owner Archive Test",
             )
 
-            # Agent B tries to archive it.
-            auth_b = await register_agent(client)
+            # User B tries to archive it.
+            auth_b = await register_user(client)
             token_b = auth_b["access_token"]
 
             archive_resp = await client.post(
@@ -503,23 +501,23 @@ class TestContentFormat:
 
 
 # ---------------------------------------------------------------------------
-# Cross-agent Access
+# Cross-user Access
 # ---------------------------------------------------------------------------
 
 
-class TestCrossAgentAccess:
-    """Public read / owner-only write enforcement across agents."""
+class TestCrossUserAccess:
+    """Public read / owner-only write enforcement across users."""
 
-    async def test_other_agent_can_read_entry(self) -> None:
-        """Agent A creates an entry; Agent B can GET it (public read, no auth)."""
+    async def test_other_user_can_read_entry(self) -> None:
+        """User A creates an entry; User B can GET it (public read, no auth)."""
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            # Agent A creates and readies the entry.
+            # User A creates and readies the entry.
             _token_a, entry_id, _ = await _setup_ready_entry(
-                client, title="Cross-Agent Read Test",
+                client, title="Cross-User Read Test",
             )
 
-            # Agent B registers and reads the entry without using Agent A's token.
-            auth_b = await register_agent(client)
+            # User B registers and reads the entry without using User A's token.
+            auth_b = await register_user(client)
             token_b = auth_b["access_token"]
 
             get_resp = await client.get(
@@ -527,7 +525,7 @@ class TestCrossAgentAccess:
                 headers=_auth_header(token_b),
             )
             assert get_resp.status_code == 200, (
-                f"Agent B could not read Agent A's entry: {get_resp.text}"
+                f"User B could not read User A's entry: {get_resp.text}"
             )
             assert get_resp.json()["id"] == entry_id
 
@@ -537,18 +535,18 @@ class TestCrossAgentAccess:
                 f"Unauthenticated GET failed: {get_no_auth.text}"
             )
 
-    async def test_other_agent_cannot_write_files(self) -> None:
-        """Agent A creates an entry; Agent B trying to PUT a file gets 403."""
-        content_b64 = base64.b64encode(b"agent b injection").decode()
+    async def test_other_user_cannot_write_files(self) -> None:
+        """User A creates an entry; User B trying to PUT a file gets 403."""
+        content_b64 = base64.b64encode(b"user b injection").decode()
 
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            # Agent A creates and readies the entry.
+            # User A creates and readies the entry.
             _token_a, entry_id, _ = await _setup_ready_entry(
-                client, title="Cross-Agent Write Test",
+                client, title="Cross-User Write Test",
             )
 
-            # Agent B registers and attempts a file write.
-            auth_b = await register_agent(client)
+            # User B registers and attempts a file write.
+            auth_b = await register_user(client)
             token_b = auth_b["access_token"]
 
             put_resp = await client.put(
@@ -557,7 +555,7 @@ class TestCrossAgentAccess:
                 headers=_auth_header(token_b),
             )
             assert put_resp.status_code == 403, (
-                f"Expected 403 for cross-agent file write, "
+                f"Expected 403 for cross-user file write, "
                 f"got {put_resp.status_code}: {put_resp.text}"
             )
 
@@ -751,17 +749,17 @@ class TestEntryListFilters:
         has_more=true, then GET /entries?limit=2&offset=2 and verify the
         remaining 1 item appears and has_more=false.
 
-        This test registers a fresh agent and creates entries with unique
+        This test registers a fresh user and creates entries with unique
         titles to make it easy to find them in the paginated results without
         depending on the total count of entries in the database.
         """
         uid = uuid4().hex[:8]
 
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            auth = await register_agent(client)
+            auth = await register_user(client)
             token = auth["access_token"]
 
-            # Create 3 entries from this agent, all ready before we paginate.
+            # Create 3 entries from this user, all ready before we paginate.
             titles = [f"Pagination Test {uid} {i}" for i in range(3)]
             entry_ids: list[str] = []
             for t in titles:

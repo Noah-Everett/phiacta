@@ -21,30 +21,30 @@ from tests.e2e.conftest import (
     FakeGitService,
     auth_header,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
 )
 
 
 @pytest.fixture
-async def agent_a(client: httpx.AsyncClient) -> tuple[dict, str]:
-    """Register agent A and return (agent_data, token)."""
-    auth = await register_agent(client, handle="agent-a", email="a@example.com")
-    return auth["agent"], auth["access_token"]
+async def user_a(client: httpx.AsyncClient) -> tuple[dict, str]:
+    """Register user A and return (user_data, token)."""
+    auth = await register_user(client, handle="user-a")
+    return auth["user"], auth["access_token"]
 
 
 @pytest.fixture
-async def agent_b(client: httpx.AsyncClient) -> tuple[dict, str]:
-    """Register agent B and return (agent_data, token)."""
-    auth = await register_agent(client, handle="agent-b", email="b@example.com")
-    return auth["agent"], auth["access_token"]
+async def user_b(client: httpx.AsyncClient) -> tuple[dict, str]:
+    """Register user B and return (user_data, token)."""
+    auth = await register_user(client, handle="user-b")
+    return auth["user"], auth["access_token"]
 
 
 def _seed_entry_yaml(
     fake_git: FakeGitService,
     entry_id: str,
-    agent_id: str,
-    agent_handle: str,
+    user_id: str,
+    user_handle: str,
     *,
     title: str = "Test Entry",
 ) -> None:
@@ -54,7 +54,7 @@ def _seed_entry_yaml(
             "entry_id": f"ent_{entry_id}",
             "schema_version": 1,
             "title": title,
-            "author": {"id": f"usr_{agent_id}", "name": agent_handle},
+            "author": {"id": f"usr_{user_id}", "name": user_handle},
             "created_at": "2026-01-01T00:00:00",
             "content_format": "markdown",
         },
@@ -72,11 +72,11 @@ class TestFullEntryLifecycle:
     async def test_complete_lifecycle(
         self,
         client: httpx.AsyncClient,
-        agent_a: tuple[dict, str],
+        user_a: tuple[dict, str],
         e2e_session_factory,
         fake_git: FakeGitService,
     ) -> None:
-        agent, token = agent_a
+        user, token = user_a
         headers = auth_header(token)
 
         # 1. Create entry
@@ -120,7 +120,7 @@ class TestFullEntryLifecycle:
 
         # 7. Update metadata
         _seed_entry_yaml(
-            fake_git, entry_id, agent["id"], "agent-a", title="Lifecycle Entry",
+            fake_git, entry_id, user["id"], "user-a", title="Lifecycle Entry",
         )
         resp = await client.patch(
             f"/v1/entries/{entry_id}",
@@ -196,10 +196,10 @@ class TestPhiactaProtectionLifecycle:
     async def test_phiacta_protected_for_all_write_operations(
         self,
         client: httpx.AsyncClient,
-        agent_a: tuple[dict, str],
+        user_a: tuple[dict, str],
         e2e_session_factory,
     ) -> None:
-        _, token = agent_a
+        _, token = user_a
         headers = auth_header(token)
         entry = await create_entry(client, token)
         entry_id = entry["id"]
@@ -259,11 +259,11 @@ class TestHistoryAcrossOperations:
     async def test_history_reflects_file_and_metadata_operations(
         self,
         client: httpx.AsyncClient,
-        agent_a: tuple[dict, str],
+        user_a: tuple[dict, str],
         e2e_session_factory,
         fake_git: FakeGitService,
     ) -> None:
-        agent, token = agent_a
+        user, token = user_a
         headers = auth_header(token)
         entry = await create_entry(client, token, title="History Test")
         entry_id = entry["id"]
@@ -282,7 +282,7 @@ class TestHistoryAcrossOperations:
 
         # Update metadata — generates another commit
         _seed_entry_yaml(
-            fake_git, entry_id, agent["id"], "agent-a", title="History Test",
+            fake_git, entry_id, user["id"], "user-a", title="History Test",
         )
         resp = await client.patch(
             f"/v1/entries/{entry_id}",
@@ -308,30 +308,30 @@ class TestHistoryAcrossOperations:
         assert any("Delete" in m for m in messages)
 
 
-class TestMultiAgentAccessControl:
-    """Agent B cannot write to agent A's entry."""
+class TestMultiUserAccessControl:
+    """User B cannot write to user A's entry."""
 
     async def test_non_owner_blocked_from_all_writes(
         self,
         client: httpx.AsyncClient,
-        agent_a: tuple[dict, str],
-        agent_b: tuple[dict, str],
+        user_a: tuple[dict, str],
+        user_b: tuple[dict, str],
         e2e_session_factory,
         fake_git: FakeGitService,
     ) -> None:
-        a_agent, a_token = agent_a
-        _, b_token = agent_b
+        a_user, a_token = user_a
+        _, b_token = user_b
         a_headers = auth_header(a_token)
         b_headers = auth_header(b_token)
 
-        # Agent A creates entry
+        # User A creates entry
         entry = await create_entry(client, a_token, title="A's Entry")
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         content_b64 = base64.b64encode(b"content").decode()
 
-        # Agent B cannot write files
+        # User B cannot write files
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
             json={"content": content_b64},
@@ -339,24 +339,24 @@ class TestMultiAgentAccessControl:
         )
         assert resp.status_code == 403
 
-        # Agent B cannot delete files
-        # First, agent A writes a file
+        # User B cannot delete files
+        # First, user A writes a file
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
             json={"content": content_b64},
             headers=a_headers,
         )
         assert resp.status_code == 200
-        # Then agent B tries to delete it
+        # Then user B tries to delete it
         resp = await client.delete(
             f"/v1/entries/{entry_id}/files/README.md",
             headers=b_headers,
         )
         assert resp.status_code == 403
 
-        # Agent B cannot update metadata
+        # User B cannot update metadata
         _seed_entry_yaml(
-            fake_git, entry_id, a_agent["id"], "agent-a", title="A's Entry",
+            fake_git, entry_id, a_user["id"], "user-a", title="A's Entry",
         )
         resp = await client.patch(
             f"/v1/entries/{entry_id}",
@@ -365,14 +365,14 @@ class TestMultiAgentAccessControl:
         )
         assert resp.status_code == 403
 
-        # Agent B cannot archive
+        # User B cannot archive
         resp = await client.post(
             f"/v1/entries/{entry_id}/archive",
             headers=b_headers,
         )
         assert resp.status_code == 403
 
-        # But agent B CAN read files and entry details (public)
+        # But user B CAN read files and entry details (public)
         resp = await client.get(f"/v1/entries/{entry_id}")
         assert resp.status_code == 200
 
@@ -386,10 +386,10 @@ class TestMultiFileOperations:
     async def test_multi_file_crud(
         self,
         client: httpx.AsyncClient,
-        agent_a: tuple[dict, str],
+        user_a: tuple[dict, str],
         e2e_session_factory,
     ) -> None:
-        _, token = agent_a
+        _, token = user_a
         headers = auth_header(token)
         entry = await create_entry(client, token)
         entry_id = entry["id"]
@@ -446,11 +446,11 @@ class TestRepoStatusTransitions:
     async def test_operations_respect_repo_status(
         self,
         client: httpx.AsyncClient,
-        agent_a: tuple[dict, str],
+        user_a: tuple[dict, str],
         e2e_session_factory,
         fake_git: FakeGitService,
     ) -> None:
-        _, token = agent_a
+        _, token = user_a
         headers = auth_header(token)
         entry = await create_entry(client, token, title="Status Test")
         entry_id = entry["id"]
@@ -501,11 +501,11 @@ class TestListFiltering:
     async def test_status_filtering_across_lifecycle(
         self,
         client: httpx.AsyncClient,
-        agent_a: tuple[dict, str],
+        user_a: tuple[dict, str],
         e2e_session_factory,
         fake_git: FakeGitService,
     ) -> None:
-        _, token = agent_a
+        _, token = user_a
         headers = auth_header(token)
 
         # Create 3 entries

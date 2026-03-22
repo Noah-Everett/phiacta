@@ -66,10 +66,10 @@ class TestCoreModulesImportable:
         mod = importlib.import_module("phiacta.core.models.entry")
         assert hasattr(mod, "Entry")
 
-    def test_import_core_models_agent(self) -> None:
-        """phiacta.core.models.agent is importable and has Agent."""
-        mod = importlib.import_module("phiacta.core.models.agent")
-        assert hasattr(mod, "Agent")
+    def test_import_core_models_user(self) -> None:
+        """phiacta.core.models.user is importable and has User."""
+        mod = importlib.import_module("phiacta.core.models.user")
+        assert hasattr(mod, "User")
 
     def test_import_core_models_entry_ref(self) -> None:
         """phiacta.core.models.entry_ref is importable and has EntryRef."""

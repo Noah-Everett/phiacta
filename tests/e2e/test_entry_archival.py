@@ -18,7 +18,7 @@ from tests.e2e.conftest import (
     FakeGitService,
     auth_header,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
     set_entry_status,
 )
@@ -28,9 +28,9 @@ type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
-    auth = await register_agent(client, handle="archive-test", email="archive@example.com")
-    return client, auth["agent"], auth["access_token"]
+    """Register a user and return (client, user_data, token)."""
+    auth = await register_user(client, handle="archive-test")
+    return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
@@ -114,7 +114,7 @@ class TestArchiveEntry:
         self, ready_entry: tuple[AuthedFixture, dict],
     ) -> None:
         (client, _, _), entry = ready_entry
-        other = await register_agent(client, handle="other-archive", email="otherarch@example.com")
+        other = await register_user(client, handle="other-archive")
 
         resp = await client.post(
             f"/v1/entries/{entry['id']}/archive",
@@ -303,8 +303,8 @@ class TestUnarchiveEntry:
             headers=auth_header(token),
         )
 
-        # Different agent tries to unarchive
-        other = await register_agent(client, handle="other-unarch", email="otherun@example.com")
+        # Different user tries to unarchive
+        other = await register_user(client, handle="other-unarch")
         resp = await client.post(
             f"/v1/entries/{entry['id']}/unarchive",
             headers=auth_header(other["access_token"]),
@@ -328,7 +328,7 @@ class TestUnarchiveEntry:
         fake_git: FakeGitService,
     ) -> None:
         """Full lifecycle: create → archive → unarchive → update title."""
-        (client, agent, token), entry = ready_entry
+        (client, user, token), entry = ready_entry
         entry_id = entry["id"]
 
         # Seed entry.yaml for the update endpoint
@@ -339,7 +339,7 @@ class TestUnarchiveEntry:
             "entry_id": f"ent_{entry_id}",
             "schema_version": 1,
             "title": "Archival Test Entry",
-            "author": {"id": f"usr_{agent['id']}", "name": "archive-test"},
+            "author": {"id": f"usr_{user['id']}", "name": "archive-test"},
             "created_at": "2026-01-01T00:00:00",
             "content_format": "markdown",
         }, default_flow_style=False, allow_unicode=True, sort_keys=False).encode()

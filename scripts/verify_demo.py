@@ -19,8 +19,8 @@ import httpx
 # ---------------------------------------------------------------------------
 
 DEFAULT_BASE_URL = "https://api.phiacta.com"
-SEED_AGENT_EMAIL = "seed@phiacta.com"
-SEED_AGENT_PASSWORD = os.environ.get("PHIACTA_SEED_PASSWORD", "SeedAgent!2026")
+SEED_USER_HANDLE = "seed-user"
+SEED_USER_PASSWORD = os.environ.get("PHIACTA_SEED_PASSWORD", "SeedAgent!2026")
 TIMEOUT = 30.0
 
 # ---------------------------------------------------------------------------
@@ -61,14 +61,14 @@ def v1(base: str) -> str:
 
 
 def login(client: httpx.Client, base: str) -> tuple[str, str]:
-    """Log in as the seed agent. Returns (token, agent_id)."""
+    """Log in as the seed user. Returns (token, user_id)."""
     r = client.post(
         f"{v1(base)}/auth/login",
-        json={"email": SEED_AGENT_EMAIL, "password": SEED_AGENT_PASSWORD},
+        json={"handle": SEED_USER_HANDLE, "password": SEED_USER_PASSWORD},
     )
     r.raise_for_status()
     data = r.json()
-    return data["access_token"], data["agent"]["id"]
+    return data["access_token"], data["user"]["id"]
 
 
 def auth_headers(token: str) -> dict[str, str]:
@@ -133,9 +133,9 @@ def main() -> None:
 
     client = httpx.Client(timeout=TIMEOUT)
 
-    print("1. Logging in as seed agent...")
-    token, agent_id = login(client, base)
-    print(f"   Agent: {agent_id}")
+    print("1. Logging in as seed user...")
+    token, user_id = login(client, base)
+    print(f"   User: {user_id}")
 
     print("2. Creating theorem entry...")
     entry_id = create_entry(client, base, token)

@@ -23,19 +23,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.outbox import Outbox
-from tests.e2e.conftest import auth_header, register_agent
+from tests.e2e.conftest import auth_header, register_user
 
 AuthedFixture: TypeAlias = tuple[httpx.AsyncClient, dict, str]
 
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
+    """Register a user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_agent(
-        client, handle=f"create-{uid}", email=f"create-{uid}@example.com"
+    auth = await register_user(
+        client, handle=f"create-{uid}"
     )
-    return client, auth["agent"], auth["access_token"]
+    return client, auth["user"], auth["access_token"]
 
 
 class TestCreateEntryMinimal:
@@ -43,7 +43,7 @@ class TestCreateEntryMinimal:
 
     async def test_create_entry_minimal(self, authed: AuthedFixture) -> None:
         """POST with only required fields returns 201 with provisioning status."""
-        client, agent, token = authed
+        client, user, token = authed
         resp = await client.post(
             "/v1/entries",
             json={"title": "Minimal Entry", "content_format": "markdown"},
@@ -54,7 +54,7 @@ class TestCreateEntryMinimal:
         assert data["title"] == "Minimal Entry"
         assert data["content_format"] == "markdown"
         assert data["repo_status"] == "provisioning"
-        assert data["created_by"] == agent["id"]
+        assert data["created_by"] == user["id"]
         # Optional fields should be absent/null/default
         assert data["layout_hint"] is None
         assert data["summary"] is None
@@ -85,7 +85,7 @@ class TestCreateEntryFull:
 
     async def test_create_entry_full(self, authed: AuthedFixture) -> None:
         """POST with all fields returns 201 with all fields populated in response."""
-        client, agent, token = authed
+        client, user, token = authed
         resp = await client.post(
             "/v1/entries",
             json={
@@ -106,7 +106,7 @@ class TestCreateEntryFull:
         assert data["summary"] == "A comprehensive review of modern thermodynamics."
         assert data["license"] == "CC-BY-SA-4.0"
         assert data["repo_status"] == "provisioning"
-        assert data["created_by"] == agent["id"]
+        assert data["created_by"] == user["id"]
         # id, created_at, updated_at should be present
         assert data["id"] is not None
         assert data["created_at"] is not None
@@ -151,7 +151,7 @@ class TestCreateEntryFull:
 
 
 class TestCreateEntryRepoName:
-    """Scenario: repo_name is the entry UUID string, not the agent handle."""
+    """Scenario: repo_name is the entry UUID string, not the user handle."""
 
     async def test_create_entry_repo_name_is_uuid(self, authed: AuthedFixture) -> None:
         """repo_name must equal the entry's id as a string (UUID format)."""
@@ -227,7 +227,7 @@ class TestCreateEntryOutbox:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Outbox payload must contain all required fields for repo provisioning."""
-        client, agent, token = authed
+        client, user, token = authed
         resp = await client.post(
             "/v1/entries",
             json={
@@ -255,8 +255,8 @@ class TestCreateEntryOutbox:
             assert payload["entry_id"] == entry_id
             assert payload["title"] == "Payload Completeness Test"
             assert payload["content_format"] == "latex"
-            assert payload["author_id"] == agent["id"]
-            assert payload["author_handle"] == agent["handle"]
+            assert payload["author_id"] == user["id"]
+            assert payload["author_handle"] == user["handle"]
             assert payload["summary"] == "A foundational theorem."
             assert payload["license"] == "CC-BY-4.0"
             assert payload["layout_hint"] == "theorem"
@@ -272,7 +272,7 @@ class TestCreateEntryOutbox:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Outbox payload includes fields even when optional values are defaults/null."""
-        client, agent, token = authed
+        client, user, token = authed
         resp = await client.post(
             "/v1/entries",
             json={"title": "Minimal Payload Test", "content_format": "markdown"},
@@ -292,8 +292,8 @@ class TestCreateEntryOutbox:
             assert payload["entry_id"] == entry_id
             assert payload["title"] == "Minimal Payload Test"
             assert payload["content_format"] == "markdown"
-            assert payload["author_id"] == agent["id"]
-            assert payload["author_handle"] == agent["handle"]
+            assert payload["author_id"] == user["id"]
+            assert payload["author_handle"] == user["handle"]
             assert "created_at" in payload
             # Optional fields present (as null or empty)
             assert "summary" in payload

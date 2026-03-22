@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.base import Base, TimestampMixin, UUIDMixin
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.entry_ref import EntryRef
@@ -14,15 +14,15 @@ from phiacta.core.models.outbox import Outbox
 
 class TestEntryDefaults:
     def test_entry_defaults(self) -> None:
-        agent_id = uuid4()
+        user_id = uuid4()
         entry_id = uuid4()
         entry = Entry(
             title="Test entry",
             repo_name=str(entry_id),
-            created_by=agent_id,
+            created_by=user_id,
         )
         assert entry.title == "Test entry"
-        assert entry.created_by == agent_id
+        assert entry.created_by == user_id
         assert entry.content_cache is None
         assert entry.forgejo_repo_id is None
         assert entry.current_head_sha is None
@@ -90,31 +90,23 @@ class TestOutboxDefaults:
         assert attempts_col.default.arg == 0
 
 
-class TestAgentDefaults:
-    def test_agent_defaults(self) -> None:
-        agent = Agent(
-            agent_type="human",
+class TestUserDefaults:
+    def test_user_defaults(self) -> None:
+        user = User(
             handle="researcher",
-            email="researcher@example.com",
             password_hash="$2b$12$fakehash",
         )
-        assert agent.agent_type == "human"
-        assert agent.handle == "researcher"
-        assert agent.email == "researcher@example.com"
-        is_active_col = Agent.__table__.c["is_active"]
-        assert is_active_col.server_default is not None
+        assert user.handle == "researcher"
 
 
 class TestUUIDMixin:
     def test_uuid_mixin_generates_uuid(self) -> None:
-        agent = Agent(
-            agent_type="ai",
-            handle="ai-agent",
-            email="ai@example.com",
+        user = User(
+            handle="test-user",
             password_hash="$2b$12$fakehash",
         )
-        assert agent.id is not None or hasattr(Agent, "id")
-        col = Agent.__table__.c["id"]
+        assert user.id is not None or hasattr(User, "id")
+        col = User.__table__.c["id"]
         assert col.primary_key is True
         assert col.default is not None
 

@@ -13,31 +13,31 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.extensions.tags.models import ExtensionTag  # noqa: F401 — register model
-from tests.conftest import make_agent, make_entry
+from tests.conftest import make_user, make_entry
 
 
-async def _create_agent_and_entry(
+async def _create_user_and_entry(
     db_session: AsyncSession,
     *,
     title: str = "Test Entry",
     status: str = "active",
-) -> tuple[Agent, Entry]:
-    """Helper: create an agent and entry in the database."""
+) -> tuple[User, Entry]:
+    """Helper: create a user and entry in the database."""
     suffix = uuid4().hex[:8]
-    agent = Agent(**make_agent(handle=f"repo-test-{suffix}", email=f"repo-test-{suffix}@example.com"))
-    db_session.add(agent)
+    user = User(**make_user(handle=f"repo-test-{suffix}"))
+    db_session.add(user)
     await db_session.flush()
 
-    entry_kwargs = make_entry(created_by=agent.id, title=title, status=status)
+    entry_kwargs = make_entry(created_by=user.id, title=title, status=status)
     # Remove 'tags' key if present (will be removed from make_entry later)
     entry_kwargs.pop("tags", None)
     entry = Entry(**entry_kwargs)
     db_session.add(entry)
     await db_session.flush()
-    return agent, entry
+    return user, entry
 
 
 class TestListByEntry:
@@ -47,11 +47,11 @@ class TestListByEntry:
         """Returns tags associated with the given entry."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, entry = await _create_agent_and_entry(db_session)
+        user, entry = await _create_user_and_entry(db_session)
         repo = TagRepository(db_session)
 
         # Manually insert tags
-        await repo.replace_tags(entry.id, ["physics", "math"], agent.id)
+        await repo.replace_tags(entry.id, ["physics", "math"], user.id)
 
         tags = await repo.list_by_entry(entry.id)
         tag_names = [t.tag for t in tags]
@@ -78,10 +78,10 @@ class TestReplaceTags:
         """Setting tags on an entry with no tags creates the tags."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, entry = await _create_agent_and_entry(db_session)
+        user, entry = await _create_user_and_entry(db_session)
         repo = TagRepository(db_session)
 
-        await repo.replace_tags(entry.id, ["alpha", "beta"], agent.id)
+        await repo.replace_tags(entry.id, ["alpha", "beta"], user.id)
         tags = await repo.list_by_entry(entry.id)
         assert len(tags) == 2
         tag_names = {t.tag for t in tags}
@@ -93,11 +93,11 @@ class TestReplaceTags:
         """Replacing tags removes old tags and sets new ones atomically."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, entry = await _create_agent_and_entry(db_session)
+        user, entry = await _create_user_and_entry(db_session)
         repo = TagRepository(db_session)
 
-        await repo.replace_tags(entry.id, ["old1", "old2"], agent.id)
-        await repo.replace_tags(entry.id, ["new1"], agent.id)
+        await repo.replace_tags(entry.id, ["old1", "old2"], user.id)
+        await repo.replace_tags(entry.id, ["new1"], user.id)
 
         tags = await repo.list_by_entry(entry.id)
         tag_names = {t.tag for t in tags}
@@ -111,11 +111,11 @@ class TestReplaceTags:
         """Replacing with an empty list removes all tags."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, entry = await _create_agent_and_entry(db_session)
+        user, entry = await _create_user_and_entry(db_session)
         repo = TagRepository(db_session)
 
-        await repo.replace_tags(entry.id, ["to-clear"], agent.id)
-        await repo.replace_tags(entry.id, [], agent.id)
+        await repo.replace_tags(entry.id, ["to-clear"], user.id)
+        await repo.replace_tags(entry.id, [], user.id)
 
         tags = await repo.list_by_entry(entry.id)
         assert tags == []
@@ -123,15 +123,15 @@ class TestReplaceTags:
     async def test_replace_tags_records_created_by(
         self, db_session: AsyncSession
     ) -> None:
-        """Each tag record has the correct created_by agent ID."""
+        """Each tag record has the correct created_by user ID."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, entry = await _create_agent_and_entry(db_session)
+        user, entry = await _create_user_and_entry(db_session)
         repo = TagRepository(db_session)
 
-        await repo.replace_tags(entry.id, ["traced"], agent.id)
+        await repo.replace_tags(entry.id, ["traced"], user.id)
         tags = await repo.list_by_entry(entry.id)
-        assert tags[0].created_by == agent.id
+        assert tags[0].created_by == user.id
 
 
 class TestFindEntriesByTags:
@@ -141,14 +141,14 @@ class TestFindEntriesByTags:
         """OR mode returns entries with ANY matching tag."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, entry_a = await _create_agent_and_entry(
+        user, entry_a = await _create_user_and_entry(
             db_session, title="Entry A"
         )
-        _, entry_b = await _create_agent_and_entry(db_session, title="Entry B")
+        _, entry_b = await _create_user_and_entry(db_session, title="Entry B")
 
         repo = TagRepository(db_session)
-        await repo.replace_tags(entry_a.id, ["physics"], agent.id)
-        await repo.replace_tags(entry_b.id, ["math"], agent.id)
+        await repo.replace_tags(entry_a.id, ["physics"], user.id)
+        await repo.replace_tags(entry_b.id, ["math"], user.id)
 
         results, total = await repo.find_entries_by_tags(
             tags=["physics", "math"], mode="or"
@@ -162,16 +162,16 @@ class TestFindEntriesByTags:
         """AND mode returns only entries with ALL matching tags."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, entry_both = await _create_agent_and_entry(
+        user, entry_both = await _create_user_and_entry(
             db_session, title="Both Tags"
         )
-        _, entry_one = await _create_agent_and_entry(
+        _, entry_one = await _create_user_and_entry(
             db_session, title="One Tag"
         )
 
         repo = TagRepository(db_session)
-        await repo.replace_tags(entry_both.id, ["physics", "math"], agent.id)
-        await repo.replace_tags(entry_one.id, ["physics"], agent.id)
+        await repo.replace_tags(entry_both.id, ["physics", "math"], user.id)
+        await repo.replace_tags(entry_one.id, ["physics"], user.id)
 
         results, total = await repo.find_entries_by_tags(
             tags=["physics", "math"], mode="and"
@@ -197,11 +197,11 @@ class TestFindEntriesByTags:
         """Archived entries are excluded by default."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, entry = await _create_agent_and_entry(
+        user, entry = await _create_user_and_entry(
             db_session, title="Archived", status="archived"
         )
         repo = TagRepository(db_session)
-        await repo.replace_tags(entry.id, ["archived-test"], agent.id)
+        await repo.replace_tags(entry.id, ["archived-test"], user.id)
 
         results, total = await repo.find_entries_by_tags(
             tags=["archived-test"], mode="or", status="active"
@@ -213,11 +213,11 @@ class TestFindEntriesByTags:
         """Archived entries are included when include_archived=True."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, entry = await _create_agent_and_entry(
+        user, entry = await _create_user_and_entry(
             db_session, title="Archived Included", status="archived"
         )
         repo = TagRepository(db_session)
-        await repo.replace_tags(entry.id, ["archived-include"], agent.id)
+        await repo.replace_tags(entry.id, ["archived-include"], user.id)
 
         results, total = await repo.find_entries_by_tags(
             tags=["archived-include"], mode="or", status=None
@@ -229,15 +229,15 @@ class TestFindEntriesByTags:
         """find_entries_by_tags supports limit and offset."""
         from phiacta.extensions.tags.repository import TagRepository
 
-        agent, _ = await _create_agent_and_entry(db_session)
+        user, _ = await _create_user_and_entry(db_session)
         repo = TagRepository(db_session)
 
         entries = []
         for i in range(5):
-            _, entry = await _create_agent_and_entry(
+            _, entry = await _create_user_and_entry(
                 db_session, title=f"Page Entry {i}"
             )
-            await repo.replace_tags(entry.id, ["page-test"], agent.id)
+            await repo.replace_tags(entry.id, ["page-test"], user.id)
             entries.append(entry)
 
         page1, total = await repo.find_entries_by_tags(

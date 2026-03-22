@@ -40,7 +40,7 @@ from tests.e2e.conftest import (
     FakeGitService,
     auth_header,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
     set_entry_status,
 )
@@ -91,8 +91,8 @@ def _build_entry_yaml(
     entry_id: str,
     *,
     title: str = "Search TSV Test Entry",
-    agent_id: str = "00000000-0000-0000-0000-000000000000",
-    agent_handle: str = "tsv-test",
+    user_id: str = "00000000-0000-0000-0000-000000000000",
+    user_handle: str = "tsv-test",
 ) -> str:
     """Build a minimal entry.yaml for webhook ingestion."""
     return yaml.dump(
@@ -100,7 +100,7 @@ def _build_entry_yaml(
             "entry_id": f"ent_{entry_id}",
             "schema_version": 1,
             "title": title,
-            "author": {"id": f"usr_{agent_id}", "name": agent_handle},
+            "author": {"id": f"usr_{user_id}", "name": user_handle},
             "created_at": "2026-01-01T00:00:00",
             "content_format": "markdown",
         },
@@ -229,11 +229,11 @@ def _mount_search_tsv_router(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
-    auth = await register_agent(
-        client, handle="tsv-test", email="tsv@example.com"
+    """Register a user and return (client, user_data, token)."""
+    auth = await register_user(
+        client, handle="tsv-test"
     )
-    return client, auth["agent"], auth["access_token"]
+    return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
@@ -325,12 +325,12 @@ class TestGetTsvector:
 
         Flow: set content_cache -> trigger compute -> GET returns tsvector.
         """
-        (client, agent, token), entry = ready_entry
+        (client, user, token), entry = ready_entry
         entry_id = entry["id"]
 
         # Populate content_cache via webhook ingestion
         entry_yaml = _build_entry_yaml(
-            entry_id, agent_id=agent["id"], agent_handle="tsv-test"
+            entry_id, user_id=user["id"], user_handle="tsv-test"
         )
         readme_text = "Quantum entanglement is a phenomenon in physics."
         _populate_fake_git(
@@ -404,7 +404,7 @@ class TestGetTsvector:
         fake_git: FakeGitService,
     ) -> None:
         """GET /{entry_id}?version=v1 returns tsvector for that version."""
-        (client, agent, token), entry = ready_entry
+        (client, user, token), entry = ready_entry
         entry_id = entry["id"]
 
         # Set content_cache and compute
@@ -775,13 +775,13 @@ class TestWebhookTriggersTsvector:
         version_id: str,
     ) -> None:
         """Full lifecycle: create entry, push via webhook, compute tsv, GET tsv."""
-        # Register agent and create entry
+        # Register user and create entry
         uid = uuid4().hex[:8]
-        auth = await register_agent(
-            client, handle=f"tsv-wh-{uid}", email=f"tsv-wh-{uid}@example.com"
+        auth = await register_user(
+            client, handle=f"tsv-wh-{uid}"
         )
         token = auth["access_token"]
-        agent_id = auth["agent"]["id"]
+        user_id = auth["user"]["id"]
 
         entry_data = await create_entry(client, token, title="Webhook TSV Entry")
         entry_id = entry_data["id"]
@@ -795,7 +795,7 @@ class TestWebhookTriggersTsvector:
             "such as superposition and entanglement to perform computation."
         )
         entry_yaml = _build_entry_yaml(
-            entry_id, agent_id=agent_id, agent_handle=f"tsv-wh-{uid}"
+            entry_id, user_id=user_id, user_handle=f"tsv-wh-{uid}"
         )
         _populate_fake_git(
             fake_git, entry_id, entry_yaml=entry_yaml, readme_content=readme_text
@@ -847,11 +847,11 @@ class TestWebhookTriggersTsvector:
         Critical scenario #3: content_cache set to None removes tsvector.
         """
         uid = uuid4().hex[:8]
-        auth = await register_agent(
-            client, handle=f"tsv-clr-{uid}", email=f"tsv-clr-{uid}@example.com"
+        auth = await register_user(
+            client, handle=f"tsv-clr-{uid}"
         )
         token = auth["access_token"]
-        agent_id = auth["agent"]["id"]
+        user_id = auth["user"]["id"]
 
         entry_data = await create_entry(client, token, title="Clear Content Entry")
         entry_id = entry_data["id"]
@@ -860,7 +860,7 @@ class TestWebhookTriggersTsvector:
 
         # First push with content
         entry_yaml = _build_entry_yaml(
-            entry_id, agent_id=agent_id, agent_handle=f"tsv-clr-{uid}"
+            entry_id, user_id=user_id, user_handle=f"tsv-clr-{uid}"
         )
         _populate_fake_git(
             fake_git, entry_id, entry_yaml=entry_yaml,

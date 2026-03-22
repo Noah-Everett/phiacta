@@ -14,10 +14,10 @@ import os
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.repositories.entry_repository import EntryRepository
-from tests.conftest import make_agent, make_entry
+from tests.conftest import make_user, make_entry
 
 needs_db = pytest.mark.skipif(
     "TEST_DATABASE_URL" not in os.environ,
@@ -31,15 +31,15 @@ class TestListAllForReconciliation:
 
     async def test_returns_all_entries(self, db_session: AsyncSession) -> None:
         """Should return all entries regardless of status."""
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
 
-        active = Entry(**make_entry(created_by=agent.id, title="Active", status="active"))
-        archived = Entry(**make_entry(created_by=agent.id, title="Archived", status="archived"))
-        draft = Entry(**make_entry(created_by=agent.id, title="Draft", status="draft"))
+        active = Entry(**make_entry(created_by=user.id, title="Active", status="active"))
+        archived = Entry(**make_entry(created_by=user.id, title="Archived", status="archived"))
+        draft = Entry(**make_entry(created_by=user.id, title="Draft", status="draft"))
 
         for entry in [active, archived, draft]:
             await repo.create(entry)
@@ -60,12 +60,12 @@ class TestListAllForReconciliation:
 
     async def test_includes_required_fields(self, db_session: AsyncSession) -> None:
         """Each result must include: id, current_head_sha, repo_status, status."""
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
-        entry = Entry(**make_entry(created_by=agent.id, title="Fields Test"))
+        entry = Entry(**make_entry(created_by=user.id, title="Fields Test"))
         entry.current_head_sha = "a" * 40
         entry.repo_status = "ready"
         await repo.create(entry)
@@ -83,12 +83,12 @@ class TestListAllForReconciliation:
         self, db_session: AsyncSession
     ) -> None:
         """Entries with current_head_sha=None should still be returned."""
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
-        entry = Entry(**make_entry(created_by=agent.id, title="No SHA"))
+        entry = Entry(**make_entry(created_by=user.id, title="No SHA"))
         assert entry.current_head_sha is None
         await repo.create(entry)
 
@@ -98,14 +98,14 @@ class TestListAllForReconciliation:
 
     async def test_many_entries_all_returned(self, db_session: AsyncSession) -> None:
         """Should handle a realistic number of entries without pagination issues."""
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
         created_ids = set()
         for i in range(25):
-            entry = Entry(**make_entry(created_by=agent.id, title=f"Entry {i}"))
+            entry = Entry(**make_entry(created_by=user.id, title=f"Entry {i}"))
             await repo.create(entry)
             created_ids.add(entry.id)
 
@@ -117,12 +117,12 @@ class TestListAllForReconciliation:
         self, db_session: AsyncSession
     ) -> None:
         """Provisioning entries must be included for stuck-provisioning detection."""
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
-        entry = Entry(**make_entry(created_by=agent.id, title="Provisioning"))
+        entry = Entry(**make_entry(created_by=user.id, title="Provisioning"))
         assert entry.repo_status == "provisioning"
         await repo.create(entry)
 

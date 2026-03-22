@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.entry_guards import get_owned_entry, get_writable_entry
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_agent
+from phiacta.core.auth.dependencies import get_current_user
 from phiacta.core.db.session import get_db
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.common import PaginatedResponse
@@ -89,11 +89,11 @@ async def get_entry(
 async def create_entry(
     request: Request,
     body: EntryCreate,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> EntryResponse:
     service = EntryService(db)
-    entry = await service.create_entry(body, agent)
+    entry = await service.create_entry(body, user)
     return EntryResponse.model_validate(entry)
 
 
@@ -103,7 +103,7 @@ async def update_entry(
     request: Request,
     entry_id: UUID,
     body: EntryUpdate,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> EntryResponse:
@@ -112,11 +112,11 @@ async def update_entry(
     Writes the updated ``.phiacta/entry.yaml`` to git. The DB is updated
     asynchronously by the webhook ingestion pipeline.
     """
-    entry = await get_writable_entry(entry_id, agent, db)
+    entry = await get_writable_entry(entry_id, user, db)
 
     service = EntryService(db, git_service)
     try:
-        await service.update_entry_metadata(entry, body, agent)
+        await service.update_entry_metadata(entry, body, user)
     except RepoNotFoundError as exc:
         raise HTTPException(
             status_code=404, detail="Entry repository not found",
@@ -134,12 +134,12 @@ async def update_entry(
 async def archive_entry(
     request: Request,
     entry_id: UUID,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> EntryResponse:
     """Archive an entry — makes it read-only, preserving all data."""
-    entry = await get_owned_entry(entry_id, agent, db)
+    entry = await get_owned_entry(entry_id, user, db)
 
     if entry.repo_status != "ready":
         raise HTTPException(
@@ -164,12 +164,12 @@ async def archive_entry(
 async def unarchive_entry(
     request: Request,
     entry_id: UUID,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> EntryResponse:
     """Unarchive an entry — restores it to active status."""
-    entry = await get_owned_entry(entry_id, agent, db)
+    entry = await get_owned_entry(entry_id, user, db)
 
     service = EntryService(db, git_service)
     try:

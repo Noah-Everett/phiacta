@@ -23,7 +23,7 @@ from phiacta.core.services.git_service import AgentInfo, CommitInfo, DiffInfo, F
 from tests.e2e.conftest import (
     FakeGitService,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
 )
 
@@ -32,12 +32,12 @@ type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
+    """Register a user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_agent(
-        client, handle=f"hist-{uid}", email=f"hist-{uid}@example.com"
+    auth = await register_user(
+        client, handle=f"hist-{uid}"
     )
-    return client, auth["agent"], auth["access_token"]
+    return client, auth["user"], auth["access_token"]
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ class TestListCommits:
             CommitInfo(
                 sha="abc123def456",
                 message="Initial commit",
-                author=AgentInfo(name="test-agent", email="test@phiacta.local"),
+                author=AgentInfo(name="test-user", email="test@phiacta.local"),
                 timestamp=ts,
             ),
         ]
@@ -77,7 +77,7 @@ class TestListCommits:
         assert len(data) == 1
         assert data[0]["sha"] == "abc123def456"
         assert data[0]["message"] == "Initial commit"
-        assert data[0]["author"]["name"] == "test-agent"
+        assert data[0]["author"]["name"] == "test-user"
 
     async def test_list_commits_multiple_commits(
         self,
@@ -97,13 +97,13 @@ class TestListCommits:
             CommitInfo(
                 sha="sha_second",
                 message="Second commit",
-                author=AgentInfo(name="agent", email="a@phiacta.local"),
+                author=AgentInfo(name="user", email="user@phiacta.local"),
                 timestamp=ts2,
             ),
             CommitInfo(
                 sha="sha_first",
                 message="First commit",
-                author=AgentInfo(name="agent", email="a@phiacta.local"),
+                author=AgentInfo(name="user", email="user@phiacta.local"),
                 timestamp=ts1,
             ),
         ]
@@ -168,7 +168,7 @@ class TestListCommits:
             CommitInfo(
                 sha=f"sha_{i:04d}",
                 message=f"Commit {i}",
-                author=AgentInfo(name="agent", email="a@phiacta.local"),
+                author=AgentInfo(name="user", email="user@phiacta.local"),
                 timestamp=ts,
             )
             for i in range(5)

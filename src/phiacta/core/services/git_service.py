@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class AgentInfo:
-    """Git author identity derived from a Phiacta agent."""
+    """Git author identity derived from a Phiacta user."""
 
     name: str
-    email: str  # "{agent_uuid}@phiacta.local"
+    email: str  # "{user_uuid}@phiacta.local"
 
 
 @dataclass(frozen=True, slots=True)

@@ -32,7 +32,7 @@ from tests.e2e.conftest import (
     TEST_WEBHOOK_SECRET,
     FakeGitService,
     auth_header,
-    register_agent,
+    register_user,
 )
 
 
@@ -74,10 +74,10 @@ def _make_push_payload(
 async def _create_entry_for_webhook(
     client: httpx.AsyncClient,
 ) -> tuple[str, str, str]:
-    """Register an agent, create an entry, return (entry_id, repo_name, token)."""
+    """Register a user, create an entry, return (entry_id, repo_name, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_agent(
-        client, handle=f"wh-{uid}", email=f"wh-{uid}@example.com"
+    auth = await register_user(
+        client, handle=f"wh-{uid}"
     )
     token = auth["access_token"]
     resp = await client.post(

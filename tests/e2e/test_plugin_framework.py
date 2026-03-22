@@ -16,7 +16,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from tests.e2e.conftest import create_entry, register_agent
+from tests.e2e.conftest import create_entry, register_user
 
 # ---------------------------------------------------------------------------
 # Helpers: synthetic plugin modules
@@ -115,13 +115,12 @@ class TestAppWithNoPlugins:
         """Core POST /v1/auth/register works when no plugins loaded."""
         resp = await client.post("/v1/auth/register", json={
             "handle": f"no-plugin-{uuid4().hex[:8]}",
-            "email": f"noplugin-{uuid4().hex[:8]}@example.com",
             "password": "TestPassword123!",
         })
         assert resp.status_code == 201
         data = resp.json()
         assert "access_token" in data
-        assert "agent" in data
+        assert "user" in data
 
     async def test_nonexistent_plugin_endpoint_returns_404(
         self, client: httpx.AsyncClient
@@ -295,13 +294,12 @@ class TestAppWithPluginEnabled:
         _install_test_extension: str,
     ) -> None:
         """Core auth registration and login work with plugins enabled."""
-        auth = await register_agent(
+        auth = await register_user(
             client,
             handle=f"plugtest-{uuid4().hex[:8]}",
-            email=f"plugtest-{uuid4().hex[:8]}@example.com",
         )
         assert "access_token" in auth
-        assert "agent" in auth
+        assert "user" in auth
 
     async def test_core_entry_creation_works_with_plugin(
         self,
@@ -309,10 +307,9 @@ class TestAppWithPluginEnabled:
         _install_test_extension: str,
     ) -> None:
         """Full entry creation flow works with plugins enabled."""
-        auth = await register_agent(
+        auth = await register_user(
             client,
             handle=f"plugentry-{uuid4().hex[:8]}",
-            email=f"plugentry-{uuid4().hex[:8]}@example.com",
         )
         token = auth["access_token"]
         entry = await create_entry(client, token, title="Plugin Coexistence Test")

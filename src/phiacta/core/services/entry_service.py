@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.outbox import Outbox
 from phiacta.core.schemas.entry import EntryCreate, EntryUpdate
@@ -29,7 +29,7 @@ class EntryService:
         self._session = session
         self._git = git_service
 
-    async def create_entry(self, body: EntryCreate, agent: Agent) -> Entry:
+    async def create_entry(self, body: EntryCreate, user: User) -> Entry:
         """Create an entry and enqueue its Forgejo repo provisioning.
 
         Creates both the Entry row and the Outbox row in a single
@@ -44,7 +44,7 @@ class EntryService:
             layout_hint=body.layout_hint,
             summary=body.summary,
             license=body.license,
-            created_by=agent.id,
+            created_by=user.id,
             # repo_name must be the entry UUID — matches ForgejoGitService
             # and the webhook handler's repo name → entry_id lookup.
             repo_name="placeholder",  # set after flush gives us the id
@@ -64,8 +64,8 @@ class EntryService:
                 "entry_id": str(entry.id),
                 "title": body.title,
                 "content_format": body.content_format,
-                "author_id": str(agent.id),
-                "author_handle": agent.handle,
+                "author_id": str(user.id),
+                "author_handle": user.handle,
                 "summary": body.summary,
                 "license": body.license,
                 "layout_hint": body.layout_hint,
@@ -80,7 +80,7 @@ class EntryService:
         return entry
 
     async def update_entry_metadata(
-        self, entry: Entry, body: EntryUpdate, agent: Agent,
+        self, entry: Entry, body: EntryUpdate, user: User,
     ) -> str:
         """Update entry metadata via a git-first write.
 
@@ -109,7 +109,7 @@ class EntryService:
         changed_fields = ", ".join(updates.keys())
         message = f"Update metadata: {changed_fields}"
         author = AgentInfo(
-            name=agent.handle, email=f"{agent.id}@phiacta.local",
+            name=user.handle, email=f"{user.id}@phiacta.local",
         )
         sha = await self._git.commit_files(
             entry.id,

@@ -26,7 +26,7 @@ import phiacta.extensions.tags.models  # noqa: F401
 from tests.e2e.conftest import (
     auth_header,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
     set_entry_status,
 )
@@ -66,11 +66,11 @@ def _mount_tags_router(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
-    auth = await register_agent(
-        client, handle="tags-test", email="tags@example.com"
+    """Register a user and return (client, user_data, token)."""
+    auth = await register_user(
+        client, handle="tags-test"
     )
-    return client, auth["agent"], auth["access_token"]
+    return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
@@ -126,7 +126,7 @@ class TestSetTags:
         ready_entry: tuple[AuthedFixture, dict],
     ) -> None:
         """Each tag object in the response has tag, created_by (UUID), created_at (ISO datetime)."""
-        (client, agent, token), entry = ready_entry
+        (client, user, token), entry = ready_entry
         entry_id = entry["id"]
 
         resp = await client.put(
@@ -138,7 +138,7 @@ class TestSetTags:
         data = resp.json()
         tag_obj = data["tags"][0]
         assert tag_obj["tag"] == "relativity"
-        assert tag_obj["created_by"] == agent["id"]
+        assert tag_obj["created_by"] == user["id"]
         # created_at must be a parseable ISO datetime string
         assert len(tag_obj["created_at"]) >= 19  # at least YYYY-MM-DDTHH:MM:SS
 
@@ -273,8 +273,8 @@ class TestFindEntriesByTags:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """OR mode returns entries with ANY matching tag."""
-        auth = await register_agent(
-            client, handle="find-or", email="findor@example.com"
+        auth = await register_user(
+            client, handle="find-or"
         )
         token = auth["access_token"]
 
@@ -312,8 +312,8 @@ class TestFindEntriesByTags:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """AND mode returns only entries with ALL matching tags."""
-        auth = await register_agent(
-            client, handle="find-and", email="findand@example.com"
+        auth = await register_user(
+            client, handle="find-and"
         )
         token = auth["access_token"]
 
@@ -372,8 +372,8 @@ class TestFindEntriesByTags:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Find-by-tags supports limit and offset pagination."""
-        auth = await register_agent(
-            client, handle="find-page", email="findpage@example.com"
+        auth = await register_user(
+            client, handle="find-page"
         )
         token = auth["access_token"]
 
@@ -423,8 +423,8 @@ class TestFindEntriesByTags:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Each item in find-by-tags response has entry_id and title."""
-        auth = await register_agent(
-            client, handle="find-shape", email="findshape@example.com"
+        auth = await register_user(
+            client, handle="find-shape"
         )
         token = auth["access_token"]
 
@@ -455,8 +455,8 @@ class TestFindEntriesByTags:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Archived entries are excluded from find-by-tags by default."""
-        auth = await register_agent(
-            client, handle="find-arch", email="findarch@example.com"
+        auth = await register_user(
+            client, handle="find-arch"
         )
         token = auth["access_token"]
 
@@ -488,8 +488,8 @@ class TestFindEntriesByTags:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Archived entries are included when include_archived=true."""
-        auth = await register_agent(
-            client, handle="find-incl", email="findincl@example.com"
+        auth = await register_user(
+            client, handle="find-incl"
         )
         token = auth["access_token"]
 
@@ -543,11 +543,11 @@ class TestTagsAuthorization:
         self,
         ready_entry: tuple[AuthedFixture, dict],
     ) -> None:
-        """PUT by a non-owner agent returns 403."""
+        """PUT by a non-owner user returns 403."""
         (client, _, _), entry = ready_entry
 
-        other = await register_agent(
-            client, handle="non-owner-tags", email="nonowner@example.com"
+        other = await register_user(
+            client, handle="non-owner-tags"
         )
         resp = await client.put(
             f"/v1/extensions/tags/{entry['id']}",
@@ -845,8 +845,8 @@ class TestTagsIdempotencyAndIsolation:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Tags on entry A do not appear when listing tags for entry B."""
-        auth = await register_agent(
-            client, handle="isolation", email="isolation@example.com"
+        auth = await register_user(
+            client, handle="isolation"
         )
         token = auth["access_token"]
 
@@ -898,8 +898,8 @@ class TestTagsIdempotencyAndIsolation:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Omitting mode defaults to OR — entries with any tag match."""
-        auth = await register_agent(
-            client, handle="default-mode", email="defaultmode@example.com"
+        auth = await register_user(
+            client, handle="default-mode"
         )
         token = auth["access_token"]
 
@@ -935,8 +935,8 @@ class TestTagsIdempotencyAndIsolation:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Duplicate tags in search query are deduplicated — ?tags=a,a&mode=and works."""
-        auth = await register_agent(
-            client, handle="dedup-search", email="dedupsearch@example.com"
+        auth = await register_user(
+            client, handle="dedup-search"
         )
         token = auth["access_token"]
 
@@ -972,7 +972,7 @@ class TestTagsPersistence:
         fake_git,  # type: ignore[type-arg]
     ) -> None:
         """Tags set via the extension are not affected by PATCH /entries/{id}."""
-        (client, agent, token), entry = ready_entry
+        (client, user, token), entry = ready_entry
         entry_id = entry["id"]
 
         # Set tags via extension
@@ -989,7 +989,7 @@ class TestTagsPersistence:
             "entry_id": f"ent_{entry_id}",
             "schema_version": 1,
             "title": "Tags Test Entry",
-            "author": {"id": f"usr_{agent['id']}", "name": "tags-test"},
+            "author": {"id": f"usr_{user['id']}", "name": "tags-test"},
             "created_at": "2026-01-01T00:00:00",
             "content_format": "markdown",
         }, default_flow_style=False, allow_unicode=True, sort_keys=False).encode()
@@ -1083,7 +1083,7 @@ class TestEntryLayerTagRemoval:
         fake_git,  # type: ignore[type-arg]
     ) -> None:
         """PATCH /v1/entries/{id} should either reject or ignore 'tags'."""
-        (client, agent, token), entry = ready_entry
+        (client, user, token), entry = ready_entry
         entry_id = entry["id"]
 
         # Seed entry.yaml for PATCH
@@ -1093,7 +1093,7 @@ class TestEntryLayerTagRemoval:
             "entry_id": f"ent_{entry_id}",
             "schema_version": 1,
             "title": "Tags Test Entry",
-            "author": {"id": f"usr_{agent['id']}", "name": "tags-test"},
+            "author": {"id": f"usr_{user['id']}", "name": "tags-test"},
             "created_at": "2026-01-01T00:00:00",
             "content_format": "markdown",
         }, default_flow_style=False, allow_unicode=True, sort_keys=False).encode()

@@ -52,17 +52,17 @@ class TagService:
         self._entry_repo = EntryRepository(session)
 
     async def set_tags(
-        self, entry_id: UUID, tags: list[str], agent_id: UUID
+        self, entry_id: UUID, tags: list[str], user_id: UUID
     ) -> list[ExtensionTag]:
         """Replace all tags on an entry.
 
-        Validates that the entry exists, is ready, and the agent is the owner.
+        Validates that the entry exists, is ready, and the user is the owner.
         Normalizes tags before persisting.
 
         Raises:
             LookupError: Entry not found.
             ValueError: Entry repo not ready.
-            PermissionError: Agent is not the entry owner.
+            PermissionError: User is not the entry owner.
         """
         entry = await self._entry_repo.get_by_id(entry_id)
         if entry is None:
@@ -71,8 +71,8 @@ class TagService:
         if entry.repo_status != "ready":
             raise ValueError("Entry repository is not yet ready")
 
-        if entry.created_by != agent_id:
+        if entry.created_by != user_id:
             raise PermissionError("Only the entry owner can set tags")
 
         normalized = normalize_tags(tags)
-        return await self._tag_repo.replace_tags(entry_id, normalized, agent_id)
+        return await self._tag_repo.replace_tags(entry_id, normalized, user_id)

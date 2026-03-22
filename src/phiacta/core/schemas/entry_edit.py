@@ -34,7 +34,6 @@ class EditProposalAuthor(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     handle: str
-    agent_type: str
 
 
 class EditProposalListItem(BaseModel):

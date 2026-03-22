@@ -14,7 +14,7 @@ from tests.e2e.conftest import (
     FakeGitService,
     auth_header,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
 )
 
@@ -23,14 +23,14 @@ type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
-    auth = await register_agent(client, handle="entry-test", email="entry@example.com")
-    return client, auth["agent"], auth["access_token"]
+    """Register a user and return (client, user_data, token)."""
+    auth = await register_user(client, handle="entry-test")
+    return client, auth["user"], auth["access_token"]
 
 
 class TestCreateEntry:
     async def test_create_entry(self, authed: AuthedFixture) -> None:
-        client, agent, token = authed
+        client, user, token = authed
         resp = await client.post("/v1/entries", json={
             "title": "Newton's First Law",
             "layout_hint": "law",
@@ -42,7 +42,7 @@ class TestCreateEntry:
         assert data["content_format"] == "markdown"
         assert data["status"] == "active"
         assert data["repo_status"] == "provisioning"
-        assert data["created_by"] == agent["id"]
+        assert data["created_by"] == user["id"]
 
     async def test_create_entry_unauthenticated(self, client: httpx.AsyncClient) -> None:
         resp = await client.post("/v1/entries", json={
@@ -156,7 +156,7 @@ class TestUpdateEntry:
         e2e_session_factory,
         fake_git: FakeGitService,
     ) -> None:
-        client, agent, token = authed
+        client, user, token = authed
         headers = auth_header(token)
         entry = await create_entry(client, token, title="Original")
         entry_id = entry["id"]
@@ -169,7 +169,7 @@ class TestUpdateEntry:
             "entry_id": f"ent_{entry_id}",
             "schema_version": 1,
             "title": "Original",
-            "author": {"id": f"usr_{agent['id']}", "name": "entry-test"},
+            "author": {"id": f"usr_{user['id']}", "name": "entry-test"},
             "created_at": "2026-01-01T00:00:00",
             "content_format": "markdown",
         }, default_flow_style=False, allow_unicode=True, sort_keys=False).encode()
@@ -185,11 +185,11 @@ class TestUpdateEntry:
     async def test_update_entry_wrong_author(
         self, client: httpx.AsyncClient, e2e_session_factory,
     ) -> None:
-        auth_a = await register_agent(client, handle="author-a", email="a@example.com")
+        auth_a = await register_user(client, handle="author-a")
         entry = await create_entry(client, auth_a["access_token"], title="A's Entry")
         await set_entry_repo_status(e2e_session_factory, entry["id"], "ready")
 
-        auth_b = await register_agent(client, handle="author-b", email="b@example.com")
+        auth_b = await register_user(client, handle="author-b")
         resp = await client.patch(f"/v1/entries/{entry['id']}", json={
             "title": "Hijacked",
         }, headers=auth_header(auth_b["access_token"]))

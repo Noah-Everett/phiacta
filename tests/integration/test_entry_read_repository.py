@@ -19,12 +19,12 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.entry_ref import EntryRef
 from phiacta.core.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.core.repositories.entry_repository import EntryRepository
-from tests.conftest import make_agent, make_entry, make_entry_ref
+from tests.conftest import make_user, make_entry, make_entry_ref
 
 needs_db = pytest.mark.skipif(
     "TEST_DATABASE_URL" not in os.environ,
@@ -32,21 +32,20 @@ needs_db = pytest.mark.skipif(
 )
 
 
-async def _setup_agent(db_session: AsyncSession) -> Agent:
-    """Create and flush a test agent."""
-    agent = Agent(**make_agent(
+async def _setup_user(db_session: AsyncSession) -> User:
+    """Create and flush a test user."""
+    user = User(**make_user(
         handle=f"read-repo-{uuid4().hex[:8]}",
-        email=f"read-repo-{uuid4().hex[:8]}@example.com",
     ))
-    db_session.add(agent)
+    db_session.add(user)
     await db_session.flush()
-    return agent
+    return user
 
 
 async def _create_entry(
     db_session: AsyncSession,
     repo: EntryRepository,
-    agent: Agent,
+    user: User,
     *,
     title: str = "Test Entry",
     layout_hint: str | None = None,
@@ -56,7 +55,7 @@ async def _create_entry(
     """Create an entry in the DB and return it."""
     entry = Entry(
         **make_entry(
-            created_by=agent.id,
+            created_by=user.id,
             title=title,
             layout_hint=layout_hint,
             status=status,
@@ -74,14 +73,14 @@ class TestListEntriesDefaultStatus:
         self, db_session: AsyncSession
     ) -> None:
         """When status is not provided (or None/default), only active entries returned."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         active = await _create_entry(
-            db_session, repo, agent, title="Active", status="active"
+            db_session, repo, user, title="Active", status="active"
         )
         archived = await _create_entry(
-            db_session, repo, agent, title="Archived", status="archived"
+            db_session, repo, user, title="Archived", status="archived"
         )
 
         # Default call (no status param) should return only active
@@ -94,14 +93,14 @@ class TestListEntriesDefaultStatus:
         self, db_session: AsyncSession
     ) -> None:
         """Explicit status='active' behaves same as default."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         active = await _create_entry(
-            db_session, repo, agent, title="Active Explicit", status="active"
+            db_session, repo, user, title="Active Explicit", status="active"
         )
         archived = await _create_entry(
-            db_session, repo, agent, title="Archived Explicit", status="archived"
+            db_session, repo, user, title="Archived Explicit", status="archived"
         )
 
         entries = await repo.list_entries(status="active")
@@ -118,14 +117,14 @@ class TestListEntriesStatusAll:
         self, db_session: AsyncSession
     ) -> None:
         """status='all' bypasses status filtering entirely."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         active = await _create_entry(
-            db_session, repo, agent, title="Active All", status="active"
+            db_session, repo, user, title="Active All", status="active"
         )
         archived = await _create_entry(
-            db_session, repo, agent, title="Archived All", status="archived"
+            db_session, repo, user, title="Archived All", status="archived"
         )
 
         entries = await repo.list_entries(status=None)
@@ -137,19 +136,19 @@ class TestListEntriesStatusAll:
         self, db_session: AsyncSession
     ) -> None:
         """status='all' combined with layout_hint still filters by hint."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         active_law = await _create_entry(
-            db_session, repo, agent, title="Active Law",
+            db_session, repo, user, title="Active Law",
             layout_hint="law", status="active",
         )
         archived_law = await _create_entry(
-            db_session, repo, agent, title="Archived Law",
+            db_session, repo, user, title="Archived Law",
             layout_hint="law", status="archived",
         )
         active_theorem = await _create_entry(
-            db_session, repo, agent, title="Active Theorem",
+            db_session, repo, user, title="Active Theorem",
             layout_hint="theorem", status="active",
         )
 
@@ -168,14 +167,14 @@ class TestListEntriesStatusArchived:
         self, db_session: AsyncSession
     ) -> None:
         """Explicit status='archived' returns only archived entries."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         await _create_entry(
-            db_session, repo, agent, title="Active Skip", status="active"
+            db_session, repo, user, title="Active Skip", status="active"
         )
         archived = await _create_entry(
-            db_session, repo, agent, title="Archived Only", status="archived"
+            db_session, repo, user, title="Archived Only", status="archived"
         )
 
         entries = await repo.list_entries(status="archived")
@@ -193,15 +192,15 @@ class TestCountEntriesMatchesList:
         self, db_session: AsyncSession
     ) -> None:
         """Count with default status matches list with default status."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         for i in range(3):
             await _create_entry(
-                db_session, repo, agent, title=f"Count Active {i}", status="active"
+                db_session, repo, user, title=f"Count Active {i}", status="active"
             )
         await _create_entry(
-            db_session, repo, agent, title="Count Archived", status="archived"
+            db_session, repo, user, title="Count Archived", status="archived"
         )
 
         entries = await repo.list_entries()
@@ -213,15 +212,15 @@ class TestCountEntriesMatchesList:
         self, db_session: AsyncSession
     ) -> None:
         """Count with status='all' matches list with status='all'."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         for i in range(2):
             await _create_entry(
-                db_session, repo, agent, title=f"All Active {i}", status="active"
+                db_session, repo, user, title=f"All Active {i}", status="active"
             )
         await _create_entry(
-            db_session, repo, agent, title="All Archived", status="archived"
+            db_session, repo, user, title="All Archived", status="archived"
         )
 
         entries = await repo.list_entries(status=None)
@@ -233,16 +232,16 @@ class TestCountEntriesMatchesList:
         self, db_session: AsyncSession
     ) -> None:
         """Count and list agree when filtered by layout_hint."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         for i in range(3):
             await _create_entry(
-                db_session, repo, agent,
+                db_session, repo, user,
                 title=f"Law {i}", layout_hint="law",
             )
         await _create_entry(
-            db_session, repo, agent,
+            db_session, repo, user,
             title="Theorem", layout_hint="theorem",
         )
 
@@ -255,15 +254,15 @@ class TestCountEntriesMatchesList:
         self, db_session: AsyncSession
     ) -> None:
         """Count and list agree for status='archived'."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         await _create_entry(
-            db_session, repo, agent, title="Active", status="active"
+            db_session, repo, user, title="Active", status="active"
         )
         for i in range(2):
             await _create_entry(
-                db_session, repo, agent,
+                db_session, repo, user,
                 title=f"Archived {i}", status="archived",
             )
 
@@ -281,17 +280,17 @@ class TestListEntriesOrdering:
         self, db_session: AsyncSession
     ) -> None:
         """Entries created later appear first in the list."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         first = await _create_entry(
-            db_session, repo, agent, title="First"
+            db_session, repo, user, title="First"
         )
         second = await _create_entry(
-            db_session, repo, agent, title="Second"
+            db_session, repo, user, title="Second"
         )
         third = await _create_entry(
-            db_session, repo, agent, title="Third"
+            db_session, repo, user, title="Third"
         )
 
         entries = await repo.list_entries()
@@ -310,13 +309,13 @@ class TestListEntriesPaginationIntegration:
 
     async def test_limit_and_offset(self, db_session: AsyncSession) -> None:
         """limit and offset produce correct slices."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         created = []
         for i in range(5):
             e = await _create_entry(
-                db_session, repo, agent, title=f"Page Entry {i}"
+                db_session, repo, user, title=f"Page Entry {i}"
             )
             created.append(e)
 
@@ -333,10 +332,10 @@ class TestListEntriesPaginationIntegration:
 
     async def test_offset_beyond_total(self, db_session: AsyncSession) -> None:
         """Offset beyond total returns empty list."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
-        await _create_entry(db_session, repo, agent, title="Only One")
+        await _create_entry(db_session, repo, user, title="Only One")
 
         entries = await repo.list_entries(limit=10, offset=100)
         assert entries == []
@@ -350,11 +349,11 @@ class TestGetByIdFields:
         self, db_session: AsyncSession
     ) -> None:
         """Fetched entry has all expected model fields populated."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         repo = EntryRepository(db_session)
 
         entry = await _create_entry(
-            db_session, repo, agent,
+            db_session, repo, user,
             title="Full Fields Entry",
             layout_hint="paper",
             content_format="latex",
@@ -369,7 +368,7 @@ class TestGetByIdFields:
         assert fetched.status == "active"
         assert fetched.repo_status == "provisioning"
         assert fetched.schema_version == 1
-        assert fetched.created_by == agent.id
+        assert fetched.created_by == user.id
         assert fetched.created_at is not None
         assert fetched.updated_at is not None
 
@@ -390,15 +389,15 @@ class TestEntryRefListByEntryForDetail:
         self, db_session: AsyncSession
     ) -> None:
         """direction='outgoing' returns only refs where from_entry_id matches."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         entry_repo = EntryRepository(db_session)
         ref_repo = EntryRefRepository(db_session)
 
         source = await _create_entry(
-            db_session, entry_repo, agent, title="Ref Source"
+            db_session, entry_repo, user, title="Ref Source"
         )
         target = await _create_entry(
-            db_session, entry_repo, agent, title="Ref Target"
+            db_session, entry_repo, user, title="Ref Target"
         )
 
         ref = EntryRef(
@@ -423,15 +422,15 @@ class TestEntryRefListByEntryForDetail:
         self, db_session: AsyncSession
     ) -> None:
         """direction='incoming' returns only refs where to_entry_id matches."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         entry_repo = EntryRepository(db_session)
         ref_repo = EntryRefRepository(db_session)
 
         source = await _create_entry(
-            db_session, entry_repo, agent, title="Incoming Source"
+            db_session, entry_repo, user, title="Incoming Source"
         )
         target = await _create_entry(
-            db_session, entry_repo, agent, title="Incoming Target"
+            db_session, entry_repo, user, title="Incoming Target"
         )
 
         ref = EntryRef(
@@ -456,21 +455,21 @@ class TestEntryRefListByEntryForDetail:
         self, db_session: AsyncSession
     ) -> None:
         """Multiple refs in both directions are correctly separated."""
-        agent = await _setup_agent(db_session)
+        user = await _setup_user(db_session)
         entry_repo = EntryRepository(db_session)
         ref_repo = EntryRefRepository(db_session)
 
         hub = await _create_entry(
-            db_session, entry_repo, agent, title="Hub"
+            db_session, entry_repo, user, title="Hub"
         )
         target_a = await _create_entry(
-            db_session, entry_repo, agent, title="Target A"
+            db_session, entry_repo, user, title="Target A"
         )
         target_b = await _create_entry(
-            db_session, entry_repo, agent, title="Target B"
+            db_session, entry_repo, user, title="Target B"
         )
         source_c = await _create_entry(
-            db_session, entry_repo, agent, title="Source C"
+            db_session, entry_repo, user, title="Source C"
         )
 
         # hub -> target_a, hub -> target_b (outgoing)

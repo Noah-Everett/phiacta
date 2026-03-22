@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tests.e2e.conftest import (
     FakeGitService,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
 )
 
@@ -32,12 +32,12 @@ type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
+    """Register a user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_agent(
-        client, handle=f"files-{uid}", email=f"files-{uid}@example.com"
+    auth = await register_user(
+        client, handle=f"files-{uid}"
     )
-    return client, auth["agent"], auth["access_token"]
+    return client, auth["user"], auth["access_token"]
 
 
 # ---------------------------------------------------------------------------

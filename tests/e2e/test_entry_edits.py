@@ -10,7 +10,7 @@ Tests the full API contract for:
 - POST /v1/entries/{entry_id}/edits/{number}/merge  -- merge proposal
 - POST /v1/entries/{entry_id}/edits/{number}/close  -- close proposal
 
-Edit proposals allow any authenticated agent to propose changes to an entry.
+Edit proposals allow any authenticated user to propose changes to an entry.
 Only the entry owner can merge or close proposals.
 """
 
@@ -27,7 +27,7 @@ from tests.e2e.conftest import (
     FakeGitService,
     auth_header,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
     set_entry_status,
 )
@@ -42,22 +42,22 @@ def _b64(text: str) -> str:
 
 @pytest.fixture
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent (the entry owner) and return (client, agent_data, token)."""
+    """Register a user (the entry owner) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_agent(
-        client, handle=f"owner-{uid}", email=f"owner-{uid}@example.com"
+    auth = await register_user(
+        client, handle=f"owner-{uid}"
     )
-    return client, auth["agent"], auth["access_token"]
+    return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
 async def proposer(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register a second agent (a non-owner proposer) and return (client, agent_data, token)."""
+    """Register a second user (a non-owner proposer) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_agent(
-        client, handle=f"proposer-{uid}", email=f"proposer-{uid}@example.com"
+    auth = await register_user(
+        client, handle=f"proposer-{uid}"
     )
-    return client, auth["agent"], auth["access_token"]
+    return client, auth["user"], auth["access_token"]
 
 
 async def _create_ready_entry(
@@ -78,7 +78,7 @@ async def _create_ready_entry(
 
 
 class TestCreateEditProposal:
-    """Scenario: An authenticated agent creates an edit proposal for an entry."""
+    """Scenario: An authenticated user creates an edit proposal for an entry."""
 
     async def test_create_proposal(
         self,
@@ -89,7 +89,7 @@ class TestCreateEditProposal:
     ) -> None:
         """POST /edits returns 201 with correct fields for a valid proposal."""
         client, _, owner_token = owner
-        _, proposer_agent, proposer_token = proposer
+        _, proposer_user, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
         entry_id = entry["id"]
 
@@ -109,8 +109,7 @@ class TestCreateEditProposal:
         assert data["body"] == "Corrected spelling of 'hypothesis'"
         assert data["state"] == "open"
         assert data["is_draft"] is False
-        assert data["author"]["handle"] == proposer_agent["handle"]
-        assert data["author"]["agent_type"] == proposer_agent["agent_type"]
+        assert data["author"]["handle"] == proposer_user["handle"]
         assert data["base_branch"] == "main"
         assert data["head_branch"]  # non-empty branch name
         assert data["created_at"] is not None
@@ -124,7 +123,7 @@ class TestCreateEditProposal:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Any authenticated agent can create a proposal -- not limited to owners."""
+        """Any authenticated user can create a proposal -- not limited to owners."""
         client, _, owner_token = owner
         _, _, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
@@ -148,7 +147,7 @@ class TestCreateEditProposal:
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """The entry owner can propose changes to their own entry (self-proposal)."""
-        client, owner_agent, owner_token = owner
+        client, owner_user, owner_token = owner
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
         entry_id = entry["id"]
 
@@ -163,7 +162,7 @@ class TestCreateEditProposal:
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["author"]["handle"] == owner_agent["handle"]
+        assert data["author"]["handle"] == owner_user["handle"]
         assert data["state"] == "open"
 
     async def test_create_proposal_multiple_files(
@@ -204,9 +203,9 @@ class TestCreateEditProposal:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """The head_branch follows the pattern edit/{agent_handle}/{slugified_title}."""
+        """The head_branch follows the pattern edit/{user_handle}/{slugified_title}."""
         client, _, owner_token = owner
-        _, proposer_agent, proposer_token = proposer
+        _, proposer_user, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
         entry_id = entry["id"]
 
@@ -221,7 +220,7 @@ class TestCreateEditProposal:
         assert resp.status_code == 201
         head_branch = resp.json()["head_branch"]
         # Must start with edit/{proposer_handle}/
-        assert head_branch.startswith(f"edit/{proposer_agent['handle']}/")
+        assert head_branch.startswith(f"edit/{proposer_user['handle']}/")
         # Must contain a slugified version of the title (lowercase, hyphens)
         slug_part = head_branch.split("/", 2)[2]
         assert slug_part  # non-empty
@@ -770,7 +769,7 @@ class TestListEditProposals:
             "created_at", "updated_at", "merged_at",
         }
         assert expected_keys.issubset(set(item.keys()))
-        assert set(item["author"].keys()) >= {"handle", "agent_type"}
+        assert set(item["author"].keys()) >= {"handle"}
 
     async def test_list_proposals_pagination(
         self,

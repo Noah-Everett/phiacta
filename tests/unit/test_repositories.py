@@ -7,10 +7,10 @@ from unittest.mock import MagicMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.entry_ref import EntryRef
-from phiacta.core.repositories.agent_repository import AgentRepository
+from phiacta.core.repositories.user_repository import UserRepository
 from phiacta.core.repositories.base import BaseRepository
 from phiacta.core.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.core.repositories.entry_repository import EntryRepository
@@ -38,17 +38,16 @@ class TestEntryRepositoryInstantiation:
         assert callable(getattr(repo, "update_repo_status", None))
 
 
-class TestAgentRepositoryInstantiation:
-    def test_agent_repository_sets_model(self) -> None:
+class TestUserRepositoryInstantiation:
+    def test_user_repository_sets_model(self) -> None:
         mock_session = MagicMock(spec=AsyncSession)
-        repo = AgentRepository(mock_session)
-        assert repo.model is Agent
+        repo = UserRepository(mock_session)
+        assert repo.model is User
 
-    def test_agent_repository_has_custom_methods(self) -> None:
+    def test_user_repository_has_custom_methods(self) -> None:
         mock_session = MagicMock(spec=AsyncSession)
-        repo = AgentRepository(mock_session)
+        repo = UserRepository(mock_session)
         assert callable(getattr(repo, "get_by_handle", None))
-        assert callable(getattr(repo, "get_by_email", None))
 
 
 class TestEntryRefRepositoryInstantiation:
@@ -74,9 +73,9 @@ class TestBaseRepositoryInheritance:
         assert callable(getattr(repo, "list_all", None))
         assert callable(getattr(repo, "delete", None))
 
-    def test_agent_repo_inherits_base_methods(self) -> None:
+    def test_user_repo_inherits_base_methods(self) -> None:
         mock_session = MagicMock(spec=AsyncSession)
-        repo = AgentRepository(mock_session)
+        repo = UserRepository(mock_session)
         assert callable(getattr(repo, "get_by_id", None))
         assert callable(getattr(repo, "create", None))
         assert callable(getattr(repo, "list_all", None))

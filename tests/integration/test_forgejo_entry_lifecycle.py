@@ -11,7 +11,7 @@ Run with:
 
     pytest tests/integration/test_forgejo_entry_lifecycle.py -m forgejo
 
-Each test registers its own agent (uuid4-prefixed handles/emails) and creates
+Each test registers its own user (uuid4-prefixed handles) and creates
 its own entries so tests are fully independent and can run in any order.
 
 Do NOT import from phiacta source code -- all interaction is through the HTTP API.
@@ -36,22 +36,20 @@ pytestmark = [pytest.mark.forgejo, pytest.mark.anyio]
 # ---------------------------------------------------------------------------
 
 
-async def register_agent(
+async def register_user(
     client: httpx.AsyncClient,
     handle: str | None = None,
-    email: str | None = None,
     password: str = "Integration1!",
 ) -> dict:
-    """Register a new agent and return the full auth response dict.
+    """Register a new user and return the full auth response dict.
 
-    Uses a uuid4 prefix by default so every call produces a unique agent.
+    Uses a uuid4 prefix by default so every call produces a unique user.
     """
     uid = uuid4().hex[:12]
     resp = await client.post(
         "/v1/auth/register",
         json={
-            "handle": handle or f"agent-{uid}",
-            "email": email or f"agent-{uid}@example.com",
+            "handle": handle or f"user-{uid}",
             "password": password,
         },
     )
@@ -110,11 +108,11 @@ async def _setup_ready_entry(
     client: httpx.AsyncClient,
     title: str = "Integration Test Entry",
 ) -> tuple[str, str, dict]:
-    """Register agent, create entry, wait for ready.
+    """Register user, create entry, wait for ready.
 
     Returns ``(token, entry_id, entry_dict)``.
     """
-    auth = await register_agent(client)
+    auth = await register_user(client)
     token = auth["access_token"]
     entry = await create_entry(client, token, title=title)
     entry_id = entry["id"]
@@ -128,15 +126,15 @@ async def _setup_ready_entry(
 
 
 class TestFullEntryLifecycle:
-    """Register agent -> create entry -> provision -> verify ready state and files."""
+    """Register user -> create entry -> provision -> verify ready state and files."""
 
     async def test_full_entry_lifecycle(self) -> None:
-        """Register agent, create entry, wait for provisioning, verify
+        """Register user, create entry, wait for provisioning, verify
         repo_status=ready, list files (README.md), read README content,
         and confirm it references the entry title.
         """
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            auth = await register_agent(client)
+            auth = await register_user(client)
             token = auth["access_token"]
 
             title = f"Lifecycle Test {uuid4().hex[:8]}"
@@ -355,14 +353,14 @@ class TestWebhookIngestionUpdatesSha:
 
 
 class TestMultipleEntriesIsolated:
-    """Two entries from the same agent must not share files."""
+    """Two entries from the same user must not share files."""
 
     async def test_multiple_entries_isolated(self) -> None:
         """Create entry A and B, write different files to each, verify
         each entry only has its own files.
         """
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            auth = await register_agent(client)
+            auth = await register_user(client)
             token = auth["access_token"]
 
             entry_a = await create_entry(
@@ -429,7 +427,7 @@ class TestEntryMetadataFromYaml:
         entry.yaml and README.
         """
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            auth = await register_agent(client)
+            auth = await register_user(client)
             token = auth["access_token"]
 
             title = f"Metadata YAML Test {uuid4().hex[:8]}"

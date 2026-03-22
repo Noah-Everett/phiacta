@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.repositories.entry_repository import EntryRepository
 
@@ -24,10 +24,10 @@ EDITABLE_STATUSES = ("active", "draft")
 
 async def get_writable_entry(
     entry_id: UUID,
-    agent: Agent,
+    user: User,
     db: AsyncSession,
 ) -> Entry:
-    """Load an entry and verify it is writable by the given agent.
+    """Load an entry and verify it is writable by the given user.
 
     Raises HTTPException for missing entry (404), unready repo (409),
     non-editable status (403), or non-owner (403).
@@ -44,7 +44,7 @@ async def get_writable_entry(
         raise HTTPException(
             status_code=403, detail="Entry is not editable",
         )
-    if entry.created_by != agent.id:
+    if entry.created_by != user.id:
         raise HTTPException(
             status_code=403,
             detail="Only the entry author can modify files in this entry",
@@ -60,7 +60,7 @@ async def get_proposable_entry(
 
     Checks that the entry exists (404), repo is ready (409), and status
     is editable (403).  Does NOT check ownership — any authenticated
-    agent can create a proposal.
+    user can create a proposal.
     """
     repo = EntryRepository(db)
     entry = await repo.get_by_id(entry_id)
@@ -100,10 +100,10 @@ async def get_readable_entry(
 
 async def get_owned_entry(
     entry_id: UUID,
-    agent: Agent,
+    user: User,
     db: AsyncSession,
 ) -> Entry:
-    """Load an entry and verify the agent is the owner.
+    """Load an entry and verify the user is the owner.
 
     Like ``get_writable_entry`` but does NOT check editable status or
     repo_status. Used for archival/unarchival where the entry may already
@@ -115,7 +115,7 @@ async def get_owned_entry(
     entry = await repo.get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
-    if entry.created_by != agent.id:
+    if entry.created_by != user.id:
         raise HTTPException(
             status_code=403,
             detail="Only the entry author can perform this action",

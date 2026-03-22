@@ -3,7 +3,7 @@
 
 """SQLAlchemy model for the extension_tags table.
 
-Each row represents a single tag on a single entry, set by a specific agent.
+Each row represents a single tag on a single entry, set by a specific user.
 Tags are normalized to lowercase before insertion. The (entry_id, tag) pair
 is unique — an entry cannot have the same tag twice.
 """
@@ -27,7 +27,7 @@ class ExtensionTag(UUIDMixin, Base):
     )
     tag: Mapped[str] = mapped_column(String(200), nullable=False)
     created_by: Mapped[UUID] = mapped_column(
-        ForeignKey("agents.id"), nullable=False
+        ForeignKey("users.id"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

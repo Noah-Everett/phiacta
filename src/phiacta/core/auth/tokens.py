@@ -11,14 +11,14 @@ import jwt
 from phiacta.config import get_settings
 
 
-def create_access_token(agent_id: UUID) -> str:
-    """Create a JWT access token for the given agent."""
+def create_access_token(user_id: UUID) -> str:
+    """Create a JWT access token for the given user."""
     settings = get_settings()
     expire = datetime.now(UTC) + timedelta(
         minutes=settings.access_token_expire_minutes
     )
     payload = {
-        "sub": str(agent_id),
+        "sub": str(user_id),
         "exp": expire,
         "iat": datetime.now(UTC),
     }
@@ -26,7 +26,7 @@ def create_access_token(agent_id: UUID) -> str:
 
 
 def decode_access_token(token: str) -> UUID:
-    """Decode a JWT access token and return the agent UUID.
+    """Decode a JWT access token and return the user UUID.
 
     Raises jwt.InvalidTokenError on any validation failure.
     """

@@ -11,7 +11,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from tests.e2e.conftest import auth_header, register_agent
+from tests.e2e.conftest import auth_header, register_user
 
 TwoEntriesFixture: TypeAlias = tuple[httpx.AsyncClient, str, str, str]
 
@@ -20,9 +20,9 @@ TwoEntriesFixture: TypeAlias = tuple[httpx.AsyncClient, str, str, str]
 async def two_entries(
     client: httpx.AsyncClient,
 ) -> TwoEntriesFixture:
-    """Create an agent and two entries. Returns (client, entry_a_id, entry_b_id, token)."""
+    """Create a user and two entries. Returns (client, entry_a_id, entry_b_id, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_agent(client, handle=f"ref-{uid}", email=f"ref-{uid}@example.com")
+    auth = await register_user(client, handle=f"ref-{uid}")
     token = auth["access_token"]
     headers = auth_header(token)
 

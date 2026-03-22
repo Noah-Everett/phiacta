@@ -21,7 +21,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.view_version import ViewVersion
 from phiacta.views.search_tsv.models import ViewSearchTsv  # noqa: F401 — register with Base before create_all
@@ -37,21 +37,19 @@ needs_pg = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-async def _create_agent(db: AsyncSession) -> Agent:
-    """Create and flush a minimal Agent row."""
-    agent = Agent(
+async def _create_user(db: AsyncSession) -> User:
+    """Create and flush a minimal User row."""
+    user = User(
         id=uuid4(),
-        agent_type="human",
         handle=f"test-{uuid4().hex[:8]}",
-        email=f"test-{uuid4().hex[:8]}@example.com",
         password_hash="$2b$12$fakehash",
     )
-    db.add(agent)
+    db.add(user)
     await db.flush()
-    return agent
+    return user
 
 
-async def _create_entry(db: AsyncSession, agent_id: UUID) -> Entry:
+async def _create_entry(db: AsyncSession, user_id: UUID) -> Entry:
     """Create and flush a minimal Entry row."""
     eid = uuid4()
     entry = Entry(
@@ -59,7 +57,7 @@ async def _create_entry(db: AsyncSession, agent_id: UUID) -> Entry:
         title="Integration Test Entry",
         content_format="markdown",
         repo_name=str(eid),
-        created_by=agent_id,
+        created_by=user_id,
         status="active",
         repo_status="ready",
     )
@@ -100,8 +98,8 @@ class TestViewSearchTsvModel:
         """ViewSearchTsv can be created with entry_id, version_id and read back."""
         from phiacta.views.search_tsv.models import ViewSearchTsv
 
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         version = await _create_version(db_session)
 
         # Insert via raw SQL since tsvector column needs to_tsvector
@@ -148,8 +146,8 @@ class TestViewSearchTsvModel:
         self, db_session: AsyncSession
     ) -> None:
         """Inserting two rows with the same (entry_id, version_id) raises IntegrityError."""
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         version = await _create_version(db_session)
 
         await db_session.execute(
@@ -183,8 +181,8 @@ class TestViewSearchTsvModel:
         self, db_session: AsyncSession
     ) -> None:
         """Same entry with different version_ids produces two rows."""
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         v1 = await _create_version(db_session, version="v1")
         v2 = await _create_version(db_session, version="v2", status="pending")
 
@@ -226,8 +224,8 @@ class TestCascadeConstraint:
         """Deleting an entry row cascades to remove its view_search_tsv rows."""
         from phiacta.views.search_tsv.models import ViewSearchTsv  # noqa: F401
 
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         version = await _create_version(db_session)
 
         await db_session.execute(
@@ -273,8 +271,8 @@ class TestVersionFKConstraint:
         self, db_session: AsyncSession
     ) -> None:
         """Inserting with a non-existent version_id raises IntegrityError."""
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         fake_version_id = uuid4()
 
         with pytest.raises(IntegrityError):
@@ -327,8 +325,8 @@ class TestSearchTsvRepository:
         """repository.upsert() creates a new row when none exists."""
         from phiacta.views.search_tsv.repository import upsert
 
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         version = await _create_version(db_session)
 
         await upsert(
@@ -354,8 +352,8 @@ class TestSearchTsvRepository:
         """repository.upsert() updates the tsvector when the row already exists."""
         from phiacta.views.search_tsv.repository import upsert, get_by_entry
 
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         version = await _create_version(db_session)
 
         # First upsert
@@ -392,8 +390,8 @@ class TestSearchTsvRepository:
         """repository.get_by_entry() returns the row for a given entry+version."""
         from phiacta.views.search_tsv.repository import upsert, get_by_entry
 
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         version = await _create_version(db_session)
 
         await upsert(
@@ -434,8 +432,8 @@ class TestSearchTsvRepository:
             get_by_entry,
         )
 
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         version = await _create_version(db_session)
 
         await upsert(
@@ -530,8 +528,8 @@ class TestComputedAtTimestamp:
         """computed_at is automatically set to approximately now on insert."""
         from phiacta.views.search_tsv.repository import upsert, get_by_entry
 
-        agent = await _create_agent(db_session)
-        entry = await _create_entry(db_session, agent.id)
+        user = await _create_user(db_session)
+        entry = await _create_entry(db_session, user.id)
         version = await _create_version(db_session)
 
         before = datetime.now(UTC)

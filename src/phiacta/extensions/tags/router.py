@@ -22,9 +22,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_agent
+from phiacta.core.auth.dependencies import get_current_user
 from phiacta.core.db.session import get_db
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.schemas.common import PaginatedResponse
 from phiacta.extensions.tags.repository import TagRepository
 from phiacta.extensions.tags.schemas import (
@@ -62,13 +62,13 @@ async def set_tags(
     request: Request,
     entry_id: UUID,
     body: TagSetRequest,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TagListResponse:
     """Replace all tags on an entry. Owner-only — requires authentication."""
     service = TagService(db)
     try:
-        tags = await service.set_tags(entry_id, body.tags, agent.id)
+        tags = await service.set_tags(entry_id, body.tags, user.id)
         await db.commit()
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -82,7 +82,7 @@ async def set_tags(
             status_code=409, detail="Concurrent tag update conflict"
         )
 
-    logger.info("Tags set for entry %s by agent %s: %d tags", entry_id, agent.id, len(tags))
+    logger.info("Tags set for entry %s by user %s: %d tags", entry_id, user.id, len(tags))
 
     return TagListResponse(
         entry_id=entry_id,

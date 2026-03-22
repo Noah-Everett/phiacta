@@ -24,19 +24,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.entry_ref import EntryRef
-from tests.e2e.conftest import auth_header, register_agent
+from tests.e2e.conftest import auth_header, register_user
 
 AuthedFixture: TypeAlias = tuple[httpx.AsyncClient, dict, str]
 
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
+    """Register a user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_agent(
-        client, handle=f"read-{uid}", email=f"read-{uid}@example.com"
+    auth = await register_user(
+        client, handle=f"read-{uid}"
     )
-    return client, auth["agent"], auth["access_token"]
+    return client, auth["user"], auth["access_token"]
 
 
 async def _create_entry(
@@ -190,7 +190,7 @@ class TestListEntriesWithData:
         self, authed: AuthedFixture
     ) -> None:
         """Each list item has all Entry fields EXCEPT content_cache."""
-        client, agent, token = authed
+        client, user, token = authed
         await _create_entry(
             client,
             token,
@@ -228,7 +228,7 @@ class TestListEntriesWithData:
         assert item["content_format"] == "latex"
         assert item["summary"] == "A theorem about groups."
         assert item["license"] == "CC-BY-4.0"
-        assert item["created_by"] == agent["id"]
+        assert item["created_by"] == user["id"]
 
     async def test_list_item_excludes_content_cache(
         self, authed: AuthedFixture
@@ -608,7 +608,7 @@ class TestGetEntryDetail:
         self, authed: AuthedFixture
     ) -> None:
         """Detail returns all EntryResponse fields including content_cache."""
-        client, agent, token = authed
+        client, user, token = authed
         entry = await _create_entry(
             client,
             token,
@@ -634,7 +634,7 @@ class TestGetEntryDetail:
         assert data["repo_name"] is not None
         assert data["repo_status"] == "provisioning"
         assert data["status"] == "active"
-        assert data["created_by"] == agent["id"]
+        assert data["created_by"] == user["id"]
         assert data["created_at"] is not None
         assert data["updated_at"] is not None
         assert "forgejo_repo_id" in data

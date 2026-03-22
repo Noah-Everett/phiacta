@@ -8,11 +8,11 @@ import os
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.entry_ref import EntryRef
 from phiacta.core.repositories.entry_ref_repository import EntryRefRepository
-from tests.conftest import make_agent, make_entry, make_entry_ref
+from tests.conftest import make_user, make_entry, make_entry_ref
 
 needs_db = pytest.mark.skipif(
     "TEST_DATABASE_URL" not in os.environ,
@@ -22,24 +22,24 @@ needs_db = pytest.mark.skipif(
 
 async def _setup_entries(
     db_session: AsyncSession,
-) -> tuple[Agent, Entry, Entry]:
-    """Create prerequisite agent and two entries."""
-    agent = Agent(**make_agent())
-    db_session.add(agent)
+) -> tuple[User, Entry, Entry]:
+    """Create prerequisite user and two entries."""
+    user = User(**make_user())
+    db_session.add(user)
     await db_session.flush()
 
-    entry_a = Entry(**make_entry(created_by=agent.id, title="Entry A"))
-    entry_b = Entry(**make_entry(created_by=agent.id, title="Entry B"))
+    entry_a = Entry(**make_entry(created_by=user.id, title="Entry A"))
+    entry_b = Entry(**make_entry(created_by=user.id, title="Entry B"))
     db_session.add(entry_a)
     db_session.add(entry_b)
     await db_session.flush()
-    return agent, entry_a, entry_b
+    return user, entry_a, entry_b
 
 
 @needs_db
 class TestCreateAndGetEntryRef:
     async def test_create_and_get_entry_ref(self, db_session: AsyncSession) -> None:
-        _agent, entry_a, entry_b = await _setup_entries(db_session)
+        _user, entry_a, entry_b = await _setup_entries(db_session)
 
         repo = EntryRefRepository(db_session)
         ref = EntryRef(
@@ -62,7 +62,7 @@ class TestCreateAndGetEntryRef:
 @needs_db
 class TestListByEntryDirection:
     async def test_list_by_entry_both(self, db_session: AsyncSession) -> None:
-        _agent, entry_a, entry_b = await _setup_entries(db_session)
+        _user, entry_a, entry_b = await _setup_entries(db_session)
 
         repo = EntryRefRepository(db_session)
         ref = EntryRef(
@@ -81,7 +81,7 @@ class TestListByEntryDirection:
         assert len(refs_b) >= 1
 
     async def test_list_by_entry_outgoing(self, db_session: AsyncSession) -> None:
-        _agent, entry_a, entry_b = await _setup_entries(db_session)
+        _user, entry_a, entry_b = await _setup_entries(db_session)
 
         repo = EntryRefRepository(db_session)
         ref = EntryRef(
@@ -101,7 +101,7 @@ class TestListByEntryDirection:
         assert len(outgoing_b) == 0
 
     async def test_list_by_entry_incoming(self, db_session: AsyncSession) -> None:
-        _agent, entry_a, entry_b = await _setup_entries(db_session)
+        _user, entry_a, entry_b = await _setup_entries(db_session)
 
         repo = EntryRefRepository(db_session)
         ref = EntryRef(
@@ -121,7 +121,7 @@ class TestListByEntryDirection:
 @needs_db
 class TestListByRel:
     async def test_list_by_rel(self, db_session: AsyncSession) -> None:
-        _agent, entry_a, entry_b = await _setup_entries(db_session)
+        _user, entry_a, entry_b = await _setup_entries(db_session)
 
         repo = EntryRefRepository(db_session)
         ref1 = EntryRef(
@@ -157,20 +157,20 @@ class TestListByRel:
 
 async def _setup_three_entries(
     db_session: AsyncSession,
-) -> tuple[Agent, Entry, Entry, Entry]:
-    """Create prerequisite agent and three entries."""
-    agent = Agent(**make_agent(handle="ref-del-agent", email="ref-del@example.com"))
-    db_session.add(agent)
+) -> tuple[User, Entry, Entry, Entry]:
+    """Create prerequisite user and three entries."""
+    user = User(**make_user(handle="ref-del-user"))
+    db_session.add(user)
     await db_session.flush()
 
-    entry_a = Entry(**make_entry(created_by=agent.id, title="Entry A"))
-    entry_b = Entry(**make_entry(created_by=agent.id, title="Entry B"))
-    entry_c = Entry(**make_entry(created_by=agent.id, title="Entry C"))
+    entry_a = Entry(**make_entry(created_by=user.id, title="Entry A"))
+    entry_b = Entry(**make_entry(created_by=user.id, title="Entry B"))
+    entry_c = Entry(**make_entry(created_by=user.id, title="Entry C"))
     db_session.add(entry_a)
     db_session.add(entry_b)
     db_session.add(entry_c)
     await db_session.flush()
-    return agent, entry_a, entry_b, entry_c
+    return user, entry_a, entry_b, entry_c
 
 
 @needs_db
@@ -186,7 +186,7 @@ class TestDeleteOutgoing:
         self, db_session: AsyncSession
     ) -> None:
         """delete_outgoing removes all refs where from_entry_id matches."""
-        _agent, entry_a, entry_b, entry_c = await _setup_three_entries(db_session)
+        _user, entry_a, entry_b, entry_c = await _setup_three_entries(db_session)
         repo = EntryRefRepository(db_session)
 
         # Create two outgoing refs from entry_a
@@ -214,7 +214,7 @@ class TestDeleteOutgoing:
         self, db_session: AsyncSession
     ) -> None:
         """delete_outgoing does NOT remove incoming refs (to_entry_id matches)."""
-        _agent, entry_a, entry_b, entry_c = await _setup_three_entries(db_session)
+        _user, entry_a, entry_b, entry_c = await _setup_three_entries(db_session)
         repo = EntryRefRepository(db_session)
 
         # entry_b -> entry_a (incoming to A)
@@ -244,7 +244,7 @@ class TestDeleteOutgoing:
         self, db_session: AsyncSession
     ) -> None:
         """delete_outgoing for entry_a does not touch entry_b's outgoing refs."""
-        _agent, entry_a, entry_b, entry_c = await _setup_three_entries(db_session)
+        _user, entry_a, entry_b, entry_c = await _setup_three_entries(db_session)
         repo = EntryRefRepository(db_session)
 
         # entry_a -> entry_c
@@ -270,7 +270,7 @@ class TestDeleteOutgoing:
         self, db_session: AsyncSession
     ) -> None:
         """delete_outgoing on an entry with no outgoing refs does not raise."""
-        _agent, entry_a, _entry_b, _entry_c = await _setup_three_entries(db_session)
+        _user, entry_a, _entry_b, _entry_c = await _setup_three_entries(db_session)
         repo = EntryRefRepository(db_session)
 
         # No refs created -- should not raise
@@ -284,7 +284,7 @@ class TestDeleteOutgoing:
         self, db_session: AsyncSession
     ) -> None:
         """delete_outgoing completes without error and the refs are actually gone."""
-        _agent, entry_a, entry_b, entry_c = await _setup_three_entries(db_session)
+        _user, entry_a, entry_b, entry_c = await _setup_three_entries(db_session)
         repo = EntryRefRepository(db_session)
 
         # Create 3 outgoing refs

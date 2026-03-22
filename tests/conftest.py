@@ -59,19 +59,15 @@ async def db_session(
 # ---------------------------------------------------------------------------
 
 
-def make_agent(
+def make_user(
     *,
-    agent_type: str = "human",
-    handle: str = "test-agent",
-    email: str = "test@example.com",
+    handle: str = "test-user",
     password_hash: str = "$2b$12$fakehash",
 ) -> dict[str, object]:
-    """Return kwargs suitable for constructing an Agent model instance."""
+    """Return kwargs suitable for constructing a User model instance."""
     return {
         "id": uuid4(),
-        "agent_type": agent_type,
         "handle": handle,
-        "email": email,
         "password_hash": password_hash,
     }
 

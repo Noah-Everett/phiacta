@@ -33,16 +33,15 @@ def _auth(token: str) -> dict[str, str]:
 
 
 async def _register(client: httpx.AsyncClient, prefix: str = "prop") -> tuple[dict, str]:
-    """Register a unique agent. Returns (agent_data, token)."""
+    """Register a unique user. Returns (user_data, token)."""
     uid = uuid4().hex[:8]
     resp = await client.post("/v1/auth/register", json={
         "handle": f"{prefix}_{uid}",
-        "email": f"{prefix}_{uid}@example.com",
         "password": "S3cur3P@ssword!",
     })
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    return body["agent"], body["access_token"]
+    return body["user"], body["access_token"]
 
 
 async def _wait_for_ready(

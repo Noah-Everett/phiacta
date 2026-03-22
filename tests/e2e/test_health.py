@@ -18,7 +18,7 @@ class TestHealth:
 
 
 class TestSmoke:
-    async def test_nonexistent_agent_returns_404(self, client: httpx.AsyncClient) -> None:
-        """A GET to a non-existent agent returns 404, not 500."""
-        resp = await client.get(f"/v1/agents/{uuid4()}")
+    async def test_nonexistent_user_returns_404(self, client: httpx.AsyncClient) -> None:
+        """A GET to a non-existent user returns 404, not 500."""
+        resp = await client.get(f"/v1/users/{uuid4()}")
         assert resp.status_code == 404

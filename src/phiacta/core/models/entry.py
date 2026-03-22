@@ -50,11 +50,11 @@ class Entry(UUIDMixin, TimestampMixin, Base):
 
     # Creator
     created_by: Mapped[UUID] = mapped_column(
-        ForeignKey("agents.id"), nullable=False
+        ForeignKey("users.id"), nullable=False
     )
 
     # Relationships
-    created_by_agent: Mapped[Agent] = relationship(  # type: ignore[name-defined]  # noqa: F821
+    created_by_user: Mapped[User] = relationship(  # type: ignore[name-defined]  # noqa: F821
         foreign_keys="[Entry.created_by]",
         lazy="raise",
     )

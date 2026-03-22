@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Phiacta Contributors
+
+from __future__ import annotations
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from phiacta.core.models.user import User
+from phiacta.core.repositories.base import BaseRepository
+
+
+class UserRepository(BaseRepository[User]):
+    def __init__(self, session: AsyncSession) -> None:
+        super().__init__(session, User)
+
+    async def get_by_handle(self, handle: str) -> User | None:
+        result = await self.session.execute(
+            select(User).where(User.handle == handle)
+        )
+        return result.scalar_one_or_none()

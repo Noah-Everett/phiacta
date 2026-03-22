@@ -9,10 +9,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.repositories.entry_repository import EntryRepository
-from tests.conftest import make_agent, make_entry
+from tests.conftest import make_user, make_entry
 
 needs_db = pytest.mark.skipif(
     "TEST_DATABASE_URL" not in os.environ,
@@ -23,12 +23,12 @@ needs_db = pytest.mark.skipif(
 @needs_db
 class TestCreateAndGetEntry:
     async def test_create_and_get_entry(self, db_session: AsyncSession) -> None:
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
-        entry_kwargs = make_entry(created_by=agent.id)
+        entry_kwargs = make_entry(created_by=user.id)
         entry = Entry(**entry_kwargs)
         created = await repo.create(entry)
 
@@ -49,22 +49,22 @@ class TestCreateAndGetEntry:
 @needs_db
 class TestListEntriesWithFilters:
     async def test_list_entries_with_layout_hint(self, db_session: AsyncSession) -> None:
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
 
         paper = Entry(
             **make_entry(
-                created_by=agent.id,
+                created_by=user.id,
                 title="A Paper",
                 layout_hint="paper",
             )
         )
         theorem = Entry(
             **make_entry(
-                created_by=agent.id,
+                created_by=user.id,
                 title="A Theorem",
                 layout_hint="theorem",
             )
@@ -81,13 +81,13 @@ class TestListEntriesWithFilters:
         assert all(e.layout_hint == "theorem" for e in theorems)
 
     async def test_list_entries_by_status(self, db_session: AsyncSession) -> None:
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
         entry = Entry(
-            **make_entry(created_by=agent.id, status="active")
+            **make_entry(created_by=user.id, status="active")
         )
         await repo.create(entry)
 
@@ -99,8 +99,8 @@ class TestListEntriesWithFilters:
         assert all(e.status == "archived" for e in archived)
 
     async def test_list_entries_pagination(self, db_session: AsyncSession) -> None:
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
@@ -108,7 +108,7 @@ class TestListEntriesWithFilters:
         for i in range(5):
             entry = Entry(
                 **make_entry(
-                    created_by=agent.id,
+                    created_by=user.id,
                     title=f"Entry {i}",
                 )
             )
@@ -124,12 +124,12 @@ class TestListEntriesWithFilters:
 @needs_db
 class TestUpdateRepoStatus:
     async def test_update_repo_status(self, db_session: AsyncSession) -> None:
-        agent = Agent(**make_agent())
-        db_session.add(agent)
+        user = User(**make_user())
+        db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
-        entry = Entry(**make_entry(created_by=agent.id))
+        entry = Entry(**make_entry(created_by=user.id))
         await repo.create(entry)
 
         await repo.update_repo_status(

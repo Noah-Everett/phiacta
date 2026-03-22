@@ -20,7 +20,7 @@ from tests.e2e.conftest import (
     FakeGitService,
     auth_header,
     create_entry,
-    register_agent,
+    register_user,
     set_entry_repo_status,
     set_entry_status,
 )
@@ -34,7 +34,7 @@ def _make_entry_yaml(
     title: str = "Original Title",
     content_format: str = "markdown",
     author_id: str = "usr_placeholder",
-    author_name: str = "test-agent",
+    author_name: str = "test-user",
     summary: str | None = None,
     license_: str | None = None,
     layout_hint: str | None = None,
@@ -59,9 +59,9 @@ def _make_entry_yaml(
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    """Register an agent and return (client, agent_data, token)."""
-    auth = await register_agent(client, handle="update-test", email="update@example.com")
-    return client, auth["agent"], auth["access_token"]
+    """Register a user and return (client, user_data, token)."""
+    auth = await register_user(client, handle="update-test")
+    return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
@@ -71,7 +71,7 @@ async def ready_entry(
     fake_git: FakeGitService,
 ) -> tuple[AuthedFixture, dict]:
     """Create an entry, set it to ready, and seed entry.yaml in FakeGitService."""
-    client, agent, token = authed
+    client, user, token = authed
     entry = await create_entry(client, token, title="Original Title")
     entry_id = entry["id"]
     await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
@@ -80,7 +80,7 @@ async def ready_entry(
     yaml_bytes = _make_entry_yaml(
         entry_id,
         title="Original Title",
-        author_id=f"usr_{agent['id']}",
+        author_id=f"usr_{user['id']}",
         author_name="update-test",
         summary="Original summary",
     )
@@ -257,7 +257,7 @@ class TestUpdateMetadataErrors:
         self, ready_entry: tuple[AuthedFixture, dict],
     ) -> None:
         (client, _, _), entry = ready_entry
-        other = await register_agent(client, handle="other-agent", email="other@example.com")
+        other = await register_user(client, handle="other-user")
         resp = await client.patch(
             f"/v1/entries/{entry['id']}",
             json={"title": "Hijacked"},
@@ -296,7 +296,7 @@ class TestUpdateMetadataErrors:
     async def test_update_provisioning_entry_returns_409(
         self, authed: AuthedFixture, fake_git: FakeGitService,
     ) -> None:
-        client, _agent, token = authed
+        client, _user, token = authed
         entry = await create_entry(client, token)
         # Entry is in provisioning state by default — no set_entry_repo_status call
         resp = await client.patch(

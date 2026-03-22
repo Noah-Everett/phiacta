@@ -22,11 +22,11 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.entry_ref import EntryRef
 from phiacta.core.services.ingestion import ingest_entry
-from tests.conftest import make_agent, make_entry
+from tests.conftest import make_user, make_entry
 from tests.e2e.conftest import FakeGitService
 
 # ---------------------------------------------------------------------------
@@ -82,14 +82,14 @@ async def _create_test_entry(
     title: str = "Test Entry",
     status: str = "active",
     content_format: str = "markdown",
-) -> tuple[Entry, Agent]:
-    """Create an agent and entry in the test DB, return (entry, agent)."""
-    agent = Agent(**make_agent())
-    db_session.add(agent)
+) -> tuple[Entry, User]:
+    """Create a user and entry in the test DB, return (entry, user)."""
+    user = User(**make_user())
+    db_session.add(user)
     await db_session.flush()
 
     entry_kwargs = make_entry(
-        created_by=agent.id,
+        created_by=user.id,
         title=title,
         status=status,
         content_format=content_format,
@@ -97,7 +97,7 @@ async def _create_test_entry(
     entry = Entry(**entry_kwargs)
     db_session.add(entry)
     await db_session.flush()
-    return entry, agent
+    return entry, user
 
 
 # ---------------------------------------------------------------------------
@@ -109,12 +109,12 @@ class TestIngestEntryMetadata:
     """ingest_entry() should update entry metadata from entry.yaml."""
 
     async def test_updates_title_from_yaml(self, db_session: AsyncSession) -> None:
-        entry, agent = await _create_test_entry(db_session, title="Old Title")
+        entry, user = await _create_test_entry(db_session, title="Old Title")
         fake_git = FakeGitService()
         sha = "a" * 40
 
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
-            entry.id, title="New Title From Git", author_id=agent.id
+            entry.id, title="New Title From Git", author_id=user.id
         )
 
         await ingest_entry(entry, sha, db_session, fake_git)
@@ -122,14 +122,14 @@ class TestIngestEntryMetadata:
         assert entry.title == "New Title From Git"
 
     async def test_updates_summary_from_yaml(self, db_session: AsyncSession) -> None:
-        entry, agent = await _create_test_entry(db_session)
+        entry, user = await _create_test_entry(db_session)
         fake_git = FakeGitService()
         sha = "a" * 40
 
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
             entry.id,
             title="Summary Entry",
-            author_id=agent.id,
+            author_id=user.id,
             summary="A deep investigation into quantum entanglement",
         )
 
@@ -138,14 +138,14 @@ class TestIngestEntryMetadata:
         assert entry.summary == "A deep investigation into quantum entanglement"
 
     async def test_updates_content_format_from_yaml(self, db_session: AsyncSession) -> None:
-        entry, agent = await _create_test_entry(db_session)
+        entry, user = await _create_test_entry(db_session)
         fake_git = FakeGitService()
         sha = "a" * 40
 
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
             entry.id,
             title="LaTeX Entry",
-            author_id=agent.id,
+            author_id=user.id,
             content_format="latex",
         )
 
@@ -154,14 +154,14 @@ class TestIngestEntryMetadata:
         assert entry.content_format == "latex"
 
     async def test_updates_license_from_yaml(self, db_session: AsyncSession) -> None:
-        entry, agent = await _create_test_entry(db_session)
+        entry, user = await _create_test_entry(db_session)
         fake_git = FakeGitService()
         sha = "a" * 40
 
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
             entry.id,
             title="Licensed",
-            author_id=agent.id,
+            author_id=user.id,
             license_="MIT",
         )
 
@@ -170,14 +170,14 @@ class TestIngestEntryMetadata:
         assert entry.license == "MIT"
 
     async def test_updates_layout_hint_from_yaml(self, db_session: AsyncSession) -> None:
-        entry, agent = await _create_test_entry(db_session)
+        entry, user = await _create_test_entry(db_session)
         fake_git = FakeGitService()
         sha = "a" * 40
 
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
             entry.id,
             title="Theorem",
-            author_id=agent.id,
+            author_id=user.id,
             layout_hint="theorem",
         )
 
@@ -188,7 +188,7 @@ class TestIngestEntryMetadata:
     async def test_does_not_update_current_head_sha(self, db_session: AsyncSession) -> None:
         """ingest_entry MUST NOT update current_head_sha. That is the caller's
         responsibility after successful ingestion."""
-        entry, agent = await _create_test_entry(db_session)
+        entry, user = await _create_test_entry(db_session)
         old_sha = "z" * 40
         entry.current_head_sha = old_sha
         await db_session.flush()
@@ -197,7 +197,7 @@ class TestIngestEntryMetadata:
         new_sha = "a" * 40
 
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
-            entry.id, title="Updated", author_id=agent.id
+            entry.id, title="Updated", author_id=user.id
         )
 
         await ingest_entry(entry, new_sha, db_session, fake_git)
@@ -217,12 +217,12 @@ class TestIngestEntryContentCache:
     async def test_updates_content_cache_from_readme_md(
         self, db_session: AsyncSession
     ) -> None:
-        entry, agent = await _create_test_entry(db_session)
+        entry, user = await _create_test_entry(db_session)
         fake_git = FakeGitService()
         sha = "a" * 40
 
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
-            entry.id, title="Content Entry", author_id=agent.id
+            entry.id, title="Content Entry", author_id=user.id
         )
         fake_git.files[(entry.id, "README.md")] = b"# Hello World\n\nSome content."
 
@@ -234,12 +234,12 @@ class TestIngestEntryContentCache:
         self, db_session: AsyncSession
     ) -> None:
         """LaTeX entries should look for README.tex, not README.md."""
-        entry, agent = await _create_test_entry(db_session, content_format="latex")
+        entry, user = await _create_test_entry(db_session, content_format="latex")
         fake_git = FakeGitService()
         sha = "a" * 40
 
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
-            entry.id, title="LaTeX", author_id=agent.id, content_format="latex"
+            entry.id, title="LaTeX", author_id=user.id, content_format="latex"
         )
         fake_git.files[(entry.id, "README.tex")] = b"\\section{Introduction}"
 
@@ -251,7 +251,7 @@ class TestIngestEntryContentCache:
         self, db_session: AsyncSession
     ) -> None:
         """If README does not exist, content_cache should be set to None."""
-        entry, agent = await _create_test_entry(db_session)
+        entry, user = await _create_test_entry(db_session)
         entry.content_cache = "Old cached content"
         await db_session.flush()
 
@@ -259,7 +259,7 @@ class TestIngestEntryContentCache:
         sha = "a" * 40
 
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
-            entry.id, title="No README", author_id=agent.id
+            entry.id, title="No README", author_id=user.id
         )
         # No README.md file in fake_git
 
@@ -278,8 +278,8 @@ class TestIngestEntryRefs:
 
     async def test_creates_refs_from_refs_yaml(self, db_session: AsyncSession) -> None:
         """Valid refs.yaml creates entry_ref rows."""
-        entry_a, agent = await _create_test_entry(db_session, title="Source")
-        entry_b_kwargs = make_entry(created_by=agent.id, title="Target")
+        entry_a, user = await _create_test_entry(db_session, title="Source")
+        entry_b_kwargs = make_entry(created_by=user.id, title="Target")
         entry_b = Entry(**entry_b_kwargs)
         db_session.add(entry_b)
         await db_session.flush()
@@ -288,7 +288,7 @@ class TestIngestEntryRefs:
         sha = "a" * 40
 
         fake_git.files[(entry_a.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
-            entry_a.id, title="Source", author_id=agent.id
+            entry_a.id, title="Source", author_id=user.id
         )
         fake_git.files[(entry_a.id, ".phiacta/refs.yaml")] = _make_refs_yaml_bytes([
             {
@@ -315,8 +315,8 @@ class TestIngestEntryRefs:
         self, db_session: AsyncSession
     ) -> None:
         """If refs.yaml is missing, all outgoing refs should be deleted."""
-        entry_a, agent = await _create_test_entry(db_session, title="Source")
-        entry_b_kwargs = make_entry(created_by=agent.id, title="Target")
+        entry_a, user = await _create_test_entry(db_session, title="Source")
+        entry_b_kwargs = make_entry(created_by=user.id, title="Target")
         entry_b = Entry(**entry_b_kwargs)
         db_session.add(entry_b)
         await db_session.flush()
@@ -334,7 +334,7 @@ class TestIngestEntryRefs:
         sha = "a" * 40
 
         fake_git.files[(entry_a.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
-            entry_a.id, title="Source", author_id=agent.id
+            entry_a.id, title="Source", author_id=user.id
         )
         # No refs.yaml file
 
@@ -394,7 +394,7 @@ class TestIngestEntryErrors:
         """entry.yaml with wrong entry_id should cause ingest_entry to raise."""
         import pytest
 
-        entry, agent = await _create_test_entry(db_session, title="Original")
+        entry, user = await _create_test_entry(db_session, title="Original")
         fake_git = FakeGitService()
         sha = "a" * 40
 
@@ -402,7 +402,7 @@ class TestIngestEntryErrors:
         fake_git.files[(entry.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
             wrong_id,  # wrong entry_id
             title="Should Not Apply",
-            author_id=agent.id,
+            author_id=user.id,
         )
 
         with pytest.raises(ValueError, match="entry_id mismatch"):
@@ -412,8 +412,8 @@ class TestIngestEntryErrors:
         self, db_session: AsyncSession
     ) -> None:
         """Malformed refs.yaml should not delete or modify existing refs."""
-        entry_a, agent = await _create_test_entry(db_session, title="Source")
-        entry_b_kwargs = make_entry(created_by=agent.id, title="Target")
+        entry_a, user = await _create_test_entry(db_session, title="Source")
+        entry_b_kwargs = make_entry(created_by=user.id, title="Target")
         entry_b = Entry(**entry_b_kwargs)
         db_session.add(entry_b)
         await db_session.flush()
@@ -431,7 +431,7 @@ class TestIngestEntryErrors:
         sha = "a" * 40
 
         fake_git.files[(entry_a.id, ".phiacta/entry.yaml")] = _make_entry_yaml_bytes(
-            entry_a.id, title="Source", author_id=agent.id
+            entry_a.id, title="Source", author_id=user.id
         )
         fake_git.files[(entry_a.id, ".phiacta/refs.yaml")] = b"invalid: {{"
 

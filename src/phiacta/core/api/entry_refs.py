@@ -10,9 +10,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_agent
+from phiacta.core.auth.dependencies import get_current_user
 from phiacta.core.db.session import get_db
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.models.entry_ref import EntryRef
 from phiacta.core.repositories.entry_ref_repository import EntryRefRepository
 from phiacta.core.schemas.common import PaginatedResponse
@@ -68,7 +68,7 @@ async def get_entry_ref(
 async def create_entry_ref(
     request: Request,
     body: EntryRefCreate,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> EntryRefResponse:
     ref = EntryRef(

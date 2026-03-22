@@ -7,39 +7,25 @@ from __future__ import annotations
 
 import httpx
 
-from tests.e2e.conftest import auth_header, register_agent
+from tests.e2e.conftest import auth_header, register_user
 
 
 class TestRegister:
     async def test_register_success(self, client: httpx.AsyncClient) -> None:
         resp = await client.post("/v1/auth/register", json={
             "handle": "alice",
-            "email": "alice@example.com",
             "password": "SecurePass123!",
         })
         assert resp.status_code == 201
         data = resp.json()
         assert "access_token" in data
         assert data["token_type"] == "bearer"
-        assert data["agent"]["handle"] == "alice"
-        assert data["agent"]["agent_type"] == "human"
-        assert data["agent"]["is_active"] is True
-
-    async def test_register_duplicate_email(self, client: httpx.AsyncClient) -> None:
-        await register_agent(client, handle="first", email="dup@example.com")
-        resp = await client.post("/v1/auth/register", json={
-            "handle": "second",
-            "email": "dup@example.com",
-            "password": "SecurePass123!",
-        })
-        assert resp.status_code == 409
-        assert "Email already registered" in resp.json()["detail"]
+        assert data["user"]["handle"] == "alice"
 
     async def test_register_duplicate_handle(self, client: httpx.AsyncClient) -> None:
-        await register_agent(client, handle="taken", email="first@example.com")
+        await register_user(client, handle="taken")
         resp = await client.post("/v1/auth/register", json={
             "handle": "taken",
-            "email": "second@example.com",
             "password": "SecurePass123!",
         })
         assert resp.status_code == 409
@@ -48,23 +34,13 @@ class TestRegister:
     async def test_register_short_password(self, client: httpx.AsyncClient) -> None:
         resp = await client.post("/v1/auth/register", json={
             "handle": "bob",
-            "email": "bob@example.com",
             "password": "short",
-        })
-        assert resp.status_code == 422
-
-    async def test_register_invalid_email(self, client: httpx.AsyncClient) -> None:
-        resp = await client.post("/v1/auth/register", json={
-            "handle": "bob",
-            "email": "not-an-email",
-            "password": "SecurePass123!",
         })
         assert resp.status_code == 422
 
     async def test_register_empty_handle(self, client: httpx.AsyncClient) -> None:
         resp = await client.post("/v1/auth/register", json={
             "handle": "",
-            "email": "bob@example.com",
             "password": "SecurePass123!",
         })
         assert resp.status_code == 422
@@ -72,37 +48,37 @@ class TestRegister:
 
 class TestLogin:
     async def test_login_success(self, client: httpx.AsyncClient) -> None:
-        await register_agent(client, email="login@example.com", password="MyPassword123!")
+        await register_user(client, handle="login-user", password="MyPassword123!")
         resp = await client.post("/v1/auth/login", json={
-            "email": "login@example.com",
+            "handle": "login-user",
             "password": "MyPassword123!",
         })
         assert resp.status_code == 200
         data = resp.json()
         assert "access_token" in data
-        assert data["agent"]["handle"] == "test-agent"
+        assert data["user"]["handle"] == "login-user"
 
     async def test_login_wrong_password(self, client: httpx.AsyncClient) -> None:
-        await register_agent(client, email="wrong@example.com", password="CorrectPass123!")
+        await register_user(client, handle="wrong-pw", password="CorrectPass123!")
         resp = await client.post("/v1/auth/login", json={
-            "email": "wrong@example.com",
+            "handle": "wrong-pw",
             "password": "WrongPassword123!",
         })
         assert resp.status_code == 401
-        assert "Invalid email or password" in resp.json()["detail"]
+        assert "Invalid handle or password" in resp.json()["detail"]
 
-    async def test_login_nonexistent_email(self, client: httpx.AsyncClient) -> None:
+    async def test_login_nonexistent_handle(self, client: httpx.AsyncClient) -> None:
         resp = await client.post("/v1/auth/login", json={
-            "email": "nobody@example.com",
+            "handle": "nobody",
             "password": "DoesNotMatter123!",
         })
         assert resp.status_code == 401
-        assert "Invalid email or password" in resp.json()["detail"]
+        assert "Invalid handle or password" in resp.json()["detail"]
 
 
 class TestMe:
     async def test_me_authenticated(self, client: httpx.AsyncClient) -> None:
-        auth = await register_agent(client, handle="me-test", email="me@example.com")
+        auth = await register_user(client, handle="me-test")
         token = auth["access_token"]
         resp = await client.get("/v1/auth/me", headers=auth_header(token))
         assert resp.status_code == 200

@@ -4,7 +4,7 @@
 """Entry edit proposals API (NEV-126, NEV-162).
 
 Proxies pull request operations on entry Forgejo repos.  Any authenticated
-agent can create a proposal; only the entry owner can merge or close.
+user can create a proposal; only the entry owner can merge or close.
 
 Read endpoints (list, detail) are public.
 """
@@ -29,10 +29,10 @@ from phiacta.core.api.entry_guards import (
     get_writable_entry,
 )
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_agent
+from phiacta.core.auth.dependencies import get_current_user
 from phiacta.config import Settings, get_settings
 from phiacta.core.db.session import get_db
-from phiacta.core.models.agent import Agent
+from phiacta.core.models.user import User
 from phiacta.core.schemas.entry_edit import (
     EditProposalCloseResponse,
     EditProposalCreate,
@@ -78,15 +78,13 @@ def _make_branch_name(handle: str, title: str) -> str:
 
 def _pr_to_list_item(
     pr: PullRequestInfo,
-    agent_handle: str | None = None,
-    agent_type: str = "",
+    user_handle: str | None = None,
 ) -> EditProposalListItem:
     """Build an ``EditProposalListItem`` from a ``PullRequestInfo``.
 
-    When called from the create endpoint, ``agent_handle`` and ``agent_type``
-    come from the authenticated agent.  For list/detail endpoints, they fall
-    back to the PR's stored ``author_name`` (agent_type is unavailable from
-    Forgejo and left as ``""``).
+    When called from the create endpoint, ``user_handle`` comes from the
+    authenticated user.  For list/detail endpoints, it falls back to the
+    PR's stored ``author_name``.
     """
     return EditProposalListItem(
         number=pr.number,
@@ -95,8 +93,7 @@ def _pr_to_list_item(
         state=pr.state,
         is_draft=pr.is_draft,
         author={
-            "handle": agent_handle or pr.author_name,
-            "agent_type": agent_type,
+            "handle": user_handle or pr.author_name,
         },
         head_branch=pr.head_branch,
         base_branch=pr.base_branch,
@@ -121,7 +118,7 @@ async def create_edit_proposal(
     request: Request,
     entry_id: UUID,
     body: EditProposalCreate,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
     settings: Settings = Depends(get_settings),
@@ -153,7 +150,7 @@ async def create_edit_proposal(
         decoded_files.append(FileContent(path=fc.path, content=raw))
 
     # Step 1: Create branch from main.
-    branch_name = _make_branch_name(agent.handle, body.title)
+    branch_name = _make_branch_name(user.handle, body.title)
     try:
         await git_service.create_branch(entry_id, branch_name)
     except ForgejoUnavailableError as exc:
@@ -171,7 +168,7 @@ async def create_edit_proposal(
             ) from exc
 
     # Step 2: Commit files to the proposal branch.
-    author = AgentInfo(name=agent.handle, email=f"{agent.id}@phiacta.local")
+    author = AgentInfo(name=user.handle, email=f"{user.id}@phiacta.local")
     message = body.title
     try:
         await git_service.commit_files(
@@ -191,14 +188,14 @@ async def create_edit_proposal(
             body=pr_body,
             head_branch=branch_name,
             base_branch="main",
-            author_name=agent.handle,
+            author_name=user.handle,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
 
-    return _pr_to_list_item(pr_info, agent.handle, agent.agent_type)
+    return _pr_to_list_item(pr_info, user.handle)
 
 
 # ---------------------------------------------------------------------------
@@ -296,12 +293,12 @@ async def merge_edit_proposal(
     request: Request,
     entry_id: UUID,
     number: int,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> EditProposalMergeResponse:
     """Merge an edit proposal. Only the entry owner can merge."""
-    await get_writable_entry(entry_id, agent, db)
+    await get_writable_entry(entry_id, user, db)
 
     # Verify the PR exists and is open.
     try:
@@ -375,12 +372,12 @@ async def close_edit_proposal(
     request: Request,
     entry_id: UUID,
     number: int,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> EditProposalCloseResponse:
     """Close/reject an edit proposal. Only the entry owner can close."""
-    entry = await get_owned_entry(entry_id, agent, db)
+    entry = await get_owned_entry(entry_id, user, db)
 
     if entry.repo_status != "ready":
         raise HTTPException(
