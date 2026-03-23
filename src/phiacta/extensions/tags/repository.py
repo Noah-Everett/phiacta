@@ -26,10 +26,13 @@ class TagRepository:
         self.session = session
 
     async def list_by_entry(self, entry_id: UUID) -> list[ExtensionTag]:
-        """List all tags for a given entry, ordered alphabetically."""
+        """List all tags for a given entry, ordered alphabetically.
+
+        entry_id is also the entity_id (shared-PK strategy).
+        """
         stmt = (
             select(ExtensionTag)
-            .where(ExtensionTag.entry_id == entry_id)
+            .where(ExtensionTag.entity_id == entry_id)
             .order_by(ExtensionTag.tag)
         )
         result = await self.session.execute(stmt)
@@ -45,14 +48,14 @@ class TagRepository:
         """
         # Delete existing tags
         await self.session.execute(
-            delete(ExtensionTag).where(ExtensionTag.entry_id == entry_id)
+            delete(ExtensionTag).where(ExtensionTag.entity_id == entry_id)
         )
 
         # Insert new tags
         new_tags: list[ExtensionTag] = []
         for tag in tags:
             ext_tag = ExtensionTag(
-                entry_id=entry_id,
+                entity_id=entry_id,
                 tag=tag,
                 created_by=created_by,
             )
@@ -83,25 +86,23 @@ class TagRepository:
             return [], 0
 
         if mode == "and":
-            # Entries that have ALL specified tags
             subq = (
-                select(ExtensionTag.entry_id)
+                select(ExtensionTag.entity_id)
                 .where(ExtensionTag.tag.in_(tags))
-                .group_by(ExtensionTag.entry_id)
+                .group_by(ExtensionTag.entity_id)
                 .having(
                     func.count(func.distinct(ExtensionTag.tag)) == len(tags)
                 )
             ).subquery()
         else:
-            # Entries that have ANY specified tag
             subq = (
-                select(ExtensionTag.entry_id)
+                select(ExtensionTag.entity_id)
                 .where(ExtensionTag.tag.in_(tags))
                 .distinct()
             ).subquery()
 
-        # Join with entries for title and status filtering
-        base_query = select(Entry).join(subq, Entry.id == subq.c.entry_id)
+        # Join with entries — works because entry.id == entity.id (shared PK)
+        base_query = select(Entry).join(subq, Entry.id == subq.c.entity_id)
 
         if status is not None:
             base_query = base_query.where(Entry.status == status)
