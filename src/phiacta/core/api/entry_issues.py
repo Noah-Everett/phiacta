@@ -15,6 +15,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.entry_guards import (
@@ -35,6 +36,7 @@ from phiacta.core.schemas.entry_issue import (
     IssueDetail,
     IssueListItem,
 )
+from phiacta.core.services.entity_service import EntityService
 from phiacta.core.services.git_service import (
     ForgejoError,
     ForgejoUnavailableError,
@@ -99,7 +101,7 @@ async def create_issue(
     git_service: GitService = Depends(get_git_service),
 ) -> IssueListItem:
     """Create an issue on an entry's repository."""
-    await get_proposable_entry(entry_id, db)
+    entry = await get_proposable_entry(entry_id, db)
 
     try:
         issue = await git_service.create_issue(
@@ -116,6 +118,25 @@ async def create_issue(
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
+
+    # Register entity and log activity AFTER Forgejo call succeeds
+    entity_service = EntityService(db)
+    try:
+        await entity_service.register_forgejo_entity_and_log(
+            entity_type="issue",
+            parent_id=entry_id,
+            external_ref=f"issues/{issue.number}",
+            created_by=user.id,
+            action="issue.created",
+            metadata={"title": issue.title, "entry_title": entry.title},
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "Entity registration failed for issue %d on entry %s (possible duplicate)",
+            issue.number, entry_id,
+        )
 
     return _issue_to_list_item(issue)
 
@@ -226,6 +247,22 @@ async def add_issue_comment(
             status_code=404, detail="Issue not found",
         ) from exc
 
+    # Register comment entity via service
+    entity_service = EntityService(db)
+    try:
+        await entity_service.register_comment_and_log(
+            parent_id=entry_id,
+            issue_external_ref=f"issues/{number}",
+            created_by=user.id,
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "Comment entity registration failed for issue %d on entry %s",
+            number, entry_id,
+        )
+
     return _comment_to_response(comment)
 
 
@@ -261,5 +298,22 @@ async def close_issue(
         raise HTTPException(
             status_code=404, detail="Issue not found",
         ) from exc
+
+    # Log activity via service
+    entity_service = EntityService(db)
+    try:
+        await entity_service.log_activity_for_external_ref(
+            parent_id=entry_id,
+            external_ref=f"issues/{number}",
+            actor_id=user.id,
+            action="issue.closed",
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "Activity logging failed for closing issue %d on entry %s",
+            number, entry_id,
+        )
 
     return IssueCloseResponse(detail="Issue closed")

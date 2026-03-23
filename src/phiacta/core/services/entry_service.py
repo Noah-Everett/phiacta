@@ -10,12 +10,15 @@ orchestrating writes to multiple tables (e.g. Entry + Outbox atomically).
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.outbox import Outbox
 from phiacta.core.schemas.entry import EntryCreate, EntryUpdate
+from phiacta.core.services.entity_service import EntityService
 from phiacta.core.services.entry_yaml import update_entry_yaml
 from phiacta.core.services.git_service import AuthorInfo, FileContent, GitService
 
@@ -28,34 +31,38 @@ class EntryService:
     ) -> None:
         self._session = session
         self._git = git_service
+        self._entity_service = EntityService(session)
 
     async def create_entry(self, body: EntryCreate, user: User) -> Entry:
         """Create an entry and enqueue its Forgejo repo provisioning.
 
-        Creates both the Entry row and the Outbox row in a single
-        transaction. The outbox worker will pick up the task and
-        provision the git repository on Forgejo.
+        Creates an Entity row (shared PK), the Entry row, and the Outbox
+        row in a single transaction. The outbox worker will pick up the
+        task and provision the git repository on Forgejo.
 
         Returns the created Entry (with repo_status='provisioning').
         """
+        # 1. Create Entity row first (shared-PK strategy)
+        entity = await self._entity_service.register_entity(
+            entity_type="entry",
+            created_by=user.id,
+        )
+
+        # 2. Create Entry with the same ID as the entity
         entry = Entry(
+            id=entity.id,
             title=body.title,
             content_format=body.content_format,
             layout_hint=body.layout_hint,
             summary=body.summary,
             license=body.license,
             created_by=user.id,
-            # repo_name must be the entry UUID — matches ForgejoGitService
-            # and the webhook handler's repo name → entry_id lookup.
-            repo_name="placeholder",  # set after flush gives us the id
+            repo_name=str(entity.id),
         )
         self._session.add(entry)
         await self._session.flush()
 
-        # Now entry.id is populated
-        entry.repo_name = str(entry.id)
-
-        # Build the outbox payload with ALL fields needed for provisioning
+        # 3. Build the outbox payload
         outbox_entry = Outbox(
             aggregate_id=entry.id,
             aggregate_type="entry",
@@ -75,6 +82,14 @@ class EntryService:
         )
         self._session.add(outbox_entry)
 
+        # 4. Log activity
+        await self._entity_service.log_activity(
+            actor_id=user.id,
+            action="entry.created",
+            entity_id=entry.id,
+            metadata={"title": body.title},
+        )
+
         await self._session.commit()
         await self._session.refresh(entry)
         return entry
@@ -82,30 +97,18 @@ class EntryService:
     async def update_entry_metadata(
         self, entry: Entry, body: EntryUpdate, user: User,
     ) -> str:
-        """Update entry metadata via a git-first write.
-
-        Reads the current ``.phiacta/entry.yaml`` from git, merges the
-        requested field updates, and commits the new YAML. The DB is
-        updated asynchronously by the webhook ingestion pipeline.
-
-        Returns the new commit SHA.
-        """
+        """Update entry metadata via a git-first write."""
         if self._git is None:
             raise RuntimeError("GitService required for metadata updates")
 
-        # Collect only the fields that were actually provided
         updates = body.model_dump(exclude_unset=True)
         if not updates:
             return ""
 
-        # Read current entry.yaml from git
         raw = await self._git.read_file(entry.id, ".phiacta/entry.yaml")
         existing_yaml = raw.decode()
-
-        # Merge updates and produce new YAML
         new_yaml = update_entry_yaml(existing_yaml, updates)
 
-        # Commit updated entry.yaml
         changed_fields = ", ".join(updates.keys())
         message = f"Update metadata: {changed_fields}"
         author = AuthorInfo(
@@ -119,11 +122,10 @@ class EntryService:
         )
         return sha
 
-    async def archive_entry(self, entry: Entry) -> Entry:
-        """Archive an entry — set DB status and make Forgejo repo read-only.
-
-        Raises ``ValueError`` if the entry is not in an archivable state.
-        """
+    async def archive_entry(
+        self, entry: Entry, user_id: UUID | None = None,
+    ) -> Entry:
+        """Archive an entry — set DB status and make Forgejo repo read-only."""
         if self._git is None:
             raise RuntimeError("GitService required for archival")
 
@@ -134,16 +136,22 @@ class EntryService:
 
         entry.status = "archived"
         await self._git.archive_repo(entry.id)
+
+        if user_id is not None:
+            await self._entity_service.log_activity(
+                actor_id=user_id,
+                action="entry.archived",
+                entity_id=entry.id,
+            )
+
         await self._session.commit()
         await self._session.refresh(entry)
         return entry
 
-    async def unarchive_entry(self, entry: Entry) -> Entry:
-        """Unarchive an entry — restore to active and unarchive Forgejo repo.
-
-        Unarchives Forgejo first so that if the DB update fails, the repo
-        stays archived (safe state). Raises ``ValueError`` if not archived.
-        """
+    async def unarchive_entry(
+        self, entry: Entry, user_id: UUID | None = None,
+    ) -> Entry:
+        """Unarchive an entry — restore to active and unarchive Forgejo repo."""
         if self._git is None:
             raise RuntimeError("GitService required for unarchival")
 
@@ -152,9 +160,16 @@ class EntryService:
                 f"Cannot unarchive entry with status '{entry.status}'"
             )
 
-        # Unarchive Forgejo FIRST — if this fails, DB stays archived (safe)
         await self._git.unarchive_repo(entry.id)
         entry.status = "active"
+
+        if user_id is not None:
+            await self._entity_service.log_activity(
+                actor_id=user_id,
+                action="entry.unarchived",
+                entity_id=entry.id,
+            )
+
         await self._session.commit()
         await self._session.refresh(entry)
         return entry

@@ -19,6 +19,7 @@ import unicodedata
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.entry_files import validate_file_path
@@ -41,6 +42,7 @@ from phiacta.core.schemas.entry_edit import (
     EditProposalListItem,
     EditProposalMergeResponse,
 )
+from phiacta.core.services.entity_service import EntityService
 from phiacta.core.services.git_service import (
     AuthorInfo,
     FileContent,
@@ -80,12 +82,6 @@ def _pr_to_list_item(
     pr: PullRequestInfo,
     user_handle: str | None = None,
 ) -> EditProposalListItem:
-    """Build an ``EditProposalListItem`` from a ``PullRequestInfo``.
-
-    When called from the create endpoint, ``user_handle`` comes from the
-    authenticated user.  For list/detail endpoints, it falls back to the
-    PR's stored ``author_name``.
-    """
     return EditProposalListItem(
         number=pr.number,
         title=pr.title,
@@ -124,7 +120,7 @@ async def create_edit_proposal(
     settings: Settings = Depends(get_settings),
 ) -> EditProposalListItem:
     """Create an edit proposal (branch + PR) for an entry."""
-    await get_proposable_entry(entry_id, db)
+    entry = await get_proposable_entry(entry_id, db)
 
     # Validate all file paths before touching Forgejo.
     for fc in body.files:
@@ -194,6 +190,25 @@ async def create_edit_proposal(
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
+
+    # Register entity and log activity AFTER Forgejo call succeeds
+    entity_service = EntityService(db)
+    try:
+        await entity_service.register_forgejo_entity_and_log(
+            entity_type="edit",
+            parent_id=entry_id,
+            external_ref=f"pulls/{pr_info.number}",
+            created_by=user.id,
+            action="edit.created",
+            metadata={"title": pr_info.title, "entry_title": entry.title},
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "Entity registration failed for edit PR %d on entry %s",
+            pr_info.number, entry_id,
+        )
 
     return _pr_to_list_item(pr_info, user.handle)
 
@@ -354,6 +369,23 @@ async def merge_edit_proposal(
             status_code=502, detail="Git service unavailable",
         ) from exc
 
+    # Log activity via service
+    entity_service = EntityService(db)
+    try:
+        await entity_service.log_activity_for_external_ref(
+            parent_id=entry_id,
+            external_ref=f"pulls/{number}",
+            actor_id=user.id,
+            action="edit.merged",
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "Activity logging failed for merging edit PR %d on entry %s",
+            number, entry_id,
+        )
+
     return EditProposalMergeResponse(sha=sha)
 
 
@@ -394,5 +426,22 @@ async def close_edit_proposal(
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
+
+    # Log activity via service
+    entity_service = EntityService(db)
+    try:
+        await entity_service.log_activity_for_external_ref(
+            parent_id=entry_id,
+            external_ref=f"pulls/{number}",
+            actor_id=user.id,
+            action="edit.closed",
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "Activity logging failed for closing edit PR %d on entry %s",
+            number, entry_id,
+        )
 
     return EditProposalCloseResponse(detail="Edit proposal closed")
