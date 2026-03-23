@@ -31,8 +31,6 @@ from phiacta.core.services.git_service_dep import get_git_service
 router = APIRouter(prefix="/entries", tags=["entries"])
 
 # Max refs returned in the detail endpoint's nested ref lists.
-# High enough to be effectively unbounded for normal use; prevents
-# pathological memory usage on entries with extreme ref counts.
 _DETAIL_REFS_LIMIT = 500
 
 
@@ -45,7 +43,6 @@ async def list_entries(
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[EntryListItem]:
     repo = EntryRepository(db)
-    # "all" sentinel bypasses status filter (maps to None in repository)
     repo_status = None if status == "all" else status
     entries = await repo.list_entries(
         limit=limit,
@@ -107,11 +104,7 @@ async def update_entry(
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> EntryResponse:
-    """Update entry metadata via git-first write.
-
-    Writes the updated ``.phiacta/entry.yaml`` to git. The DB is updated
-    asynchronously by the webhook ingestion pipeline.
-    """
+    """Update entry metadata via git-first write."""
     entry = await get_writable_entry(entry_id, user, db)
 
     service = EntryService(db, git_service)
@@ -148,7 +141,7 @@ async def archive_entry(
 
     service = EntryService(db, git_service)
     try:
-        entry = await service.archive_entry(entry)
+        entry = await service.archive_entry(entry, user_id=user.id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ForgejoError as exc:
@@ -173,7 +166,7 @@ async def unarchive_entry(
 
     service = EntryService(db, git_service)
     try:
-        entry = await service.unarchive_entry(entry)
+        entry = await service.unarchive_entry(entry, user_id=user.id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ForgejoError as exc:

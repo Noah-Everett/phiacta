@@ -20,6 +20,7 @@ from phiacta.core.schemas.auth import (
     RegisterRequest,
     UserResponse,
 )
+from phiacta.core.services.entity_service import EntityService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -42,7 +43,16 @@ async def register(
             detail="Handle already taken",
         )
 
+    # 1. Create Entity row first (shared-PK, created_by=NULL for users)
+    entity_service = EntityService(db)
+    entity = await entity_service.register_entity(
+        entity_type="user",
+        created_by=None,
+    )
+
+    # 2. Create User with the same ID as the entity
     user = User(
+        id=entity.id,
         handle=body.handle,
         password_hash=hash_password(body.password),
     )
