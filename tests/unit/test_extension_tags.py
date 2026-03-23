@@ -95,10 +95,10 @@ class TestTagResponseSchema:
         from phiacta.extensions.tags.schemas import TagResponse
 
         now = datetime.now(tz=timezone.utc)
-        agent_id = uuid4()
-        tr = TagResponse(tag="physics", created_by=agent_id, created_at=now)
+        user_id = uuid4()
+        tr = TagResponse(tag="physics", created_by=user_id, created_at=now)
         assert tr.tag == "physics"
-        assert tr.created_by == agent_id
+        assert tr.created_by == user_id
         assert tr.created_at == now
 
     def test_tag_list_response_shape(self) -> None:
@@ -109,11 +109,11 @@ class TestTagResponseSchema:
         from phiacta.extensions.tags.schemas import TagListResponse, TagResponse
 
         entry_id = uuid4()
-        agent_id = uuid4()
+        user_id = uuid4()
         now = datetime.now(tz=timezone.utc)
         tags = [
-            TagResponse(tag="physics", created_by=agent_id, created_at=now),
-            TagResponse(tag="math", created_by=agent_id, created_at=now),
+            TagResponse(tag="physics", created_by=user_id, created_at=now),
+            TagResponse(tag="math", created_by=user_id, created_at=now),
         ]
         tlr = TagListResponse(entry_id=entry_id, tags=tags)
         assert tlr.entry_id == entry_id

@@ -8,7 +8,7 @@ edit proposals (create + merge + close), entry updates, archive/unarchive,
 entry references with notes, and a second collaborator user.
 
 This is a test/development tool — not for production data.  Historical
-knowledge should be added by agents using the API directly.
+knowledge should be added by users using the API directly.
 
 Usage:
     python tests/seed.py --base-url http://localhost:8000
@@ -943,10 +943,10 @@ def seed(base_url: str) -> None:
 
     # -- 1. Register & login both users ------------------------------------
     print("=== Registering users ===")
-    token, agent_id = register_or_login(
+    token, user_id = register_or_login(
         client, base, SEED_USER_HANDLE, SEED_USER_PASSWORD,
     )
-    print(f"  seed-user: {agent_id}")
+    print(f"  seed-user: {user_id}")
 
     collab_token, collab_id = register_or_login(
         client, base, COLLAB_USER_HANDLE, COLLAB_USER_PASSWORD,

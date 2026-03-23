@@ -32,7 +32,7 @@ class PluginType(Enum):
 
     This is a closed infrastructure set defined by the platform architecture,
     not open-ended domain data. The anti-pattern prohibition on Python enums
-    applies to domain values like ``layout_hint`` or ``agent_type`` where
+    applies to domain values like ``layout_hint`` or reference ``rel`` where
     future values are unknowable.
     """
 

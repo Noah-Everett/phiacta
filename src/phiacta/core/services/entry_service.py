@@ -17,7 +17,7 @@ from phiacta.core.models.entry import Entry
 from phiacta.core.models.outbox import Outbox
 from phiacta.core.schemas.entry import EntryCreate, EntryUpdate
 from phiacta.core.services.entry_yaml import update_entry_yaml
-from phiacta.core.services.git_service import AgentInfo, FileContent, GitService
+from phiacta.core.services.git_service import AuthorInfo, FileContent, GitService
 
 
 class EntryService:
@@ -108,7 +108,7 @@ class EntryService:
         # Commit updated entry.yaml
         changed_fields = ", ".join(updates.keys())
         message = f"Update metadata: {changed_fields}"
-        author = AgentInfo(
+        author = AuthorInfo(
             name=user.handle, email=f"{user.id}@phiacta.local",
         )
         sha = await self._git.commit_files(

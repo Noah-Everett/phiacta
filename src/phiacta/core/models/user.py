@@ -12,15 +12,14 @@ from phiacta.core.models.base import Base, TimestampMixin, UUIDMixin
 class User(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
-    handle: Mapped[str] = mapped_column(
-        String(50), nullable=False, unique=True
-    )
+    handle: Mapped[str] = mapped_column(String(50), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
 
     # Relationships
     created_entries: Mapped[list[Entry]] = relationship(  # type: ignore[name-defined]  # noqa: F821
         foreign_keys="[Entry.created_by]",
         back_populates="created_by_user",
+        lazy="raise",
     )
 
     __table_args__ = (

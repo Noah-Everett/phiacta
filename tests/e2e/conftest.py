@@ -34,7 +34,7 @@ from phiacta.core.db.session import get_db
 from phiacta.main import app
 from phiacta.core.models.base import Base
 from phiacta.core.services.git_service import (
-    AgentInfo,
+    AuthorInfo,
     CommitInfo,
     DiffInfo,
     FileContent,
@@ -146,7 +146,7 @@ class FakeGitService:
         self,
         entry_id: UUID,
         files: list[FileContent],
-        author: AgentInfo,
+        author: AuthorInfo,
         message: str,
         branch: str = "main",
     ) -> str:
@@ -173,7 +173,7 @@ class FakeGitService:
         self,
         entry_id: UUID,
         path: str,
-        author: AgentInfo,
+        author: AuthorInfo,
         message: str,
         branch: str = "main",
     ) -> str:

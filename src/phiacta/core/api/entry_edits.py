@@ -42,7 +42,7 @@ from phiacta.core.schemas.entry_edit import (
     EditProposalMergeResponse,
 )
 from phiacta.core.services.git_service import (
-    AgentInfo,
+    AuthorInfo,
     FileContent,
     ForgejoError,
     ForgejoUnavailableError,
@@ -168,7 +168,7 @@ async def create_edit_proposal(
             ) from exc
 
     # Step 2: Commit files to the proposal branch.
-    author = AgentInfo(name=user.handle, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
     message = body.title
     try:
         await git_service.commit_files(

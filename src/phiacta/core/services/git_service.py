@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class AgentInfo:
-    """Git author identity derived from a Phiacta user."""
+class AuthorInfo:
+    """Git author identity for commit attribution."""
 
     name: str
     email: str  # "{user_uuid}@phiacta.local"
@@ -40,7 +40,7 @@ class AgentInfo:
 class CommitInfo:
     sha: str
     message: str
-    author: AgentInfo
+    author: AuthorInfo
     timestamp: datetime
 
 
@@ -176,7 +176,7 @@ class GitService(Protocol):
         self,
         entry_id: UUID,
         files: list[FileContent],
-        author: AgentInfo,
+        author: AuthorInfo,
         message: str,
         branch: str = "main",
     ) -> str:
@@ -187,7 +187,7 @@ class GitService(Protocol):
         self,
         entry_id: UUID,
         path: str,
-        author: AgentInfo,
+        author: AuthorInfo,
         message: str,
         branch: str = "main",
     ) -> str:
@@ -380,7 +380,7 @@ def _parse_commit(raw: dict) -> CommitInfo:
     return CommitInfo(
         sha=raw.get("sha", commit_data.get("id", "")),
         message=commit_data.get("message", ""),
-        author=AgentInfo(
+        author=AuthorInfo(
             name=author_data.get("name", ""),
             email=author_data.get("email", ""),
         ),
@@ -656,7 +656,7 @@ class ForgejoGitService:
         self,
         entry_id: UUID,
         files: list[FileContent],
-        author: AgentInfo,
+        author: AuthorInfo,
         message: str,
         branch: str = "main",
     ) -> str:
@@ -772,7 +772,7 @@ class ForgejoGitService:
         self,
         entry_id: UUID,
         path: str,
-        author: AgentInfo,
+        author: AuthorInfo,
         message: str,
         branch: str = "main",
     ) -> str:

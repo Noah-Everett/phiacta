@@ -27,16 +27,6 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
-class PublicUserResponse(BaseModel):
-    """Public user info — explicitly excludes password_hash."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    handle: str
-    created_at: datetime
-
-
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

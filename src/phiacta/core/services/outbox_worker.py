@@ -35,7 +35,7 @@ from phiacta.core.models.outbox import Outbox
 from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.services.entry_yaml import generate_entry_yaml
 from phiacta.core.services.git_service import (
-    AgentInfo,
+    AuthorInfo,
     FileContent,
     ForgejoError,
     ForgejoGitService,
@@ -351,7 +351,7 @@ class OutboxWorker:
         content = payload.get("content")
         created_at_str = payload.get("created_at")
 
-        author = AgentInfo(
+        author = AuthorInfo(
             name=author_handle,
             email=f"{author_id_str}@phiacta.local",
         )
@@ -451,7 +451,7 @@ class OutboxWorker:
         )
         author_id = payload.get("author_id", "service")
 
-        author = AgentInfo(
+        author = AuthorInfo(
             name=author_handle,
             email=f"{author_id}@phiacta.local",
         )

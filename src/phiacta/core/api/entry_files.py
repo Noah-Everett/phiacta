@@ -33,7 +33,7 @@ from phiacta.core.schemas.entry_file import (
     FileWriteResponse,
 )
 from phiacta.core.services.git_service import (
-    AgentInfo,
+    AuthorInfo,
     FileContent,
     ForgejoError,
     GitService,
@@ -204,7 +204,7 @@ async def put_entry_file(
     await _get_writable_entry(entry_id, user, db)
 
     message = body.message or f"Update {path}"
-    author = AgentInfo(name=user.handle, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
 
     try:
         sha = await git_service.commit_files(
@@ -245,7 +245,7 @@ async def delete_entry_file(
     await _get_writable_entry(entry_id, user, db)
 
     message = (body.message if body else None) or f"Delete {path}"
-    author = AgentInfo(name=user.handle, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
 
     try:
         sha = await git_service.delete_file(

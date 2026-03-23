@@ -19,7 +19,7 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from phiacta.core.services.git_service import AgentInfo, CommitInfo, DiffInfo, FileDiff
+from phiacta.core.services.git_service import AuthorInfo, CommitInfo, DiffInfo, FileDiff
 from tests.e2e.conftest import (
     FakeGitService,
     create_entry,
@@ -65,7 +65,7 @@ class TestListCommits:
             CommitInfo(
                 sha="abc123def456",
                 message="Initial commit",
-                author=AgentInfo(name="test-user", email="test@phiacta.local"),
+                author=AuthorInfo(name="test-user", email="test@phiacta.local"),
                 timestamp=ts,
             ),
         ]
@@ -97,13 +97,13 @@ class TestListCommits:
             CommitInfo(
                 sha="sha_second",
                 message="Second commit",
-                author=AgentInfo(name="user", email="user@phiacta.local"),
+                author=AuthorInfo(name="user", email="user@phiacta.local"),
                 timestamp=ts2,
             ),
             CommitInfo(
                 sha="sha_first",
                 message="First commit",
-                author=AgentInfo(name="user", email="user@phiacta.local"),
+                author=AuthorInfo(name="user", email="user@phiacta.local"),
                 timestamp=ts1,
             ),
         ]
@@ -168,7 +168,7 @@ class TestListCommits:
             CommitInfo(
                 sha=f"sha_{i:04d}",
                 message=f"Commit {i}",
-                author=AgentInfo(name="user", email="user@phiacta.local"),
+                author=AuthorInfo(name="user", email="user@phiacta.local"),
                 timestamp=ts,
             )
             for i in range(5)
@@ -211,7 +211,7 @@ class TestListCommits:
             CommitInfo(
                 sha="abc123",
                 message="Test commit",
-                author=AgentInfo(name="alice", email="alice@phiacta.local"),
+                author=AuthorInfo(name="alice", email="alice@phiacta.local"),
                 timestamp=ts,
             ),
         ]

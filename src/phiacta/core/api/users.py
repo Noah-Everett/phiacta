@@ -10,18 +10,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.db.session import get_db
 from phiacta.core.repositories.user_repository import UserRepository
-from phiacta.core.schemas.auth import PublicUserResponse
+from phiacta.core.schemas.auth import UserResponse
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/{user_id}", response_model=PublicUserResponse)
+@router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-) -> PublicUserResponse:
+) -> UserResponse:
     repo = UserRepository(db)
     user = await repo.get_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return PublicUserResponse.model_validate(user)
+    return UserResponse.model_validate(user)

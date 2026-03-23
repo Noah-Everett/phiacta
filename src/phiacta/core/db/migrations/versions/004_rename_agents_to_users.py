@@ -54,6 +54,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Reverse the agents -> users rename.
+
+    NOTE: email and agent_type are restored as nullable because their data
+    was permanently dropped during upgrade. A full data restore requires a
+    database backup.
+    """
     import sqlalchemy as sa
 
     # Restore FK on extension_tags
