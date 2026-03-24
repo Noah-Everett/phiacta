@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from typing import TypeAlias
 from uuid import uuid4
 
 import httpx
@@ -13,7 +12,7 @@ import pytest
 
 from tests.e2e.conftest import auth_header, register_user
 
-TwoEntriesFixture: TypeAlias = tuple[httpx.AsyncClient, str, str, str]
+type TwoEntriesFixture = tuple[httpx.AsyncClient, str, str, str]
 
 
 @pytest.fixture
@@ -86,6 +85,36 @@ class TestCreateEntryRef:
             "rel": "supports",
         }, headers=auth_header(token))
         assert resp.status_code == 422
+
+    async def test_create_duplicate_ref_rejected(self, two_entries: TwoEntriesFixture) -> None:
+        """Duplicate (from, to, rel) combination returns 409."""
+        client, entry_a, entry_b, token = two_entries
+        headers = auth_header(token)
+        payload = {
+            "from_entry_id": entry_a,
+            "to_entry_id": entry_b,
+            "rel": "supports",
+        }
+        resp1 = await client.post("/v1/entry-refs", json=payload, headers=headers)
+        assert resp1.status_code == 201
+
+        resp2 = await client.post("/v1/entry-refs", json=payload, headers=headers)
+        assert resp2.status_code == 409
+        assert "already exists" in resp2.json()["detail"]
+
+    async def test_same_entries_different_rel_allowed(self, two_entries: TwoEntriesFixture) -> None:
+        """Same entry pair with different rel types should be allowed."""
+        client, entry_a, entry_b, token = two_entries
+        headers = auth_header(token)
+        resp1 = await client.post("/v1/entry-refs", json={
+            "from_entry_id": entry_a, "to_entry_id": entry_b, "rel": "supports",
+        }, headers=headers)
+        assert resp1.status_code == 201
+
+        resp2 = await client.post("/v1/entry-refs", json={
+            "from_entry_id": entry_a, "to_entry_id": entry_b, "rel": "contradicts",
+        }, headers=headers)
+        assert resp2.status_code == 201
 
 
 class TestListEntryRefs:

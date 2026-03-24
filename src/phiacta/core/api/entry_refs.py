@@ -89,6 +89,13 @@ async def create_entry_ref(
             raise HTTPException(
                 status_code=422, detail="Self-referential entry ref not allowed",
             ) from None
+        if "uq_entry_refs_from_to_rel" in detail or (
+            "UNIQUE constraint failed" in detail and "entry_refs" in detail
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Entry ref with this from/to/rel combination already exists",
+            ) from None
         raise HTTPException(
             status_code=422, detail="Invalid entry reference (check entry IDs exist)",
         ) from None

@@ -17,13 +17,13 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.formats import FORMAT_EXTENSIONS
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.entry_ref import EntryRef
 from phiacta.core.repositories.entry_ref_repository import EntryRefRepository
-from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.services.entry_yaml import parse_entry_yaml
 from phiacta.core.services.git_service import GitService, RepoNotFoundError
 from phiacta.core.services.refs_yaml import parse_refs_yaml
@@ -125,7 +125,6 @@ async def ingest_refs(
 ) -> None:
     """Fetch refs.yaml from the repo and replace all outgoing entry_refs."""
     entry_id = entry.id
-    entry_repo = EntryRepository(db)
     ref_repo = EntryRefRepository(db)
 
     try:
@@ -143,10 +142,30 @@ async def ingest_refs(
         logger.error("Failed to parse refs.yaml for entry %s: %s", entry_id, exc)
         return
 
+    # Parse all candidate target IDs upfront for batch validation
+    candidate_ids: set[UUID] = set()
+    for ref_desc in ref_descriptors:
+        raw_target_id = str(ref_desc.get("target", {}).get("entry_id", ""))
+        if raw_target_id.startswith("ent_"):
+            raw_target_id = raw_target_id[4:]
+        try:
+            candidate_ids.add(UUID(raw_target_id))
+        except (ValueError, KeyError):
+            pass
+
+    # Batch-verify which target entries exist (single query instead of N+1)
+    existing_ids: set[UUID] = set()
+    if candidate_ids:
+        result = await db.execute(
+            select(Entry.id).where(Entry.id.in_(candidate_ids))
+        )
+        existing_ids = set(result.scalars().all())
+
     # Delete all existing outgoing refs (replace-all pattern)
     await ref_repo.delete_outgoing(entry_id)
 
-    # Insert new refs, filtering invalid ones
+    # Insert new refs, filtering invalid and duplicate ones
+    seen: set[tuple[UUID, str]] = set()
     for ref_desc in ref_descriptors:
         # Strip ent_ prefix from target entry_id
         raw_target_id = str(ref_desc.get("target", {}).get("entry_id", ""))
@@ -163,9 +182,8 @@ async def ingest_refs(
             logger.warning("Self-reference in refs.yaml for entry %s, skipping", entry_id)
             continue
 
-        # Verify target entry exists
-        target = await entry_repo.get_by_id(to_entry_id)
-        if target is None:
+        # Verify target entry exists (uses batch-fetched set)
+        if to_entry_id not in existing_ids:
             logger.warning(
                 "Ref target %s not found for entry %s, skipping", to_entry_id, entry_id
             )
@@ -173,6 +191,16 @@ async def ingest_refs(
 
         # Truncate rel to column max (String(50))
         rel = str(ref_desc.get("rel", ""))[:50]
+
+        # Skip duplicates (same to_entry_id + rel) — unique constraint would reject them
+        key = (to_entry_id, rel)
+        if key in seen:
+            logger.warning(
+                "Duplicate ref (%s, %s) in refs.yaml for entry %s, skipping",
+                to_entry_id, rel, entry_id,
+            )
+            continue
+        seen.add(key)
 
         # Truncate version_sha to column max (String(40))
         raw_version_sha = ref_desc.get("version_sha")

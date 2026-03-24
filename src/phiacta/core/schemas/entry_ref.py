@@ -13,8 +13,8 @@ class EntryRefCreate(BaseModel):
     from_entry_id: UUID
     to_entry_id: UUID
     rel: str = Field(max_length=50)
-    version_sha: str | None = None
-    note: str | None = None
+    version_sha: str | None = Field(None, max_length=40)
+    note: str | None = Field(None, max_length=10_000)
 
 
 class EntryRefResponse(BaseModel):
