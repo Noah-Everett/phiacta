@@ -293,9 +293,11 @@ class TestGetCommitDiff:
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
+        sha_parent = "a" * 40
+        sha_head = "b" * 40
         diff = DiffInfo(
-            base_sha="parent_sha",
-            head_sha="abc123",
+            base_sha=sha_parent,
+            head_sha=sha_head,
             files_changed=[
                 FileDiff(
                     path="README.md",
@@ -306,13 +308,13 @@ class TestGetCommitDiff:
             ],
         )
         # Store with sha~1 as base (the convention the endpoint will use)
-        fake_git.diffs[(UUID(entry_id), "abc123~1", "abc123")] = diff
+        fake_git.diffs[(UUID(entry_id), f"{sha_head}~1", sha_head)] = diff
 
-        resp = await client.get(f"/v1/entries/{entry_id}/history/abc123")
+        resp = await client.get(f"/v1/entries/{entry_id}/history/{sha_head}")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["base_sha"] == "parent_sha"
-        assert data["head_sha"] == "abc123"
+        assert data["base_sha"] == sha_parent
+        assert data["head_sha"] == sha_head
         assert len(data["files_changed"]) == 1
         assert data["files_changed"][0]["path"] == "README.md"
         assert data["files_changed"][0]["additions"] == 1
@@ -330,17 +332,19 @@ class TestGetCommitDiff:
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
+        sha_parent = "c" * 40
+        sha_head = "d" * 40
         diff = DiffInfo(
-            base_sha="parent",
-            head_sha="def456",
+            base_sha=sha_parent,
+            head_sha=sha_head,
             files_changed=[
                 FileDiff(path="README.md", patch="diff1", additions=5, deletions=2),
                 FileDiff(path="data.csv", patch="diff2", additions=100, deletions=0),
             ],
         )
-        fake_git.diffs[(UUID(entry_id), "def456~1", "def456")] = diff
+        fake_git.diffs[(UUID(entry_id), f"{sha_head}~1", sha_head)] = diff
 
-        resp = await client.get(f"/v1/entries/{entry_id}/history/def456")
+        resp = await client.get(f"/v1/entries/{entry_id}/history/{sha_head}")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["files_changed"]) == 2
@@ -360,12 +364,14 @@ class TestGetCommitDiff:
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        fake_git.diffs[(UUID(entry_id), "sha1~1", "sha1")] = DiffInfo(
-            base_sha="parent", head_sha="sha1", files_changed=[],
+        sha_parent = "e" * 40
+        sha_head = "f" * 40
+        fake_git.diffs[(UUID(entry_id), f"{sha_head}~1", sha_head)] = DiffInfo(
+            base_sha=sha_parent, head_sha=sha_head, files_changed=[],
         )
 
         # No auth header
-        resp = await client.get(f"/v1/entries/{entry_id}/history/sha1")
+        resp = await client.get(f"/v1/entries/{entry_id}/history/{sha_head}")
         assert resp.status_code == 200
 
     async def test_get_diff_response_has_expected_fields(
@@ -380,15 +386,17 @@ class TestGetCommitDiff:
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        fake_git.diffs[(UUID(entry_id), "x~1", "x")] = DiffInfo(
-            base_sha="parent",
-            head_sha="x",
+        sha_parent = "0" * 40
+        sha_head = "1" * 40
+        fake_git.diffs[(UUID(entry_id), f"{sha_head}~1", sha_head)] = DiffInfo(
+            base_sha=sha_parent,
+            head_sha=sha_head,
             files_changed=[
                 FileDiff(path="f.py", patch="p", additions=1, deletions=0),
             ],
         )
 
-        resp = await client.get(f"/v1/entries/{entry_id}/history/x")
+        resp = await client.get(f"/v1/entries/{entry_id}/history/{sha_head}")
         assert resp.status_code == 200
         data = resp.json()
         assert set(data.keys()) == {"base_sha", "head_sha", "files_changed"}
@@ -404,7 +412,8 @@ class TestGetCommitDiffErrors:
     ) -> None:
         """GET /history/{sha} with nonexistent entry returns 404."""
         fake_id = uuid4()
-        resp = await client.get(f"/v1/entries/{fake_id}/history/abc123")
+        sha = "a" * 40
+        resp = await client.get(f"/v1/entries/{fake_id}/history/{sha}")
         assert resp.status_code == 404
         assert "entry" in resp.json()["detail"].lower()
 
@@ -420,15 +429,17 @@ class TestGetCommitDiffErrors:
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        # Don't populate any diffs
-        resp = await client.get(f"/v1/entries/{entry_id}/history/nonexistent")
+        # Don't populate any diffs -- use a valid-format SHA that has no data
+        sha = "2" * 40
+        resp = await client.get(f"/v1/entries/{entry_id}/history/{sha}")
         assert resp.status_code == 404
 
     async def test_get_diff_invalid_uuid_returns_422(
         self, client: httpx.AsyncClient
     ) -> None:
         """GET /history/{sha} with invalid UUID returns 422."""
-        resp = await client.get("/v1/entries/not-a-uuid/history/abc123")
+        sha = "4" * 40
+        resp = await client.get(f"/v1/entries/not-a-uuid/history/{sha}")
         assert resp.status_code == 422
 
     async def test_get_diff_repo_provisioning_returns_409(
@@ -441,5 +452,6 @@ class TestGetCommitDiffErrors:
         entry = await create_entry(client, token, title="Provisioning Diff")
         entry_id = entry["id"]
 
-        resp = await client.get(f"/v1/entries/{entry_id}/history/abc123")
+        sha = "3" * 40
+        resp = await client.get(f"/v1/entries/{entry_id}/history/{sha}")
         assert resp.status_code == 409

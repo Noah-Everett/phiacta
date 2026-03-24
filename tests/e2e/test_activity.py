@@ -4,7 +4,7 @@
 """E2E tests for the Activity Feed endpoint.
 
 Tests the full API contract for:
-- GET /v1/users/{user_id}/activity  -- cursor-based paginated activity feed
+- GET /v1/activity?actor={user_id}  -- cursor-based paginated activity feed
 
 The activity feed is the primary user-facing API for the entity registry.
 It returns actions performed by a user in reverse chronological order.
@@ -77,7 +77,7 @@ class TestActivityResponseShape:
         client, user, token = owner
         await _create_ready_entry(client, token, e2e_session_factory)
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         data = resp.json()
         assert "items" in data
@@ -96,7 +96,7 @@ class TestActivityResponseShape:
             client, token, e2e_session_factory, title="Shape Test"
         )
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         assert len(items) >= 1
@@ -119,7 +119,7 @@ class TestActivityResponseShape:
         client, user, token = owner
         await _create_ready_entry(client, token, e2e_session_factory)
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         assert len(items) >= 1
@@ -135,7 +135,7 @@ class TestActivityResponseShape:
         client, user, token = owner
         entry = await _create_ready_entry(client, token, e2e_session_factory)
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         assert len(items) >= 1
@@ -157,7 +157,7 @@ class TestEmptyActivityFeed:
         auth = await register_user(client, handle="empty-feed-user")
         user_id = auth["user"]["id"]
 
-        resp = await client.get(f"/v1/users/{user_id}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_id})
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"] == []
@@ -171,7 +171,7 @@ class TestEmptyActivityFeed:
         user_id = auth["user"]["id"]
 
         # No Authorization header
-        resp = await client.get(f"/v1/users/{user_id}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_id})
         assert resp.status_code == 200
 
 
@@ -186,16 +186,16 @@ class TestActivityFeedErrors:
     async def test_nonexistent_user_returns_404(
         self, client: httpx.AsyncClient,
     ) -> None:
-        """GET /v1/users/{nonexistent_uuid}/activity returns 404."""
+        """GET /v1/activity?actor={nonexistent_uuid} returns 404."""
         fake_id = uuid4()
-        resp = await client.get(f"/v1/users/{fake_id}/activity")
+        resp = await client.get("/v1/activity", params={"actor": str(fake_id)})
         assert resp.status_code == 404
 
     async def test_invalid_uuid_returns_422(
         self, client: httpx.AsyncClient,
     ) -> None:
-        """GET /v1/users/not-a-uuid/activity returns 422."""
-        resp = await client.get("/v1/users/not-a-valid-uuid/activity")
+        """GET /v1/activity?actor=not-a-valid-uuid returns 422."""
+        resp = await client.get("/v1/activity", params={"actor": "not-a-valid-uuid"})
         assert resp.status_code == 422
 
     async def test_limit_exceeds_max_returns_422_or_clamped(
@@ -205,8 +205,8 @@ class TestActivityFeedErrors:
         """Requesting limit > 100 either returns 422 or is clamped to 100."""
         client, user, token = owner
         resp = await client.get(
-            f"/v1/users/{user['id']}/activity",
-            params={"limit": 200},
+            "/v1/activity",
+            params={"actor": user["id"], "limit": 200},
         )
         # Either 422 (rejected) or 200 (clamped)
         assert resp.status_code in (200, 422)
@@ -221,8 +221,8 @@ class TestActivityFeedErrors:
         """Providing a non-UUID 'before' cursor returns 422."""
         client, user, _ = owner
         resp = await client.get(
-            f"/v1/users/{user['id']}/activity",
-            params={"before": "not-a-uuid"},
+            "/v1/activity",
+            params={"actor": user["id"], "before": "not-a-uuid"},
         )
         assert resp.status_code == 422
 
@@ -248,7 +248,7 @@ class TestActivityFeedOrdering:
                 client, token, e2e_session_factory, title=title
             )
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         assert len(items) >= 3
@@ -288,7 +288,7 @@ class TestActivityFeedOrdering:
             client, token, e2e_session_factory, title="Another Entry"
         )
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         timestamps = [item["created_at"] for item in items]
@@ -316,7 +316,7 @@ class TestActivityFeedPagination:
                 client, token, e2e_session_factory, title=f"Default Limit {i}"
             )
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 3
@@ -336,8 +336,8 @@ class TestActivityFeedPagination:
             )
 
         resp = await client.get(
-            f"/v1/users/{user['id']}/activity",
-            params={"limit": 2},
+            "/v1/activity",
+            params={"actor": user["id"], "limit": 2},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -359,8 +359,8 @@ class TestActivityFeedPagination:
 
         # Page 1
         resp = await client.get(
-            f"/v1/users/{user['id']}/activity",
-            params={"limit": 2},
+            "/v1/activity",
+            params={"actor": user["id"], "limit": 2},
         )
         assert resp.status_code == 200
         page1 = resp.json()
@@ -370,8 +370,8 @@ class TestActivityFeedPagination:
 
         # Page 2
         resp = await client.get(
-            f"/v1/users/{user['id']}/activity",
-            params={"limit": 2, "before": cursor},
+            "/v1/activity",
+            params={"actor": user["id"], "limit": 2, "before": cursor},
         )
         assert resp.status_code == 200
         page2 = resp.json()
@@ -399,11 +399,11 @@ class TestActivityFeedPagination:
         all_items: list[dict] = []
         cursor = None
         for _ in range(10):  # Safety limit
-            params: dict = {"limit": 2}
+            params: dict = {"actor": user["id"], "limit": 2}
             if cursor:
                 params["before"] = cursor
             resp = await client.get(
-                f"/v1/users/{user['id']}/activity",
+                "/v1/activity",
                 params=params,
             )
             assert resp.status_code == 200
@@ -432,8 +432,8 @@ class TestActivityFeedPagination:
 
         # Fetch with limit larger than total
         resp = await client.get(
-            f"/v1/users/{user['id']}/activity",
-            params={"limit": 50},
+            "/v1/activity",
+            params={"actor": user["id"], "limit": 50},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -469,7 +469,7 @@ class TestActivityMetadata:
         )
         assert resp.status_code == 201
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         issue_events = [a for a in items if a["action"] == "issue.created"]
@@ -491,7 +491,7 @@ class TestActivityMetadata:
         client, user, token = owner
         await _create_ready_entry(client, token, e2e_session_factory)
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         entry_events = [a for a in items if a["action"] == "entry.created"]
@@ -509,7 +509,7 @@ class TestActivityMetadata:
             client, token, e2e_session_factory, title="No Parent"
         )
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         entry_events = [a for a in items if a["action"] == "entry.created"]
@@ -546,7 +546,7 @@ class TestActivityFeedIsolation:
         )
 
         # User A's feed
-        resp = await client.get(f"/v1/users/{user_a['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_a["id"]})
         assert resp.status_code == 200
         a_items = resp.json()["items"]
         a_entity_ids = {item["entity_id"] for item in a_items}
@@ -554,7 +554,7 @@ class TestActivityFeedIsolation:
         assert entry_b["id"] not in a_entity_ids
 
         # User B's feed
-        resp = await client.get(f"/v1/users/{user_b['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_b["id"]})
         assert resp.status_code == 200
         b_items = resp.json()["items"]
         b_entity_ids = {item["entity_id"] for item in b_items}
@@ -587,14 +587,14 @@ class TestActivityFeedIsolation:
         assert resp.status_code == 201
 
         # User B's feed should have the issue.created
-        resp = await client.get(f"/v1/users/{user_b['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_b["id"]})
         assert resp.status_code == 200
         b_items = resp.json()["items"]
         b_actions = [a["action"] for a in b_items]
         assert "issue.created" in b_actions
 
         # User A's feed should NOT have the issue.created (B was the actor)
-        resp = await client.get(f"/v1/users/{user_a['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_a["id"]})
         assert resp.status_code == 200
         a_items = resp.json()["items"]
         a_issue_events = [
@@ -639,7 +639,7 @@ class TestActivityActionVocabulary:
         )
         assert resp.status_code == 200
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         actions = {a["action"] for a in items}
@@ -685,7 +685,7 @@ class TestActivityActionVocabulary:
         )
         assert resp.status_code == 200
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         actions = {a["action"] for a in resp.json()["items"]}
         assert "issue.created" in actions
@@ -727,13 +727,13 @@ class TestActivityActionVocabulary:
         assert resp.status_code == 200
 
         # Check B has edit.created
-        resp = await client.get(f"/v1/users/{user_b['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_b["id"]})
         assert resp.status_code == 200
         b_actions = {a["action"] for a in resp.json()["items"]}
         assert "edit.created" in b_actions
 
         # Check A has edit.merged
-        resp = await client.get(f"/v1/users/{user_a['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_a["id"]})
         assert resp.status_code == 200
         a_actions = {a["action"] for a in resp.json()["items"]}
         assert "edit.merged" in a_actions

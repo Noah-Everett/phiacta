@@ -6,7 +6,7 @@
 Tests that entity rows are created alongside domain objects (users, entries,
 issues, edits, comments) via their respective API endpoints. Since entities
 are a behind-the-scenes persistence concern, we verify their existence
-indirectly through the activity feed (GET /v1/users/{id}/activity) and by
+indirectly through the activity feed (GET /v1/activity?actor={id}) and by
 confirming that existing features continue to work correctly.
 
 Entity creation is a side-effect of existing endpoints:
@@ -94,7 +94,7 @@ class TestEntryCreatesEntity:
         entry_id = entry["id"]
         user_id = user["id"]
 
-        resp = await client.get(f"/v1/users/{user_id}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_id})
         assert resp.status_code == 200
         data = resp.json()
         items = data["items"]
@@ -124,7 +124,7 @@ class TestEntryCreatesEntity:
             )
             entry_ids.append(entry["id"])
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
 
@@ -148,7 +148,7 @@ class TestEntryCreatesEntity:
             client, token, e2e_session_factory, title="Shared PK Test"
         )
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         created = [
@@ -180,7 +180,7 @@ class TestUserRegistrationCreatesEntity:
         auth = await register_user(client, handle="fresh-user")
         user_id = auth["user"]["id"]
 
-        resp = await client.get(f"/v1/users/{user_id}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user_id})
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"] == []
@@ -249,7 +249,7 @@ class TestIssueCreatesEntity:
         assert resp.status_code == 201
 
         # Check other_user's activity feed
-        resp = await client.get(f"/v1/users/{other_data['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": other_data["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         issue_events = [a for a in items if a["action"] == "issue.created"]
@@ -280,7 +280,7 @@ class TestIssueCreatesEntity:
         )
         assert resp.status_code == 201
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         issue_events = [a for a in items if a["action"] == "issue.created"]
@@ -326,7 +326,7 @@ class TestIssueCreatesEntity:
         assert comment_resp.status_code == 201
 
         # Check owner's activity feed for 'issue.commented'
-        resp = await client.get(f"/v1/users/{owner_data['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": owner_data["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         comment_events = [a for a in items if a["action"] == "issue.commented"]
@@ -361,7 +361,7 @@ class TestIssueCreatesEntity:
         )
         assert close_resp.status_code == 200
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         close_events = [a for a in items if a["action"] == "issue.closed"]
@@ -407,7 +407,7 @@ class TestIssueCreatesEntity:
 
         # Check activity feed -- should have all 3 events in reverse
         # chronological order
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         issue_actions = [
@@ -462,7 +462,7 @@ class TestEditCreatesEntity:
         )
         assert resp.status_code == 201
 
-        resp = await client.get(f"/v1/users/{other_data['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": other_data["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         edit_events = [a for a in items if a["action"] == "edit.created"]
@@ -508,7 +508,7 @@ class TestEditCreatesEntity:
         )
         assert resp.status_code == 200
 
-        resp = await client.get(f"/v1/users/{owner_data['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": owner_data["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         merge_events = [a for a in items if a["action"] == "edit.merged"]
@@ -549,7 +549,7 @@ class TestEditCreatesEntity:
         )
         assert resp.status_code == 200
 
-        resp = await client.get(f"/v1/users/{owner_data['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": owner_data["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         close_events = [a for a in items if a["action"] == "edit.closed"]
@@ -591,14 +591,14 @@ class TestEditCreatesEntity:
         assert resp.status_code == 200
 
         # Other user should see 'edit.created'
-        resp = await client.get(f"/v1/users/{other_data['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": other_data["id"]})
         assert resp.status_code == 200
         other_items = resp.json()["items"]
         other_actions = [a["action"] for a in other_items]
         assert "edit.created" in other_actions
 
         # Owner should see 'edit.merged'
-        resp = await client.get(f"/v1/users/{owner_data['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": owner_data["id"]})
         assert resp.status_code == 200
         owner_items = resp.json()["items"]
         owner_actions = [a["action"] for a in owner_items]
@@ -632,7 +632,7 @@ class TestArchivalLogsActivity:
         )
         assert resp.status_code == 200
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         archive_events = [a for a in items if a["action"] == "entry.archived"]
@@ -666,7 +666,7 @@ class TestArchivalLogsActivity:
         )
         assert resp.status_code == 200
 
-        resp = await client.get(f"/v1/users/{user['id']}/activity")
+        resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         unarchive_events = [

@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # Plugins
     enabled_plugins: list[str] = Field(default_factory=list)
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
     @model_validator(mode="after")
     def _validate_jwt_secret(self) -> "Settings":

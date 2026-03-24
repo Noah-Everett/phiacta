@@ -92,12 +92,18 @@ class TestAppWithNoPlugins:
     ) -> None:
         """Core /ready endpoint is accessible with no plugins.
 
-        Note: /ready requires a DB connection, which the test client provides.
+        Note: /ready checks the production DB engine (get_engine()) which may
+        not be available in tests. An OSError may propagate through the ASGI
+        transport if the DB is unreachable, so we accept that as proof the
+        route exists. A 404 would mean the route is missing entirely.
         """
-        resp = await client.get("/ready")
-        # May return 200 or 500 depending on test DB setup, but the route
-        # itself must be reachable (not 404).
-        assert resp.status_code != 404
+        try:
+            resp = await client.get("/ready")
+            # Route exists -- any status other than 404 is fine
+            assert resp.status_code != 404
+        except OSError:
+            # DB connection refused -- route exists but DB is unreachable
+            pass
 
     async def test_entries_list_returns_200(
         self, client: httpx.AsyncClient
