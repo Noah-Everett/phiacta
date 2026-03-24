@@ -22,7 +22,7 @@ FROM base AS development
 COPY . .
 RUN uv pip install --system --no-cache -e ".[dev]"
 EXPOSE 8000
-# Source is mounted as a volume; command is set in docker-compose.yml
+# Source is mounted as a volume; command is set in docker/docker-compose.yml
 
 
 # ──────────────────────────────────────────

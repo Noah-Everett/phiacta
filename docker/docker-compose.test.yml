@@ -1,9 +1,9 @@
 # Test stack overlay — disables rate limiting, uses separate volumes.
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.test.yml up -d
 #   pytest tests/integration/ -m forgejo
-#   docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.test.yml down -v
 
 services:
   db:
@@ -13,7 +13,7 @@ services:
   forgejo:
     volumes:
       - forgejo_data_test:/data
-      - ./docker/forgejo-entrypoint.sh:/forgejo-entrypoint.sh:ro
+      - ./forgejo-entrypoint.sh:/forgejo-entrypoint.sh:ro
 
   backend:
     environment:

@@ -35,7 +35,7 @@ services:
       FORGEJO_ORG: phiacta
     volumes:
       - forgejo_data:/data
-      - ./docker/forgejo-entrypoint.sh:/forgejo-entrypoint.sh:ro
+      - ./forgejo-entrypoint.sh:/forgejo-entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/forgejo-entrypoint.sh"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/version"]
@@ -46,8 +46,8 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       target: development
     environment:
       DATABASE_URL: "postgresql+asyncpg://phiacta:devpassword@db:5432/phiacta"
@@ -63,7 +63,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./src:/app/src
+      - ../src:/app/src
     depends_on:
       db:
         condition: service_healthy
