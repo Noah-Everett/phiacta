@@ -6,15 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class EntryRefCreate(BaseModel):
-    from_entry_id: UUID
-    to_entry_id: UUID
-    rel: str = Field(max_length=50)
-    version_sha: str | None = Field(None, max_length=40)
-    note: str | None = Field(None, max_length=10_000)
+from pydantic import BaseModel, ConfigDict
 
 
 class EntryRefResponse(BaseModel):

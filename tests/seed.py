@@ -1022,25 +1022,26 @@ def seed(base_url: str) -> None:
         else:
             print(f"  {key}: skipped (conflict)")
 
-    # -- 4. Create entry refs with notes -----------------------------------
-    print("\n=== Creating entry refs ===")
+    # -- 4. Build refs.yaml files (uploaded in step 5) ----------------------
+    # Group relations by source entry to build one refs.yaml per entry.
+    print("\n=== Preparing entry refs (via refs.yaml) ===")
+    refs_by_source: dict[str, list[dict]] = {}
     for src_key, tgt_key, rel, note in RELATIONS:
         if src_key not in entry_ids or tgt_key not in entry_ids:
             print(f"  SKIP {src_key} -> {tgt_key}: missing entry IDs", file=sys.stderr)
             continue
-        payload = {
-            "from_entry_id": entry_ids[src_key],
-            "to_entry_id": entry_ids[tgt_key],
+        ref_desc: dict = {
             "rel": rel,
+            "target": {"entry_id": f"ent_{entry_ids[tgt_key]}"},
         }
         if note:
-            payload["note"] = note
-        resp = post(client, f"{base}/entry-refs", payload, token=token)
+            ref_desc["note"] = note
+        refs_by_source.setdefault(src_key, []).append(ref_desc)
         counters["refs"] += 1
         note_flag = " (+note)" if note else ""
-        print(f"  {src_key} --[{rel}]-> {tgt_key}: {resp['id']}{note_flag}")
+        print(f"  {src_key} --[{rel}]-> {tgt_key}{note_flag}")
 
-    # -- 5. Wait for repos, then upload files ------------------------------
+    # -- 5. Wait for repos, then upload files + refs.yaml -------------------
     print("\n=== Uploading files ===")
     for entry_key, file_list in FILES.items():
         if entry_key not in entry_ids:
@@ -1060,6 +1061,33 @@ def seed(base_url: str) -> None:
             if resp:
                 counters["files"] += 1
                 print(f"  {entry_key}/{path}: {resp.get('sha', 'ok')[:12]}")
+
+    # Upload refs.yaml for entries that have outgoing refs
+    print("\n=== Uploading refs.yaml files ===")
+    for entry_key, ref_list in refs_by_source.items():
+        if entry_key not in entry_ids:
+            continue
+        eid = entry_ids[entry_key]
+        if not wait_for_ready(client, base, eid, token, max_wait=60):
+            print(f"  SKIP {entry_key}: repo not ready after 60s", file=sys.stderr)
+            continue
+        # Build refs.yaml content (simple YAML — no library needed)
+        lines = ["refs:"]
+        for rd in ref_list:
+            lines.append(f'  - rel: "{rd["rel"]}"')
+            lines.append(f'    target:')
+            lines.append(f'      entry_id: "{rd["target"]["entry_id"]}"')
+            if "note" in rd:
+                lines.append(f'    note: "{rd["note"]}"')
+        refs_yaml_content = "\n".join(lines) + "\n"
+        resp = put(
+            client,
+            f"{base}/entries/{eid}/files/.phiacta/refs.yaml",
+            {"content": b64(refs_yaml_content), "message": "Seed: add refs.yaml"},
+            token=token,
+        )
+        if resp:
+            print(f"  {entry_key}/.phiacta/refs.yaml: {len(ref_list)} refs")
 
     # -- 6. Update entry metadata via PATCH --------------------------------
     print("\n=== Updating entries ===")

@@ -1,25 +1,55 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""E2E tests for entry ref endpoints."""
+"""E2E tests for entry ref endpoints (read-only).
+
+Entry refs are git-derived — there is no POST endpoint. Tests create
+refs via the DB session factory and verify read endpoints.
+"""
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from phiacta.core.models.entry_ref import EntryRef
 from tests.e2e.conftest import auth_header, register_user
 
-type TwoEntriesFixture = tuple[httpx.AsyncClient, str, str, str]
+type RefsFixture = tuple[httpx.AsyncClient, str, str, str, str]
+
+
+async def _create_ref_in_db(
+    session_factory: async_sessionmaker[AsyncSession],
+    from_entry_id: str,
+    to_entry_id: str,
+    rel: str,
+) -> str:
+    """Insert an EntryRef directly and return its id."""
+    async with session_factory() as session:
+        ref = EntryRef(
+            from_entry_id=UUID(from_entry_id),
+            to_entry_id=UUID(to_entry_id),
+            rel=rel,
+        )
+        session.add(ref)
+        await session.commit()
+        await session.refresh(ref)
+        return str(ref.id)
 
 
 @pytest.fixture
-async def two_entries(
+async def refs_fixture(
     client: httpx.AsyncClient,
-) -> TwoEntriesFixture:
-    """Create a user and two entries. Returns (client, entry_a_id, entry_b_id, token)."""
+    e2e_session_factory: async_sessionmaker[AsyncSession],
+) -> RefsFixture:
+    """Create a user, two entries, and a ref between them.
+
+    Returns (client, entry_a_id, entry_b_id, ref_id, token).
+    """
     uid = uuid4().hex[:8]
     auth = await register_user(client, handle=f"ref-{uid}")
     token = auth["access_token"]
@@ -27,94 +57,22 @@ async def two_entries(
 
     resp_a = await client.post("/v1/entries", json={"title": "Entry A"}, headers=headers)
     resp_b = await client.post("/v1/entries", json={"title": "Entry B"}, headers=headers)
+    entry_a = resp_a.json()["id"]
+    entry_b = resp_b.json()["id"]
 
-    return client, resp_a.json()["id"], resp_b.json()["id"], token
+    ref_id = await _create_ref_in_db(e2e_session_factory, entry_a, entry_b, "supports")
+    return client, entry_a, entry_b, ref_id, token
 
 
-class TestCreateEntryRef:
-    async def test_create_ref(self, two_entries: TwoEntriesFixture) -> None:
-        client, entry_a, entry_b, token = two_entries
+class TestPostEndpointRemoved:
+    async def test_post_returns_method_not_allowed(self, client: httpx.AsyncClient) -> None:
+        """POST /v1/entry-refs no longer exists — refs are git-derived only."""
         resp = await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a,
-            "to_entry_id": entry_b,
-            "rel": "supports",
-        }, headers=auth_header(token))
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["from_entry_id"] == entry_a
-        assert data["to_entry_id"] == entry_b
-        assert data["rel"] == "supports"
-
-    async def test_create_ref_with_note(self, two_entries: TwoEntriesFixture) -> None:
-        client, entry_a, entry_b, token = two_entries
-        resp = await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a,
-            "to_entry_id": entry_b,
-            "rel": "derives",
-            "note": "Derived via Noether's theorem",
-        }, headers=auth_header(token))
-        assert resp.status_code == 201
-        assert resp.json()["note"] == "Derived via Noether's theorem"
-
-    async def test_create_ref_unauthenticated(self, two_entries: TwoEntriesFixture) -> None:
-        client, entry_a, entry_b, _ = two_entries
-        resp = await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a,
-            "to_entry_id": entry_b,
-            "rel": "supports",
-        })
-        assert resp.status_code == 401
-
-    async def test_create_self_ref_rejected(self, two_entries: TwoEntriesFixture) -> None:
-        """Self-referential edges are rejected by the ck_entry_refs_no_self_ref constraint."""
-        client, entry_a, _, token = two_entries
-        resp = await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a,
-            "to_entry_id": entry_a,
-            "rel": "supports",
-        }, headers=auth_header(token))
-        assert resp.status_code == 422
-        assert "Self-referential" in resp.json()["detail"]
-
-    async def test_create_ref_nonexistent_entry(self, two_entries: TwoEntriesFixture) -> None:
-        """Referencing a nonexistent entry ID should return 422."""
-        client, entry_a, _, token = two_entries
-        resp = await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a,
+            "from_entry_id": str(uuid4()),
             "to_entry_id": str(uuid4()),
             "rel": "supports",
-        }, headers=auth_header(token))
-        assert resp.status_code == 422
-
-    async def test_create_duplicate_ref_rejected(self, two_entries: TwoEntriesFixture) -> None:
-        """Duplicate (from, to, rel) combination returns 409."""
-        client, entry_a, entry_b, token = two_entries
-        headers = auth_header(token)
-        payload = {
-            "from_entry_id": entry_a,
-            "to_entry_id": entry_b,
-            "rel": "supports",
-        }
-        resp1 = await client.post("/v1/entry-refs", json=payload, headers=headers)
-        assert resp1.status_code == 201
-
-        resp2 = await client.post("/v1/entry-refs", json=payload, headers=headers)
-        assert resp2.status_code == 409
-        assert "already exists" in resp2.json()["detail"]
-
-    async def test_same_entries_different_rel_allowed(self, two_entries: TwoEntriesFixture) -> None:
-        """Same entry pair with different rel types should be allowed."""
-        client, entry_a, entry_b, token = two_entries
-        headers = auth_header(token)
-        resp1 = await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a, "to_entry_id": entry_b, "rel": "supports",
-        }, headers=headers)
-        assert resp1.status_code == 201
-
-        resp2 = await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a, "to_entry_id": entry_b, "rel": "contradicts",
-        }, headers=headers)
-        assert resp2.status_code == 201
+        })
+        assert resp.status_code == 405
 
 
 class TestListEntryRefs:
@@ -123,13 +81,8 @@ class TestListEntryRefs:
         assert resp.status_code == 200
         assert resp.json()["items"] == []
 
-    async def test_list_refs_by_from_entry(self, two_entries: TwoEntriesFixture) -> None:
-        client, entry_a, entry_b, token = two_entries
-        headers = auth_header(token)
-        await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a, "to_entry_id": entry_b, "rel": "supports",
-        }, headers=headers)
-
+    async def test_list_refs_by_from_entry(self, refs_fixture: RefsFixture) -> None:
+        client, entry_a, _, _, _ = refs_fixture
         resp = await client.get("/v1/entry-refs", params={"from_entry_id": entry_a})
         assert resp.status_code == 200
         data = resp.json()
@@ -137,14 +90,9 @@ class TestListEntryRefs:
         assert data["items"][0]["from_entry_id"] == entry_a
         assert data["total"] == 1
 
-    async def test_list_refs_by_rel(self, two_entries: TwoEntriesFixture) -> None:
-        client, entry_a, entry_b, token = two_entries
-        headers = auth_header(token)
-        await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a, "to_entry_id": entry_b, "rel": "contradicts",
-        }, headers=headers)
-
-        resp = await client.get("/v1/entry-refs", params={"rel": "contradicts"})
+    async def test_list_refs_by_rel(self, refs_fixture: RefsFixture) -> None:
+        client, _, _, _, _ = refs_fixture
+        resp = await client.get("/v1/entry-refs", params={"rel": "supports"})
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 1
@@ -152,16 +100,11 @@ class TestListEntryRefs:
 
 
 class TestGetEntryRef:
-    async def test_get_ref(self, two_entries: TwoEntriesFixture) -> None:
-        client, entry_a, entry_b, token = two_entries
-        create_resp = await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a, "to_entry_id": entry_b, "rel": "generalizes",
-        }, headers=auth_header(token))
-        ref_id = create_resp.json()["id"]
-
+    async def test_get_ref(self, refs_fixture: RefsFixture) -> None:
+        client, _, _, ref_id, _ = refs_fixture
         resp = await client.get(f"/v1/entry-refs/{ref_id}")
         assert resp.status_code == 200
-        assert resp.json()["rel"] == "generalizes"
+        assert resp.json()["rel"] == "supports"
 
     async def test_get_ref_not_found(self, client: httpx.AsyncClient) -> None:
         resp = await client.get(f"/v1/entry-refs/{uuid4()}")
@@ -169,25 +112,16 @@ class TestGetEntryRef:
 
 
 class TestEntryReferences:
-    async def test_get_entry_references(self, two_entries: TwoEntriesFixture) -> None:
-        client, entry_a, entry_b, token = two_entries
-        headers = auth_header(token)
-        await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a, "to_entry_id": entry_b, "rel": "supports",
-        }, headers=headers)
-
+    async def test_get_entry_references(self, refs_fixture: RefsFixture) -> None:
+        client, entry_a, _, _, _ = refs_fixture
         resp = await client.get(f"/v1/entries/{entry_a}/references")
         assert resp.status_code == 200
         refs = resp.json()
         assert len(refs) == 1
         assert refs[0]["rel"] == "supports"
 
-    async def test_get_entry_references_direction(self, two_entries: TwoEntriesFixture) -> None:
-        client, entry_a, entry_b, token = two_entries
-        headers = auth_header(token)
-        await client.post("/v1/entry-refs", json={
-            "from_entry_id": entry_a, "to_entry_id": entry_b, "rel": "supports",
-        }, headers=headers)
+    async def test_get_entry_references_direction(self, refs_fixture: RefsFixture) -> None:
+        client, _, entry_b, _, _ = refs_fixture
 
         # entry_b has incoming ref
         resp = await client.get(
