@@ -388,6 +388,29 @@ class TestPutFileErrors:
         assert resp.status_code == 400
         assert "base64" in resp.json()["detail"].lower()
 
+    async def test_put_file_exceeding_size_limit_returns_400(
+        self,
+        authed: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """PUT with content exceeding max_file_size_bytes returns 400."""
+        client, _, token = authed
+        entry = await create_entry(client, token, title="Oversized File Entry")
+        entry_id = entry["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+
+        # Default max is 25 MB; create content slightly over that
+        oversized = b"x" * (25 * 1024 * 1024 + 1)
+        content_b64 = base64.b64encode(oversized).decode()
+
+        resp = await client.put(
+            f"/v1/entries/{entry_id}/files/big.bin",
+            json={"content": content_b64},
+            headers=auth_header(token),
+        )
+        assert resp.status_code == 400
+        assert "exceeds maximum size" in resp.json()["detail"].lower()
+
     async def test_put_path_traversal_returns_400(
         self,
         authed: AuthedFixture,

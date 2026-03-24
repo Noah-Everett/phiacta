@@ -159,6 +159,9 @@ class TestUpdateMetadata:
     async def test_update_returns_current_db_state(
         self, ready_entry: tuple[AuthedFixture, dict],
     ) -> None:
+        """PATCH returns the current DB state (pre-ingestion), not the
+        just-committed git state.  The DB title should still be the
+        ORIGINAL value because the webhook pipeline hasn't run yet."""
         (client, _, token), entry = ready_entry
 
         resp = await client.patch(
@@ -169,12 +172,12 @@ class TestUpdateMetadata:
         assert resp.status_code == 200
         data = resp.json()
 
-        # Response includes the commit SHA
-        assert "sha" in data or "current_head_sha" in data or "id" in data
-        # The response is an EntryResponse — still has the DB fields
-        assert "id" in data
-        assert "status" in data
-        assert "repo_status" in data
+        # The response is an EntryResponse with full DB fields
+        assert data["id"] == entry["id"]
+        assert data["status"] == "active"
+        assert data["repo_status"] == "ready"
+        # DB title is still the ORIGINAL value — the webhook hasn't run
+        assert data["title"] == "Original Title"
 
     async def test_update_empty_body_no_commit(
         self, ready_entry: tuple[AuthedFixture, dict], fake_git: FakeGitService,

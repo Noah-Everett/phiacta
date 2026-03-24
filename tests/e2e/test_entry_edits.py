@@ -505,6 +505,60 @@ class TestCreateEditProposalErrors:
         )
         assert resp.status_code == 400
 
+    async def test_create_invalid_base64_400(
+        self,
+        owner: AuthedFixture,
+        proposer: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """POST /edits with invalid base64 file content returns 400."""
+        client, _, owner_token = owner
+        _, _, proposer_token = proposer
+        entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
+        entry_id = entry["id"]
+
+        resp = await client.post(
+            f"/v1/entries/{entry_id}/edits",
+            json={
+                "title": "Bad base64",
+                "files": [
+                    {"path": "data.csv", "content": "not-valid-base64!!!@#$"},
+                ],
+            },
+            headers=auth_header(proposer_token),
+        )
+        assert resp.status_code == 400
+        assert "base64" in resp.json()["detail"].lower()
+
+    async def test_create_file_exceeds_size_limit_400(
+        self,
+        owner: AuthedFixture,
+        proposer: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """POST /edits with a file exceeding max_file_size_bytes returns 400."""
+        client, _, owner_token = owner
+        _, _, proposer_token = proposer
+        entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
+        entry_id = entry["id"]
+
+        # Default max is 25 MB; create content slightly over that
+        oversized = b"x" * (25 * 1024 * 1024 + 1)
+        content_b64 = base64.b64encode(oversized).decode()
+
+        resp = await client.post(
+            f"/v1/entries/{entry_id}/edits",
+            json={
+                "title": "Oversized file",
+                "files": [
+                    {"path": "big.bin", "content": content_b64},
+                ],
+            },
+            headers=auth_header(proposer_token),
+        )
+        assert resp.status_code == 400
+        assert "exceeds maximum size" in resp.json()["detail"].lower()
+
 
 # ---------------------------------------------------------------------------
 # GET /v1/entries/{entry_id}/edits -- List edit proposals

@@ -22,3 +22,8 @@ class TestSmoke:
         """A GET to a non-existent user returns 404, not 500."""
         resp = await client.get(f"/v1/users/{uuid4()}")
         assert resp.status_code == 404
+
+    async def test_nonexistent_route_returns_404(self, client: httpx.AsyncClient) -> None:
+        """A GET to a completely unknown route returns 404."""
+        resp = await client.get("/v1/does-not-exist")
+        assert resp.status_code == 404

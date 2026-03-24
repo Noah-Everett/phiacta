@@ -111,6 +111,71 @@ class TestGetEntryRef:
         assert resp.status_code == 404
 
 
+class TestListEntryRefsPagination:
+    async def test_list_refs_by_to_entry(self, refs_fixture: RefsFixture) -> None:
+        """Filter by to_entry_id returns refs pointing TO that entry."""
+        client, _, entry_b, _, _ = refs_fixture
+        resp = await client.get("/v1/entry-refs", params={"to_entry_id": entry_b})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["to_entry_id"] == entry_b
+        assert data["total"] == 1
+
+    async def test_list_refs_pagination_limit(
+        self,
+        client: httpx.AsyncClient,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Pagination limit and offset work correctly."""
+        uid = uuid4().hex[:8]
+        auth = await register_user(client, handle=f"refpage-{uid}")
+        token = auth["access_token"]
+        headers = auth_header(token)
+
+        # Create 3 entries
+        entries = []
+        for i in range(3):
+            resp = await client.post(
+                "/v1/entries", json={"title": f"Ref Page {i}"}, headers=headers,
+            )
+            entries.append(resp.json()["id"])
+
+        # Create 3 refs: 0->1, 0->2, 1->2
+        for from_id, to_id, rel in [
+            (entries[0], entries[1], "supports"),
+            (entries[0], entries[2], "supports"),
+            (entries[1], entries[2], "contradicts"),
+        ]:
+            await _create_ref_in_db(e2e_session_factory, from_id, to_id, rel)
+
+        # Fetch with limit=2
+        resp = await client.get("/v1/entry-refs", params={"limit": 2, "offset": 0})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 2
+        assert data["total"] == 3
+
+        # Fetch offset=2 to get the remaining 1
+        resp = await client.get("/v1/entry-refs", params={"limit": 2, "offset": 2})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == 3
+
+    async def test_list_refs_no_filter_returns_all(
+        self,
+        refs_fixture: RefsFixture,
+    ) -> None:
+        """GET /entry-refs with no filter returns all refs."""
+        client, _, _, _, _ = refs_fixture
+        resp = await client.get("/v1/entry-refs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] >= 1
+        assert len(data["items"]) == data["total"]
+
+
 class TestEntryReferences:
     async def test_get_entry_references(self, refs_fixture: RefsFixture) -> None:
         client, entry_a, _, _, _ = refs_fixture
