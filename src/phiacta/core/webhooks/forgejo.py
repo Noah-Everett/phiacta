@@ -128,10 +128,6 @@ async def _handle_push(
     # Idempotency check: skip ingestion if SHA hasn't changed
     already_ingested = entry.current_head_sha == after_sha
 
-    # Update the entry's head SHA
-    entry.current_head_sha = after_sha
-    await db.flush()
-
     # Log push info
     commits = payload.get("commits", [])
     if commits:
@@ -146,12 +142,14 @@ async def _handle_push(
 
     if already_ingested:
         logger.debug("SHA %s already ingested for entry %s, skipping", after_sha[:12], entry_id)
-        await db.commit()
         return
 
-    # Run ingestion — wrapped in try/except to always return 200
+    # Run ingestion — wrapped in try/except to always return 200.
+    # Update current_head_sha only AFTER successful ingestion so that
+    # a transient failure will be retried on the next push.
     try:
         await ingest_entry(entry, after_sha, db, git_service)
+        entry.current_head_sha = after_sha
     except Exception:
         logger.exception("Ingestion failed for entry %s at SHA %s", entry_id, after_sha[:12])
 

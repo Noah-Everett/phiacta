@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.db.session import get_db
@@ -61,7 +61,7 @@ async def list_entry_commits(
 @router.get("/{entry_id}/history/{sha}", response_model=CommitDiffResponse)
 async def get_entry_commit_diff(
     entry_id: UUID,
-    sha: str,
+    sha: str = Path(..., pattern=r"^[0-9a-f]{40}$"),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> CommitDiffResponse:

@@ -293,28 +293,17 @@ class TestWebhookPushHappyPath:
     async def test_webhook_updates_head_sha_on_valid_push(
         self,
         client: httpx.AsyncClient,
+        fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Push to main branch with valid signature updates current_head_sha."""
+        """Push to main branch with successful ingestion updates current_head_sha."""
         entry_id, repo_name, _ = await _create_entry_for_webhook(client)
+        entry_yaml = _build_entry_yaml(entry_id, title="Valid Push Title")
+        _populate_fake_git(fake_git, entry_id, entry_yaml=entry_yaml)
 
         new_sha = "a" * 40  # valid 40-char hex SHA
-        payload = _make_push_payload(
-            repo_name=repo_name,
-            ref="refs/heads/main",
-            after=new_sha,
-        )
-        body = json.dumps(payload).encode()
-        sig = _compute_forgejo_signature(body, TEST_WEBHOOK_SECRET)
-        resp = await client.post(
-            "/webhooks/forgejo",
-            content=body,
-            headers={
-                "Content-Type": "application/json",
-                "X-Forgejo-Event": "push",
-                "X-Forgejo-Signature": sig,
-            },
-        )
+        body, headers = _send_push(repo_name, after_sha=new_sha)
+        resp = await client.post("/webhooks/forgejo", content=body, headers=headers)
         assert resp.status_code == 200
 
         # Verify the entry's head SHA was updated
@@ -814,13 +803,13 @@ class TestIngestionIdempotency:
 class TestIngestionEntryYamlErrors:
     """Scenario: Error conditions during entry.yaml ingestion."""
 
-    async def test_missing_entry_yaml_skips_ingestion_commits_sha(
+    async def test_missing_entry_yaml_skips_ingestion_no_sha_update(
         self,
         client: httpx.AsyncClient,
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """If entry.yaml is missing, SHA is set but no metadata fields are updated."""
+        """If entry.yaml is missing, SHA is NOT updated so ingestion retries on next push."""
         entry_id, repo_name, _ = await _create_entry_for_webhook(client)
         # Do NOT populate any files -- entry.yaml is missing
         sha = "f" * 40
@@ -834,8 +823,8 @@ class TestIngestionEntryYamlErrors:
                 select(Entry).where(Entry.id == UUID(entry_id))
             )
             entry = result.scalar_one()
-            # SHA is committed
-            assert entry.current_head_sha == sha
+            # SHA NOT updated — ingestion failed
+            assert entry.current_head_sha is None
             # Title remains the original (not modified by ingestion)
             assert entry.title == "Webhook Target Entry"
 
@@ -845,7 +834,7 @@ class TestIngestionEntryYamlErrors:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Malformed YAML in entry.yaml skips ingestion, commits SHA only."""
+        """Malformed YAML in entry.yaml skips ingestion, SHA NOT updated."""
         entry_id, repo_name, _ = await _create_entry_for_webhook(client)
         fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = (
             b"not: valid: yaml: [unterminated"
@@ -861,7 +850,7 @@ class TestIngestionEntryYamlErrors:
                 select(Entry).where(Entry.id == UUID(entry_id))
             )
             entry = result.scalar_one()
-            assert entry.current_head_sha == sha
+            assert entry.current_head_sha is None
             assert entry.title == "Webhook Target Entry"
 
     async def test_entry_id_mismatch_skips_ingestion(
@@ -870,7 +859,7 @@ class TestIngestionEntryYamlErrors:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """If entry_id in YAML does not match repo entry_id, skip ingestion."""
+        """If entry_id in YAML does not match repo entry_id, SHA NOT updated."""
         entry_id, repo_name, _ = await _create_entry_for_webhook(client)
         wrong_id = str(uuid4())
         entry_yaml = _build_entry_yaml(wrong_id, title="Wrong ID Entry")
@@ -886,7 +875,7 @@ class TestIngestionEntryYamlErrors:
                 select(Entry).where(Entry.id == UUID(entry_id))
             )
             entry = result.scalar_one()
-            assert entry.current_head_sha == sha
+            assert entry.current_head_sha is None
             # Title NOT updated because entry_id mismatch
             assert entry.title == "Webhook Target Entry"
 
@@ -896,7 +885,7 @@ class TestIngestionEntryYamlErrors:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """entry.yaml missing required fields (e.g., title) skips ingestion."""
+        """entry.yaml missing required fields — SHA NOT updated."""
         entry_id, repo_name, _ = await _create_entry_for_webhook(client)
         # YAML without title
         incomplete_yaml = yaml.dump({
@@ -918,7 +907,7 @@ class TestIngestionEntryYamlErrors:
                 select(Entry).where(Entry.id == UUID(entry_id))
             )
             entry = result.scalar_one()
-            assert entry.current_head_sha == sha
+            assert entry.current_head_sha is None
             assert entry.title == "Webhook Target Entry"
 
     async def test_always_returns_200_even_on_unhandled_error(
