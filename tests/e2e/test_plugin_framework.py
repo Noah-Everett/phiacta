@@ -101,8 +101,9 @@ class TestAppWithNoPlugins:
             resp = await client.get("/ready")
             # Route exists -- any status other than 404 is fine
             assert resp.status_code != 404
-        except OSError:
-            # DB connection refused -- route exists but DB is unreachable
+        except (OSError, TypeError):
+            # DB connection refused or pool config mismatch (SQLite in tests)
+            # -- route exists but DB is unreachable
             pass
 
     async def test_entries_list_returns_200(

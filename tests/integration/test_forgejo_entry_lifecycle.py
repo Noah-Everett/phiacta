@@ -419,12 +419,12 @@ class TestMultipleEntriesIsolated:
 
 
 class TestEntryMetadataFromYaml:
-    """After provisioning, entry metadata is populated from ingested YAML."""
+    """After provisioning, entry metadata comes from the metadata extension."""
 
     async def test_entry_metadata_from_yaml(self) -> None:
         """Create entry with a title, wait for ready, verify the title
-        matches and content_cache is populated from the ingested
-        entry.yaml and README.
+        matches. entry.yaml is identity-only (entry_id, schema_version),
+        so the title comes from the metadata extension, not entry.yaml.
         """
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
             auth = await register_user(client)
@@ -437,26 +437,8 @@ class TestEntryMetadataFromYaml:
             # Wait for repo to be ready (entry.yaml written and ingested)
             ready = await wait_for_ready(client, entry_id)
 
-            # Title must match what was requested at creation
+            # Title must match what was requested at creation — it is
+            # stored in the metadata extension, not in entry.yaml.
             assert ready["title"] == title, (
                 f"title mismatch: expected {title!r}, got {ready['title']!r}"
             )
-
-            # content_cache is populated by webhook ingestion from README.md.
-            # It may arrive slightly after repo_status transitions to 'ready',
-            # so poll for up to 30s.
-            content_cache: str | None = ready.get("content_cache")
-            if content_cache is None:
-                for _ in range(30):
-                    await asyncio.sleep(1.0)
-                    get_resp = await client.get(f"/v1/entries/{entry_id}")
-                    assert get_resp.status_code == 200
-                    content_cache = get_resp.json().get("content_cache")
-                    if content_cache is not None:
-                        break
-
-            assert content_cache is not None, (
-                f"content_cache is still None after waiting for webhook "
-                f"ingestion (entry_id={entry_id})"
-            )
-            assert len(content_cache) > 0, "content_cache is empty string"

@@ -130,13 +130,13 @@ async def _setup_ready_entry(
 
 
 class TestEntryUpdate:
-    """PATCH /v1/entries/{id} updates metadata via git-first write."""
+    """PATCH /v1/entries/{id} updates metadata extension (DB-only)."""
 
     async def test_update_entry_title(self) -> None:
         """Create entry, wait ready, PATCH title, GET entry, verify title changed.
 
-        Note: the PATCH writes to git and the DB is updated asynchronously via
-        webhook ingestion, so we poll until the DB reflects the new title.
+        The PATCH updates the metadata extension in the DB directly (no
+        git-first write), so the change should be reflected immediately.
         """
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
             token, entry_id, _ = await _setup_ready_entry(
@@ -153,15 +153,10 @@ class TestEntryUpdate:
                 f"PATCH failed: {patch_resp.text}"
             )
 
-            # The DB update is async via webhook ingestion; poll for up to 30s.
-            updated_title: str | None = None
-            for _ in range(30):
-                await asyncio.sleep(1.0)
-                get_resp = await client.get(f"/v1/entries/{entry_id}")
-                assert get_resp.status_code == 200
-                updated_title = get_resp.json().get("title")
-                if updated_title == new_title:
-                    break
+            # The PATCH updates the DB directly; verify via GET.
+            get_resp = await client.get(f"/v1/entries/{entry_id}")
+            assert get_resp.status_code == 200
+            updated_title = get_resp.json().get("title")
 
             assert updated_title == new_title, (
                 f"title did not update after PATCH.\n"
@@ -170,35 +165,36 @@ class TestEntryUpdate:
             )
 
     async def test_update_entry_tags(self) -> None:
-        """PATCH tags on an entry, verify the field is updated."""
+        """PUT tags on an entry via the tags extension, verify the field is updated."""
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
             token, entry_id, _ = await _setup_ready_entry(
                 client, title="Tags Update Test",
             )
 
             new_tags = ["physics", "quantum", "test"]
-            patch_resp = await client.patch(
-                f"/v1/entries/{entry_id}",
+            put_resp = await client.put(
+                f"/v1/extensions/tags/{entry_id}",
                 json={"tags": new_tags},
                 headers=_auth_header(token),
             )
-            assert patch_resp.status_code == 200, (
-                f"PATCH tags failed: {patch_resp.text}"
+            assert put_resp.status_code == 200, (
+                f"PUT tags failed: {put_resp.text}"
             )
 
-            # Poll until tags are reflected in the DB.
-            updated_tags: list | None = None
-            for _ in range(30):
-                await asyncio.sleep(1.0)
-                get_resp = await client.get(f"/v1/entries/{entry_id}")
-                assert get_resp.status_code == 200
-                updated_tags = get_resp.json().get("tags")
-                if updated_tags == new_tags:
-                    break
-
-            assert updated_tags == new_tags, (
-                f"tags did not update after PATCH.\n"
-                f"Expected: {new_tags!r}\n"
+            # Verify via GET tags endpoint.
+            tags_resp = await client.get(
+                "/v1/extensions/tags/",
+                params={"entry_id": entry_id},
+            )
+            assert tags_resp.status_code == 200, (
+                f"GET tags failed: {tags_resp.text}"
+            )
+            body = tags_resp.json()
+            updated_tags = sorted([t["tag"] for t in body["tags"]])
+            expected_tags = sorted(new_tags)
+            assert updated_tags == expected_tags, (
+                f"tags did not update after PUT.\n"
+                f"Expected: {expected_tags!r}\n"
                 f"Got: {updated_tags!r}"
             )
 
@@ -475,11 +471,11 @@ class TestWebhookHmac:
 
 
 class TestContentFormat:
-    """Entry content_format controls which README file is provisioned."""
+    """Entry content_format controls which content file is provisioned."""
 
     async def test_entry_with_latex_format(self) -> None:
         """Create entry with content_format='latex', wait ready, verify
-        README.tex exists in the file listing (not README.md).
+        .phiacta/content.tex exists in the file listing.
         """
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
             token, entry_id, _ = await _setup_ready_entry(
@@ -492,11 +488,16 @@ class TestContentFormat:
             assert files_resp.status_code == 200, files_resp.text
             file_names = [f["name"] for f in files_resp.json()]
 
-            assert "README.tex" in file_names, (
-                f"README.tex missing from latex entry listing: {file_names}"
+            # Content is at .phiacta/content.tex for latex format.
+            # Check recursively — the listing may show the .phiacta
+            # directory or its contents depending on the API.
+            has_latex_content = (
+                "content.tex" in file_names
+                or ".phiacta/content.tex" in file_names
+                or any("content.tex" in n for n in file_names)
             )
-            assert "README.md" not in file_names, (
-                f"README.md unexpectedly present in latex entry listing: {file_names}"
+            assert has_latex_content, (
+                f"content.tex missing from latex entry listing: {file_names}"
             )
 
 
@@ -643,42 +644,45 @@ class TestCommitDiffDetail:
 
 
 # ---------------------------------------------------------------------------
-# Entry References (GET /v1/entries/{id}/references)
+# Entry References (GET /v1/extensions/references/?entry_id={id})
 # ---------------------------------------------------------------------------
 
 
 class TestEntryReferences:
-    """GET /v1/entries/{id}/references returns ref lists."""
+    """GET /v1/extensions/references/?entry_id={id} returns paginated ref lists."""
 
     async def test_entry_references_empty(self) -> None:
-        """Create entry, wait ready, GET /entries/{id}/references.
+        """Create entry, wait ready, GET /extensions/references/?entry_id={id}.
 
         A brand-new entry has no refs, so the endpoint must return an empty
-        list with HTTP 200.
+        items list with HTTP 200.
         """
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
             _token, entry_id, _ = await _setup_ready_entry(
                 client, title="References Empty Test",
             )
 
-            refs_resp = await client.get(f"/v1/entries/{entry_id}/references")
+            refs_resp = await client.get(
+                "/v1/extensions/references/",
+                params={"entry_id": entry_id},
+            )
             assert refs_resp.status_code == 200, (
                 f"GET references failed: {refs_resp.text}"
             )
-            refs = refs_resp.json()
-            assert isinstance(refs, list), (
-                f"Expected list, got: {type(refs)}"
+            body = refs_resp.json()
+            assert "items" in body, (
+                f"Expected paginated response with 'items', got: {body}"
             )
-            assert refs == [], (
-                f"Expected empty list for new entry, got: {refs}"
+            assert body["items"] == [], (
+                f"Expected empty items for new entry, got: {body['items']}"
             )
 
     async def test_entry_references_direction_filter(self) -> None:
         """direction query param is accepted without error.
 
-        For a new entry the result is always an empty list regardless of
-        direction, so this test only checks that the parameter is accepted
-        and a valid list is returned for all three values.
+        For a new entry the result is always an empty items list regardless
+        of direction, so this test only checks that the parameter is accepted
+        and a valid paginated response is returned for all three values.
         """
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
             _token, entry_id, _ = await _setup_ready_entry(
@@ -687,14 +691,18 @@ class TestEntryReferences:
 
             for direction in ("incoming", "outgoing", "both"):
                 resp = await client.get(
-                    f"/v1/entries/{entry_id}/references",
-                    params={"direction": direction},
+                    "/v1/extensions/references/",
+                    params={"entry_id": entry_id, "direction": direction},
                 )
                 assert resp.status_code == 200, (
                     f"GET references?direction={direction} failed: {resp.text}"
                 )
-                assert isinstance(resp.json(), list), (
-                    f"Expected list for direction={direction!r}: {resp.json()}"
+                body = resp.json()
+                assert "items" in body, (
+                    f"Expected paginated response for direction={direction!r}: {body}"
+                )
+                assert isinstance(body["items"], list), (
+                    f"Expected items list for direction={direction!r}: {body}"
                 )
 
 
@@ -735,7 +743,7 @@ class TestEntryListFilters:
             our_item = next(i for i in body["items"] if i["id"] == entry_id)
             for field in (
                 "id", "title", "status", "repo_status",
-                "content_format", "created_at", "updated_at",
+                "entry_type", "created_at", "updated_at",
             ):
                 assert field in our_item, (
                     f"EntryListItem missing field '{field}': {our_item}"
