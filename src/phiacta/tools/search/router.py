@@ -90,10 +90,10 @@ async def search_entries(
     items = [
         SearchResultItem(
             entry_id=r.entry_id,
-            title=r.title,
-            summary=r.summary,
-            entry_type=r.entry_type,
             rank=float(r.rank),
+            title=getattr(r, "title", None),
+            summary=getattr(r, "summary", None),
+            entry_type=getattr(r, "entry_type", None),
         )
         for r in rows
     ]

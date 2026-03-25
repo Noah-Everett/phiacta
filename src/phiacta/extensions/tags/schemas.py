@@ -48,4 +48,6 @@ class EntryTagItem(BaseModel):
     """An entry matched by tag search — used in find-by-tags response."""
 
     entry_id: UUID
-    title: str
+    title: str | None = None
+    summary: str | None = None
+    entry_type: str | None = None

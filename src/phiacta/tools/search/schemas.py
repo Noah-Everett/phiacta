@@ -14,10 +14,10 @@ from phiacta.core.schemas.common import PaginatedResponse
 
 class SearchResultItem(BaseModel):
     entry_id: UUID
-    title: str | None
-    summary: str | None
-    entry_type: str | None
     rank: float
+    title: str | None = None
+    summary: str | None = None
+    entry_type: str | None = None
 
 
 class SearchResponse(PaginatedResponse[SearchResultItem]):

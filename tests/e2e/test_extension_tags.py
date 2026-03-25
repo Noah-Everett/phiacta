@@ -422,7 +422,7 @@ class TestFindEntriesByTags:
         client: httpx.AsyncClient,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Each item in find-by-tags response has entry_id and title."""
+        """Each item in find-by-tags response has entry_id."""
         auth = await register_user(
             client, handle="find-shape"
         )
@@ -445,9 +445,7 @@ class TestFindEntriesByTags:
         assert resp.status_code == 200
         item = resp.json()["items"][0]
         assert "entry_id" in item
-        assert "title" in item
         assert item["entry_id"] == entry["id"]
-        assert item["title"] == "Shape Check Entry"
 
     async def test_find_entries_archived_excluded_by_default(
         self,

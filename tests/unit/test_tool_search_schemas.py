@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
+"""Unit tests for search tool schemas — entry_id + rank + optional metadata."""
+
 from __future__ import annotations
 
 from uuid import uuid4
@@ -9,30 +11,31 @@ import pytest
 
 
 class TestSearchResultItemSchema:
-    def test_construction_with_all_fields(self) -> None:
+    def test_construction_minimal(self) -> None:
         from phiacta.tools.search.schemas import SearchResultItem
-        item = SearchResultItem(entry_id=uuid4(), title="Test", summary="Sum", entry_type="article", rank=0.85)
-        assert item.title == "Test"
-        assert item.entry_type == "article"
-
-    def test_entry_type_can_be_none(self) -> None:
-        from phiacta.tools.search.schemas import SearchResultItem
-        item = SearchResultItem(entry_id=uuid4(), title="T", summary=None, entry_type=None, rank=0.3)
+        item = SearchResultItem(entry_id=uuid4(), rank=0.85)
+        assert item.rank == 0.85
+        assert item.title is None
+        assert item.summary is None
         assert item.entry_type is None
 
-    def test_serialization(self) -> None:
+    def test_construction_with_metadata(self) -> None:
         from phiacta.tools.search.schemas import SearchResultItem
-        eid = uuid4()
-        item = SearchResultItem(entry_id=eid, title="S", summary="A", entry_type="article", rank=0.9)
-        d = item.model_dump(mode="json")
-        assert d["entry_type"] == "article"
+        item = SearchResultItem(entry_id=uuid4(), rank=0.9, title="Test", summary="Sum", entry_type="claim")
+        assert item.title == "Test"
+        assert item.entry_type == "claim"
+
+    def test_serialization_without_metadata(self) -> None:
+        from phiacta.tools.search.schemas import SearchResultItem
+        d = SearchResultItem(entry_id=uuid4(), rank=0.9).model_dump(mode="json")
+        assert d["title"] is None
         assert "layout_hint" not in d
 
 
 class TestSearchResponseSchema:
     def test_construction(self) -> None:
         from phiacta.tools.search.schemas import SearchResponse, SearchResultItem
-        items = [SearchResultItem(entry_id=uuid4(), title="R", summary=None, entry_type=None, rank=0.9)]
+        items = [SearchResultItem(entry_id=uuid4(), rank=0.9)]
         resp = SearchResponse(items=items, total=1, limit=50, offset=0, version_id=uuid4())
         assert len(resp.items) == 1
 

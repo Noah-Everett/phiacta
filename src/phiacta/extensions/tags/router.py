@@ -132,16 +132,27 @@ async def find_entries_by_tags(
         status=repo_status,
     )
 
-    # Bulk-fetch titles from the metadata extension
-    from phiacta.extensions.metadata.repository import MetadataRepository
-    meta_repo = MetadataRepository(db)
+    # Optionally enrich with metadata/types if those extensions are loaded
     entry_ids = [e.id for e in entries]
-    meta_map = await meta_repo.bulk_get_by_entry_ids(entry_ids)
+    meta_map: dict = {}
+    type_map: dict = {}
+    try:
+        from phiacta.extensions.metadata.repository import MetadataRepository
+        meta_map = await MetadataRepository(db).bulk_get_by_entry_ids(entry_ids)
+    except ImportError:
+        pass
+    try:
+        from phiacta.extensions.types.repository import TypeRepository
+        type_map = await TypeRepository(db).bulk_get_by_entry_ids(entry_ids)
+    except ImportError:
+        pass
 
     items = [
         EntryTagItem(
             entry_id=e.id,
-            title=meta_map[e.id].title if e.id in meta_map else "",
+            title=meta_map[e.id].title if e.id in meta_map else None,
+            summary=meta_map[e.id].summary if e.id in meta_map else None,
+            entry_type=type_map[e.id].entry_type if e.id in type_map else None,
         )
         for e in entries
     ]
