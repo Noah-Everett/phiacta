@@ -16,7 +16,7 @@ manifest = PluginManifest(
     name="tags",
     type=PluginType.EXTENSION,
     version="1.0.0",
-    depends_on=[],
+    depends_on=["metadata"],
     description="User-authored entry classifications",
 )
 

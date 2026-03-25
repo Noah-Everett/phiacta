@@ -51,7 +51,9 @@ class MetadataRepository:
         if existing is None:
             return None
         for key, value in updates.items():
-            if key in ("title", "summary") and value is not None:
+            if key == "title" and value is None:
+                continue  # title is NOT NULL -- cannot clear
+            if key in ("title", "summary"):
                 setattr(existing, key, value)
         await self.session.flush()
         return existing

@@ -10,7 +10,7 @@ manifest = PluginManifest(
     name="search",
     type=PluginType.TOOL,
     version="1.0.0",
-    depends_on=["search_tsv"],
+    depends_on=["search_tsv", "metadata", "types"],
     description="Full-text search over entries via precomputed tsvectors",
 )
 

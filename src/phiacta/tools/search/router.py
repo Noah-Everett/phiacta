@@ -92,7 +92,7 @@ async def search_entries(
             entry_id=r.entry_id,
             title=r.title,
             summary=r.summary,
-            layout_hint=r.layout_hint,
+            entry_type=r.entry_type,
             rank=float(r.rank),
         )
         for r in rows

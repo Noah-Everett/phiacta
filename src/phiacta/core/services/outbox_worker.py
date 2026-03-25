@@ -443,7 +443,8 @@ class OutboxWorker:
         )
 
         ext = FORMAT_EXTENSIONS.get(fmt, ".md")
-        files = [FileContent(path=f"entry{ext}", content=content)]
+
+        files = [FileContent(path=f".phiacta/content{ext}", content=content)]
         sha = await self._git.commit_files(
             entry_id, files, author, message
         )
