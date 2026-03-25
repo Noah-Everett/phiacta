@@ -125,15 +125,25 @@ class TestEntryTagItemSchema:
     """Tests for the EntryTagItem schema (response items for find-by-tags)."""
 
     def test_entry_tag_item_construction(self) -> None:
-        """EntryTagItem has entry_id and title."""
+        """EntryTagItem has entry_id + optional metadata."""
         from uuid import uuid4
 
         from phiacta.extensions.tags.schemas import EntryTagItem
 
         entry_id = uuid4()
-        item = EntryTagItem(entry_id=entry_id, title="My Entry")
+        item = EntryTagItem(entry_id=entry_id)
         assert item.entry_id == entry_id
-        assert item.title == "My Entry"
+        assert item.title is None
+
+    def test_entry_tag_item_with_metadata(self) -> None:
+        """EntryTagItem accepts optional title/summary/entry_type."""
+        from uuid import uuid4
+
+        from phiacta.extensions.tags.schemas import EntryTagItem
+
+        item = EntryTagItem(entry_id=uuid4(), title="Test", entry_type="claim")
+        assert item.title == "Test"
+        assert item.entry_type == "claim"
 
 
 # ---------------------------------------------------------------------------

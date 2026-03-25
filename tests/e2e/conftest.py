@@ -608,11 +608,37 @@ async def client(
     # Disable rate limiting during tests.
     limiter.enabled = False
 
+    # Register entry data providers for auto-compose (lifespan doesn't run
+    # in tests, so the plugin registry isn't populated).
+    _providers = []
+    try:
+        from phiacta.extensions.metadata.provider import entry_data_provider as _mdp
+        _providers.append(_mdp)
+    except ImportError:
+        pass
+    try:
+        from phiacta.extensions.types.provider import entry_data_provider as _tp
+        _providers.append(_tp)
+    except ImportError:
+        pass
+    try:
+        from phiacta.extensions.tags.provider import entry_data_provider as _tagp
+        _providers.append(_tagp)
+    except ImportError:
+        pass
+    try:
+        from phiacta.extensions.references.provider import entry_data_provider as _refp
+        _providers.append(_refp)
+    except ImportError:
+        pass
+    app.state.entry_data_providers = _providers
+
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
     limiter.enabled = True
+    app.state.entry_data_providers = []
     app.dependency_overrides.clear()
 
 
@@ -645,9 +671,19 @@ async def create_entry(
     token: str,
     *,
     title: str = "Test Entry",
+    content_format: str = "markdown",
+    entry_type: str | None = None,
+    summary: str | None = None,
+    content: str | None = None,
 ) -> dict:
     """Create an entry via the API and return the response JSON."""
-    body: dict = {"title": title, "content_format": "markdown"}
+    body: dict = {"title": title, "content_format": content_format}
+    if entry_type is not None:
+        body["entry_type"] = entry_type
+    if summary is not None:
+        body["summary"] = summary
+    if content is not None:
+        body["content"] = content
     resp = await client.post("/v1/entries", json=body, headers=auth_header(token))
     assert resp.status_code == 201, resp.text
     return resp.json()

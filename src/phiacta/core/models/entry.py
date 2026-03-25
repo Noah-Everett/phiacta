@@ -10,7 +10,6 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
-    Text,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -21,14 +20,6 @@ from phiacta.core.models.base import Base, TimestampMixin, UUIDMixin
 class Entry(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "entries"
 
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    layout_hint: Mapped[str | None] = mapped_column(String(50), default=None)
-    summary: Mapped[str | None] = mapped_column(Text, default=None)
-    license: Mapped[str | None] = mapped_column(String(50), default=None)
-    content_format: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="markdown"
-    )
-    content_cache: Mapped[str | None] = mapped_column(Text, default=None)
     schema_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1
     )
@@ -65,6 +56,5 @@ class Entry(UUIDMixin, TimestampMixin, Base):
             "status",
             postgresql_where=text("status = 'active'"),
         ),
-        Index("idx_entries_layout_hint", "layout_hint"),
         Index("idx_entries_created_by", "created_by"),
     )

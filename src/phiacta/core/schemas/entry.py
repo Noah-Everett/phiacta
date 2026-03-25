@@ -8,41 +8,37 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from phiacta.core.schemas.entry_ref import EntryRefResponse
-
 
 class EntryCreate(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     title: str = Field(min_length=1, max_length=500)
-    content_format: str = Field("markdown", pattern="^(markdown|latex|plain)$")
-    layout_hint: str | None = None
     summary: str | None = None
-    license: str | None = None
     content: str | None = Field(None, max_length=100_000)
+    content_format: str = Field("markdown", pattern="^(markdown|latex|plain)$")
+    entry_type: str | None = None
 
 
 class EntryUpdate(BaseModel):
-    title: str | None = Field(None, min_length=1, max_length=500)
-    content_format: str | None = Field(None, pattern="^(markdown|latex|plain)$")
-    layout_hint: str | None = None
-    summary: str | None = None
-    license: str | None = None
+    """Request body for PATCH /entries/{id}.
+
+    Accepts fields from any writable extension.  Only fields present
+    in the request body are routed to the owning provider.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
 
 class EntryListItem(BaseModel):
-    """Entry fields for list responses — excludes content_cache for performance."""
+    """Entry in list responses.  Extension fields pass through dynamically."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="allow")
 
     id: UUID
-    title: str
-    layout_hint: str | None
-    summary: str | None
-    license: str | None
-    content_format: str
     schema_version: int
-    forgejo_repo_id: int | None
     repo_name: str
-    current_head_sha: str | None
+    forgejo_repo_id: int | None = None
+    current_head_sha: str | None = None
     repo_status: str
     status: str
     created_by: UUID
@@ -51,19 +47,15 @@ class EntryListItem(BaseModel):
 
 
 class EntryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    """Entry response from mutations.  Extension fields pass through dynamically."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
 
     id: UUID
-    title: str
-    layout_hint: str | None
-    summary: str | None
-    license: str | None
-    content_format: str
-    content_cache: str | None
     schema_version: int
-    forgejo_repo_id: int | None
     repo_name: str
-    current_head_sha: str | None
+    forgejo_repo_id: int | None = None
+    current_head_sha: str | None = None
     repo_status: str
     status: str
     created_by: UUID
@@ -72,7 +64,6 @@ class EntryResponse(BaseModel):
 
 
 class EntryDetailResponse(EntryResponse):
-    """Entry detail with nested refs — used by GET /entries/{id}."""
+    """Detail response.  Extension fields pass through dynamically."""
 
-    outgoing_refs: list[EntryRefResponse] = Field(default_factory=list)
-    incoming_refs: list[EntryRefResponse] = Field(default_factory=list)
+    pass

@@ -345,9 +345,6 @@ class OutboxWorker:
         author_id_str = payload.get("author_id", "service")
 
         # Optional fields from the creation payload
-        summary = payload.get("summary")
-        entry_license = payload.get("license")
-        layout_hint = payload.get("layout_hint")
         content = payload.get("content")
         created_at_str = payload.get("created_at")
 
@@ -385,26 +382,22 @@ class OutboxWorker:
             else:
                 raise
 
-        # Step 3: Commit initial .phiacta/entry.yaml + README
+        # Step 3: Commit initial .phiacta/entry.yaml + .phiacta/content.{ext}
         entry_yaml = generate_entry_yaml(
             entry_id=entry_id,
-            title=title,
-            content_format=content_format,
+            schema_version=1,
             author_id=author_id,
-            author_handle=author_handle,
+            author_name=author_handle,
             created_at=created_at,
-            summary=summary,
-            license=entry_license,
-            layout_hint=layout_hint,
         )
 
-        # README file with appropriate extension
+        # Content file inside .phiacta/ with appropriate extension
         ext = FORMAT_EXTENSIONS.get(content_format, ".md")
-        readme_content = content if content else f"# {title}\n"
+        content_text = content if content else f"# {title}\n"
 
         files = [
             FileContent(path=".phiacta/entry.yaml", content=entry_yaml),
-            FileContent(path=f"README{ext}", content=readme_content),
+            FileContent(path=f".phiacta/content{ext}", content=content_text),
         ]
         sha = await self._git.commit_files(
             entry_id, files, author, f"Initial entry: {title}"
@@ -420,11 +413,7 @@ class OutboxWorker:
             else:
                 raise
 
-        # Step 5: Update entry record with Forgejo state and set
-        # content_cache directly from the README we just committed.
-        # Forgejo may not fire a webhook for the very first push to a
-        # new repo, so we populate content_cache here instead of relying
-        # on webhook-driven ingestion.
+        # Step 5: Update entry record with Forgejo state.
         async with self._session_factory() as session:
             repo = EntryRepository(session)
             await repo.update_repo_status(
@@ -433,9 +422,6 @@ class OutboxWorker:
                 forgejo_repo_id=repo_id,
                 current_head_sha=sha,
             )
-            entry = await repo.get_by_id(entry_id)
-            if entry is not None:
-                entry.content_cache = readme_content
             await session.commit()
 
     async def _handle_commit_files(self, payload: dict) -> None:
@@ -457,7 +443,8 @@ class OutboxWorker:
         )
 
         ext = FORMAT_EXTENSIONS.get(fmt, ".md")
-        files = [FileContent(path=f"entry{ext}", content=content)]
+
+        files = [FileContent(path=f".phiacta/content{ext}", content=content)]
         sha = await self._git.commit_files(
             entry_id, files, author, message
         )
