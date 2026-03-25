@@ -1,1 +1,0 @@
-# Cleared for entry minimization
