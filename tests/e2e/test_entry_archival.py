@@ -327,46 +327,20 @@ class TestUnarchiveEntry:
         ready_entry: tuple[AuthedFixture, dict],
         fake_git: FakeGitService,
     ) -> None:
-        """Full lifecycle: create → archive → unarchive → update title."""
+        """Full lifecycle: create -> archive -> unarchive -> update title."""
         (client, user, token), entry = ready_entry
         entry_id = entry["id"]
 
-        # Seed entry.yaml for the update endpoint
-        from uuid import UUID
-
-        import yaml
-        yaml_bytes = yaml.dump({
-            "entry_id": f"ent_{entry_id}",
-            "schema_version": 1,
-            "title": "Archival Test Entry",
-            "author": {"id": f"usr_{user['id']}", "name": "archive-test"},
-            "created_at": "2026-01-01T00:00:00",
-            "content_format": "markdown",
-        }, default_flow_style=False, allow_unicode=True, sort_keys=False).encode()
-        fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = yaml_bytes
-
-        # Archive
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/archive",
-            headers=auth_header(token),
-        )
+        resp = await client.post(f"/v1/entries/{entry_id}/archive", headers=auth_header(token))
         assert resp.status_code == 200
 
-        # Unarchive
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/unarchive",
-            headers=auth_header(token),
-        )
+        resp = await client.post(f"/v1/entries/{entry_id}/unarchive", headers=auth_header(token))
         assert resp.status_code == 200
 
-        # Now update should work
         resp = await client.patch(
             f"/v1/entries/{entry_id}",
             json={"title": "After Unarchive"},
             headers=auth_header(token),
         )
         assert resp.status_code == 200
-
-        yaml_bytes = fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")]
-        parsed = yaml.safe_load(yaml_bytes)
-        assert parsed["title"] == "After Unarchive"
+        assert resp.json()["title"] == "After Unarchive"

@@ -479,8 +479,7 @@ class TestActivityMetadata:
         assert metadata is not None
         assert "title" in metadata
         assert metadata["title"] == "Data inconsistency"
-        assert "entry_title" in metadata
-        assert metadata["entry_title"] == "Metadata Parent Entry"
+        # entry_title removed from activity metadata after entry minimization
 
     async def test_entry_created_activity_has_entity_type_entry(
         self,

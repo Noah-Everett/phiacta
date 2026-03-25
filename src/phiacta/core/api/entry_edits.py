@@ -200,7 +200,7 @@ async def create_edit_proposal(
             external_ref=f"pulls/{pr_info.number}",
             created_by=user.id,
             action="edit.created",
-            metadata={"title": pr_info.title, "entry_title": entry.title},
+            metadata={"title": pr_info.title},
         )
         await db.commit()
     except IntegrityError:

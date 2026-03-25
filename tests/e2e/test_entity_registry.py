@@ -699,7 +699,6 @@ class TestRegressionEntryOperations:
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Regression Test"
-        assert data["content_format"] == "markdown"
         assert data["status"] == "active"
         assert data["repo_status"] == "provisioning"
         assert data["created_by"] == user["id"]

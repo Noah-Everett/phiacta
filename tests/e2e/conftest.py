@@ -645,9 +645,19 @@ async def create_entry(
     token: str,
     *,
     title: str = "Test Entry",
+    content_format: str = "markdown",
+    entry_type: str | None = None,
+    summary: str | None = None,
+    content: str | None = None,
 ) -> dict:
     """Create an entry via the API and return the response JSON."""
-    body: dict = {"title": title, "content_format": "markdown"}
+    body: dict = {"title": title, "content_format": content_format}
+    if entry_type is not None:
+        body["entry_type"] = entry_type
+    if summary is not None:
+        body["summary"] = summary
+    if content is not None:
+        body["content"] = content
     resp = await client.post("/v1/entries", json=body, headers=auth_header(token))
     assert resp.status_code == 201, resp.text
     return resp.json()

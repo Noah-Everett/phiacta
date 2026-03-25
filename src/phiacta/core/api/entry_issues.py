@@ -128,7 +128,7 @@ async def create_issue(
             external_ref=f"issues/{issue.number}",
             created_by=user.id,
             action="issue.created",
-            metadata={"title": issue.title, "entry_title": entry.title},
+            metadata={"title": issue.title},
         )
         await db.commit()
     except IntegrityError:
