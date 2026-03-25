@@ -5,6 +5,7 @@
 
 from phiacta.extensions.references.router import router
 from phiacta.extensions.references.models import ExtensionReference  # noqa: F401
+from phiacta.extensions.references.provider import entry_data_provider
 from phiacta.plugin import PluginManifest, PluginType
 
 manifest = PluginManifest(
@@ -15,4 +16,4 @@ manifest = PluginManifest(
     description="Inter-entry references",
 )
 
-__all__ = ["manifest", "router"]
+__all__ = ["manifest", "router", "entry_data_provider"]

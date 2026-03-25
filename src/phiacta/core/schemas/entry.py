@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class EntryCreate(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     title: str = Field(min_length=1, max_length=500)
     summary: str | None = None
     content: str | None = Field(None, max_length=100_000)
@@ -18,12 +20,19 @@ class EntryCreate(BaseModel):
 
 
 class EntryUpdate(BaseModel):
-    title: str | None = Field(None, min_length=1, max_length=500)
-    summary: str | None = None
+    """Request body for PATCH /entries/{id}.
+
+    Accepts fields from any writable extension.  Only fields present
+    in the request body are routed to the owning provider.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
 
 class EntryListItem(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    """Entry in list responses.  Extension fields pass through dynamically."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
 
     id: UUID
     schema_version: int
@@ -35,13 +44,12 @@ class EntryListItem(BaseModel):
     created_by: UUID
     created_at: datetime
     updated_at: datetime
-    title: str | None = None
-    summary: str | None = None
-    entry_type: str | None = None
 
 
 class EntryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    """Entry response from mutations.  Extension fields pass through dynamically."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
 
     id: UUID
     schema_version: int
@@ -53,10 +61,9 @@ class EntryResponse(BaseModel):
     created_by: UUID
     created_at: datetime
     updated_at: datetime
-    title: str | None = None
-    summary: str | None = None
-    entry_type: str | None = None
 
 
 class EntryDetailResponse(EntryResponse):
+    """Detail response.  Extension fields pass through dynamically."""
+
     pass

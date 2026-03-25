@@ -149,6 +149,6 @@ class TestEntryResponseComposition:
         (client, _, _), entry = ready_entry
         data = (await client.get(f"/v1/entries/{entry['id']}")).json()
         assert "layout_hint" not in data
-        assert "content_format" not in data
         assert "content_cache" not in data
         assert "license" not in data
+        # content_format is now part of EntryDetailResponse (auto-compose)

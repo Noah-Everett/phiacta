@@ -5,6 +5,7 @@
 
 from phiacta.extensions.types.router import router
 from phiacta.extensions.types.models import ExtensionType  # noqa: F401
+from phiacta.extensions.types.provider import entry_data_provider
 from phiacta.plugin import PluginManifest, PluginType
 
 manifest = PluginManifest(
@@ -15,4 +16,4 @@ manifest = PluginManifest(
     description="Entry type classification",
 )
 
-__all__ = ["manifest", "router"]
+__all__ = ["manifest", "router", "entry_data_provider"]

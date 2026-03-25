@@ -24,6 +24,8 @@ from fastapi import APIRouter
 if TYPE_CHECKING:
     from pydantic_settings import BaseSettings
 
+    from phiacta.core.compose import EntryDataProvider
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,6 +63,8 @@ class PluginRegistration:
     router: APIRouter | None = None
     # Plugin-specific settings instance; type varies per plugin.
     settings: Any = None
+    # Optional data provider for auto-composed entry responses.
+    entry_data_provider: EntryDataProvider | None = None
 
 
 # Maps PluginType to the directory name under src/phiacta/
@@ -218,11 +222,13 @@ class PluginRegistry:
                 ) from exc
 
         router = getattr(module, "router", None)
+        edp = getattr(module, "entry_data_provider", None)
 
         self._plugins[manifest.name] = PluginRegistration(
             manifest=manifest,
             router=router,
             settings=settings,
+            entry_data_provider=edp,
         )
 
     def resolve_dependencies(self) -> list[str]:
@@ -283,6 +289,20 @@ class PluginRegistry:
     def get_manifests(self) -> list[PluginManifest]:
         """Return all registered plugin manifests."""
         return [reg.manifest for reg in self._plugins.values()]
+
+    def get_entry_data_providers(self) -> list[EntryDataProvider]:
+        """Return all registered entry data providers.
+
+        Providers are returned in plugin registration order (which
+        follows topological dependency order after resolve_dependencies).
+        """
+        from phiacta.core.compose import EntryDataProvider
+
+        return [
+            reg.entry_data_provider
+            for reg in self._plugins.values()
+            if reg.entry_data_provider is not None
+        ]
 
     def get_settings(self, name: str) -> Any:
         """Get a plugin's settings instance.

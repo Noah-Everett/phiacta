@@ -53,6 +53,33 @@ class ReferenceRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
+    async def bulk_get_by_entry_ids(
+        self, entry_ids: list[UUID], direction: str = "both",
+    ) -> dict[UUID, list[ExtensionReference]]:
+        """Bulk-fetch references grouped by the queried entity_id."""
+        if not entry_ids:
+            return {}
+        stmt = select(ExtensionReference)
+        if direction == "outgoing":
+            stmt = stmt.where(ExtensionReference.from_entity_id.in_(entry_ids))
+        elif direction == "incoming":
+            stmt = stmt.where(ExtensionReference.to_entity_id.in_(entry_ids))
+        else:
+            stmt = stmt.where(or_(
+                ExtensionReference.from_entity_id.in_(entry_ids),
+                ExtensionReference.to_entity_id.in_(entry_ids),
+            ))
+        stmt = stmt.order_by(ExtensionReference.created_at.desc())
+        result = await self.session.execute(stmt)
+        grouped: dict[UUID, list[ExtensionReference]] = {}
+        for ref in result.scalars().all():
+            # Group by whichever side(s) matched.
+            if ref.from_entity_id in entry_ids:
+                grouped.setdefault(ref.from_entity_id, []).append(ref)
+            if ref.to_entity_id in entry_ids and ref.to_entity_id != ref.from_entity_id:
+                grouped.setdefault(ref.to_entity_id, []).append(ref)
+        return grouped
+
     async def create(
         self, from_entry_id: UUID, to_entry_id: UUID, rel: str, created_by: UUID,
         version_sha: str | None = None, note: str | None = None,

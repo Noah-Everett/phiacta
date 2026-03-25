@@ -608,11 +608,37 @@ async def client(
     # Disable rate limiting during tests.
     limiter.enabled = False
 
+    # Register entry data providers for auto-compose (lifespan doesn't run
+    # in tests, so the plugin registry isn't populated).
+    _providers = []
+    try:
+        from phiacta.extensions.metadata.provider import entry_data_provider as _mdp
+        _providers.append(_mdp)
+    except ImportError:
+        pass
+    try:
+        from phiacta.extensions.types.provider import entry_data_provider as _tp
+        _providers.append(_tp)
+    except ImportError:
+        pass
+    try:
+        from phiacta.extensions.tags.provider import entry_data_provider as _tagp
+        _providers.append(_tagp)
+    except ImportError:
+        pass
+    try:
+        from phiacta.extensions.references.provider import entry_data_provider as _refp
+        _providers.append(_refp)
+    except ImportError:
+        pass
+    app.state.entry_data_providers = _providers
+
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
     limiter.enabled = True
+    app.state.entry_data_providers = []
     app.dependency_overrides.clear()
 
 

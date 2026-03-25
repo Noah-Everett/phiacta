@@ -65,6 +65,23 @@ class TagRepository:
         await self.session.flush()
         return new_tags
 
+    async def bulk_get_by_entry_ids(
+        self, entry_ids: list[UUID],
+    ) -> dict[UUID, list[ExtensionTag]]:
+        """Bulk-fetch tags grouped by entity_id."""
+        if not entry_ids:
+            return {}
+        stmt = (
+            select(ExtensionTag)
+            .where(ExtensionTag.entity_id.in_(entry_ids))
+            .order_by(ExtensionTag.tag)
+        )
+        result = await self.session.execute(stmt)
+        grouped: dict[UUID, list[ExtensionTag]] = {}
+        for tag in result.scalars().all():
+            grouped.setdefault(tag.entity_id, []).append(tag)
+        return grouped
+
     async def find_entries_by_tags(
         self,
         tags: list[str],

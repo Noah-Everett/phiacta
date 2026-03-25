@@ -1015,96 +1015,58 @@ class TestTagsPersistence:
 # ---------------------------------------------------------------------------
 
 
-class TestEntryLayerTagRemoval:
-    """Verify that 'tags' field has been removed from the entry layer."""
+class TestAutoComposedTags:
+    """Verify that tags are auto-composed into entry responses (NEV-279)."""
 
-    async def test_create_entry_does_not_accept_tags(
+    async def test_entry_response_includes_tags_field(
         self,
         authed: AuthedFixture,
     ) -> None:
-        """POST /v1/entries should either reject or ignore 'tags' in the body.
-
-        After the migration, the entry create endpoint should not process tags.
-        We verify the response does not include a 'tags' field.
-        """
+        """Entry responses include tags (empty list when none set)."""
         client, _, token = authed
+        entry = await create_entry(client, token, title="Tags Compose Entry")
+        data = (await client.get(f"/v1/entries/{entry['id']}")).json()
+        assert "tags" in data
+        assert data["tags"] == []
 
-        resp = await client.post(
-            "/v1/entries",
-            json={"title": "No Tags Entry", "tags": ["should-be-ignored"]},
-            headers=auth_header(token),
-        )
-        # Either 201 (ignoring tags) or 422 (rejecting tags) is acceptable.
-        # But the response should not contain a 'tags' key.
-        if resp.status_code == 201:
-            data = resp.json()
-            assert "tags" not in data, (
-                "Entry response should no longer include 'tags' field"
-            )
-
-    async def test_list_entries_response_has_no_tags(
+    async def test_list_entries_includes_tags(
         self,
         authed: AuthedFixture,
     ) -> None:
-        """GET /v1/entries items should not include 'tags' field."""
+        """List responses include tags for each item."""
         client, _, token = authed
-
-        await create_entry(client, token, title="List Check Entry")
-
-        resp = await client.get("/v1/entries")
-        assert resp.status_code == 200
-        items = resp.json()["items"]
+        await create_entry(client, token, title="List Tags Entry")
+        items = (await client.get("/v1/entries")).json()["items"]
         assert len(items) >= 1
         for item in items:
-            assert "tags" not in item, (
-                "Entry list item should no longer include 'tags' field"
-            )
+            assert "tags" in item
 
-    async def test_get_entry_response_has_no_tags(
-        self,
-        authed: AuthedFixture,
-    ) -> None:
-        """GET /v1/entries/{id} should not include 'tags' field."""
-        client, _, token = authed
-
-        entry = await create_entry(client, token, title="Detail Check Entry")
-        resp = await client.get(f"/v1/entries/{entry['id']}")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "tags" not in data, (
-            "Entry detail response should no longer include 'tags' field"
-        )
-
-    async def test_update_entry_does_not_accept_tags(
+    async def test_tags_set_via_extension_appear_in_entry_response(
         self,
         ready_entry: tuple[AuthedFixture, dict],
-        fake_git,  # type: ignore[type-arg]
     ) -> None:
-        """PATCH /v1/entries/{id} should either reject or ignore 'tags'."""
-        (client, user, token), entry = ready_entry
+        """Tags set via PUT /v1/extensions/tags appear in GET /v1/entries/{id}."""
+        (client, _, token), entry = ready_entry
         entry_id = entry["id"]
-
-        # Seed entry.yaml for PATCH
-        from uuid import UUID
-        import yaml
-        yaml_bytes = yaml.dump({
-            "entry_id": f"ent_{entry_id}",
-            "schema_version": 1,
-            "title": "Tags Test Entry",
-            "author": {"id": f"usr_{user['id']}", "name": "tags-test"},
-            "created_at": "2026-01-01T00:00:00",
-            "content_format": "markdown",
-        }, default_flow_style=False, allow_unicode=True, sort_keys=False).encode()
-        fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = yaml_bytes
-
-        resp = await client.patch(
-            f"/v1/entries/{entry_id}",
-            json={"tags": ["should-be-ignored"]},
+        await client.put(
+            f"/v1/extensions/tags/{entry_id}",
+            json={"tags": ["alpha", "beta"]},
             headers=auth_header(token),
         )
-        # Should succeed but tags should not appear in the response
-        if resp.status_code == 200:
-            data = resp.json()
-            assert "tags" not in data, (
-                "Entry update response should no longer include 'tags' field"
-            )
+        data = (await client.get(f"/v1/entries/{entry_id}")).json()
+        assert sorted(data["tags"]) == ["alpha", "beta"]
+
+    async def test_patch_entry_sets_tags(
+        self,
+        ready_entry: tuple[AuthedFixture, dict],
+    ) -> None:
+        """PATCH /v1/entries/{id} with tags routes to the tags provider."""
+        (client, _, token), entry = ready_entry
+        entry_id = entry["id"]
+        resp = await client.patch(
+            f"/v1/entries/{entry_id}",
+            json={"tags": ["gamma"]},
+            headers=auth_header(token),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["tags"] == ["gamma"]

@@ -5,6 +5,7 @@
 
 from phiacta.extensions.metadata.router import router
 from phiacta.extensions.metadata.models import ExtensionMetadata  # noqa: F401
+from phiacta.extensions.metadata.provider import entry_data_provider
 from phiacta.plugin import PluginManifest, PluginType
 
 manifest = PluginManifest(
@@ -15,4 +16,4 @@ manifest = PluginManifest(
     description="Entry title and summary",
 )
 
-__all__ = ["manifest", "router"]
+__all__ = ["manifest", "router", "entry_data_provider"]

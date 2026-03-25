@@ -10,6 +10,7 @@ in the git-derived entries index.
 
 from phiacta.extensions.tags.router import router
 from phiacta.extensions.tags.models import ExtensionTag  # noqa: F401 — ensure model registered with Base
+from phiacta.extensions.tags.provider import entry_data_provider
 from phiacta.plugin import PluginManifest, PluginType
 
 manifest = PluginManifest(
@@ -20,4 +21,4 @@ manifest = PluginManifest(
     description="User-authored entry classifications",
 )
 
-__all__ = ["manifest", "router"]
+__all__ = ["manifest", "router", "entry_data_provider"]
