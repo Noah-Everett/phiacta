@@ -280,6 +280,10 @@ class PluginRegistry:
                 result.append((prefix, reg.router))
         return result
 
+    def get_manifests(self) -> list[PluginManifest]:
+        """Return all registered plugin manifests."""
+        return [reg.manifest for reg in self._plugins.values()]
+
     def get_settings(self, name: str) -> Any:
         """Get a plugin's settings instance.
 

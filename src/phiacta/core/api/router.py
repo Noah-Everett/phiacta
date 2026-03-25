@@ -10,6 +10,7 @@ from phiacta.core.api.entry_edits import router as entry_edits_router
 from phiacta.core.api.entry_files import router as entry_files_router
 from phiacta.core.api.entry_history import router as entry_history_router
 from phiacta.core.api.entry_issues import router as entry_issues_router
+from phiacta.core.api.plugins import router as plugins_router
 from phiacta.core.api.users import router as users_router
 
 v1_router = APIRouter()
@@ -20,4 +21,5 @@ v1_router.include_router(entry_edits_router)
 v1_router.include_router(entry_files_router)
 v1_router.include_router(entry_history_router)
 v1_router.include_router(entry_issues_router)
+v1_router.include_router(plugins_router)
 v1_router.include_router(users_router)
