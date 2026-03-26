@@ -25,6 +25,9 @@ dependencies = [
     # HTTP
     "httpx>=0.28",
 
+    # Multipart form parsing (required by FastAPI for UploadFile/Form)
+    "python-multipart>=0.0.9",
+
     # Logging
     "structlog>=24.4",
 ]

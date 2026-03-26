@@ -9,13 +9,11 @@ operations on entry git repos via the GitService.
 
 from __future__ import annotations
 
-import base64
-import binascii
 import mimetypes
 import urllib.parse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.entry_guards import get_writable_entry
@@ -29,7 +27,6 @@ from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.entry_file import (
     FileDeleteRequest,
     FileListItem,
-    FileWriteRequest,
     FileWriteResponse,
 )
 from phiacta.core.services.git_service import (
@@ -193,7 +190,8 @@ async def put_entry_file(
     request: Request,
     entry_id: UUID,
     path: str,
-    body: FileWriteRequest,
+    content: UploadFile = File(...),
+    message: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
@@ -202,14 +200,9 @@ async def put_entry_file(
     """Create or update a file in an entry's repository."""
     _raise_for_invalid_path(path)
 
-    try:
-        decoded = base64.b64decode(body.content)
-    except (binascii.Error, ValueError) as exc:
-        raise HTTPException(
-            status_code=400, detail="Invalid base64 content",
-        ) from exc
+    data = await content.read()
 
-    if len(decoded) > settings.max_file_size_bytes:
+    if len(data) > settings.max_file_size_bytes:
         raise HTTPException(
             status_code=400,
             detail=f"File content exceeds maximum size of {settings.max_file_size_bytes} bytes",
@@ -217,15 +210,15 @@ async def put_entry_file(
 
     await _get_writable_entry(entry_id, user, db)
 
-    message = body.message or f"Update {path}"
+    commit_message = message or f"Update {path}"
     author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
 
     try:
         sha = await git_service.commit_files(
             entry_id,
-            [FileContent(path=path, content=decoded)],
+            [FileContent(path=path, content=data)],
             author,
-            message,
+            commit_message,
         )
     except RepoNotFoundError as exc:
         raise HTTPException(
