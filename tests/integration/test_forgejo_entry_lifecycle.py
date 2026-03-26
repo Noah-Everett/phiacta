@@ -186,7 +186,7 @@ class TestFileWriteAndRead:
             # Write data.csv
             put_resp = await client.put(
                 f"/v1/entries/{entry_id}/files/data.csv",
-                json={"content": csv_b64, "message": "Add data.csv"},
+                files={"content": ("file", base64.b64decode(csv_b64), "application/octet-stream")}, data={"message": "Add data.csv"},
                 headers=_auth_header(token),
             )
             assert put_resp.status_code == 200, f"PUT failed: {put_resp.text}"
@@ -229,7 +229,7 @@ class TestFileDelete:
             # Write temp.txt
             put_resp = await client.put(
                 f"/v1/entries/{entry_id}/files/temp.txt",
-                json={"content": content_b64, "message": "Add temp.txt"},
+                files={"content": ("file", base64.b64decode(content_b64), "application/octet-stream")}, data={"message": "Add temp.txt"},
                 headers=_auth_header(token),
             )
             assert put_resp.status_code == 200, f"PUT failed: {put_resp.text}"
@@ -378,7 +378,7 @@ class TestMultipleEntriesIsolated:
             # Write only.txt to A
             resp_a = await client.put(
                 f"/v1/entries/{entry_a['id']}/files/only.txt",
-                json={"content": content_b64, "message": "Add only.txt"},
+                files={"content": ("file", base64.b64decode(content_b64), "application/octet-stream")}, data={"message": "Add only.txt"},
                 headers=_auth_header(token),
             )
             assert resp_a.status_code == 200, f"PUT A failed: {resp_a.text}"
@@ -386,7 +386,7 @@ class TestMultipleEntriesIsolated:
             # Write beta.txt to B
             resp_b = await client.put(
                 f"/v1/entries/{entry_b['id']}/files/beta.txt",
-                json={"content": content_b64, "message": "Add beta.txt"},
+                files={"content": ("file", base64.b64decode(content_b64), "application/octet-stream")}, data={"message": "Add beta.txt"},
                 headers=_auth_header(token),
             )
             assert resp_b.status_code == 200, f"PUT B failed: {resp_b.text}"

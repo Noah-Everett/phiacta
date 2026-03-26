@@ -301,7 +301,7 @@ class TestArchival:
 
             put_resp = await client.put(
                 f"/v1/entries/{entry_id}/files/blocked.txt",
-                json={"content": content_b64, "message": "Should be rejected"},
+                files={"content": ("file", base64.b64decode(content_b64), "application/octet-stream")}, data={"message": "Should be rejected"},
                 headers=_auth_header(token),
             )
             assert put_resp.status_code == 403, (
@@ -358,7 +358,7 @@ class TestEntryHistory:
             # Write a file to produce a second commit.
             put_resp = await client.put(
                 f"/v1/entries/{entry_id}/files/notes.txt",
-                json={"content": content_b64, "message": "Add notes.txt"},
+                files={"content": ("file", base64.b64decode(content_b64), "application/octet-stream")}, data={"message": "Add notes.txt"},
                 headers=_auth_header(token),
             )
             assert put_resp.status_code == 200, f"PUT failed: {put_resp.text}"
@@ -552,7 +552,7 @@ class TestCrossUserAccess:
 
             put_resp = await client.put(
                 f"/v1/entries/{entry_id}/files/injection.txt",
-                json={"content": content_b64, "message": "Attempt injection"},
+                files={"content": ("file", base64.b64decode(content_b64), "application/octet-stream")}, data={"message": "Attempt injection"},
                 headers=_auth_header(token_b),
             )
             assert put_resp.status_code == 403, (
@@ -587,7 +587,7 @@ class TestCommitDiffDetail:
             # Write a file to produce a commit that has a meaningful diff.
             put_resp = await client.put(
                 f"/v1/entries/{entry_id}/files/diff_target.txt",
-                json={"content": content_b64, "message": "Add diff_target.txt"},
+                files={"content": ("file", base64.b64decode(content_b64), "application/octet-stream")}, data={"message": "Add diff_target.txt"},
                 headers=_auth_header(token),
             )
             assert put_resp.status_code == 200, f"PUT failed: {put_resp.text}"
