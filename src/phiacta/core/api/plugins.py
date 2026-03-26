@@ -20,6 +20,7 @@ class PluginProviderInfo(BaseModel):
 
     fields: list[str]
     writable_fields: list[str]
+    required_on_create: list[str]
     include_in_list: bool
     include_in_detail: bool
 
@@ -49,6 +50,7 @@ async def list_plugins(request: Request) -> list[PluginInfo]:
             provider_info = PluginProviderInfo(
                 fields=sorted(p.fields),
                 writable_fields=sorted(p.writable_fields),
+                required_on_create=sorted(p.required_on_create),
                 include_in_list=p.include_in_list,
                 include_in_detail=p.include_in_detail,
             )
