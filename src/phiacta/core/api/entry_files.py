@@ -44,35 +44,40 @@ from phiacta.core.services.git_service_dep import get_git_service
 router = APIRouter(prefix="/entries", tags=["entries"])
 
 
-def validate_file_path(path: str) -> None:
-    """Validate a file path for safety.
+def _validate_path_common(path: str) -> list[str]:
+    """Common path validation — traversal and format checks.
 
-    Raises ``ValueError`` if the path is invalid:
-    - Is empty
-    - Contains ``..`` segments (path traversal)
-    - Starts with ``/`` (absolute path)
-    - Targets ``.phiacta/entry.yaml`` (identity file, immutable)
-
-    The path is URL-decoded before validation to prevent encoding bypasses.
+    Returns normalized path segments.
     """
     if not path:
         raise ValueError("Invalid file path")
-
-    # FastAPI decodes path params once; this second unquote defends against
-    # double-encoding attacks (e.g. %252E%252E → %2E%2E → ..).
     normalized = urllib.parse.unquote(path)
-
     if normalized.startswith("/"):
         raise ValueError("Invalid file path")
-
     segments = normalized.split("/")
-
     if ".." in segments:
         raise ValueError("Invalid file path")
+    return segments
 
-    # .phiacta/entry.yaml is always protected (identity, immutable)
+
+def validate_file_path(path: str) -> None:
+    """Validate a file path for write/delete operations.
+
+    Blocks ``.phiacta/entry.yaml`` (identity file, immutable).
+    All other paths including ``.phiacta/content.*`` are writable.
+    """
+    segments = _validate_path_common(path)
     if segments[0] == ".phiacta" and len(segments) >= 2 and segments[1] == "entry.yaml":
         raise ValueError("File not found")
+
+
+def validate_file_path_read(path: str) -> None:
+    """Validate a file path for read operations.
+
+    All paths are readable (including ``.phiacta/entry.yaml``).
+    Only blocks traversal attacks.
+    """
+    _validate_path_common(path)
 
 
 def _raise_for_invalid_path(path: str) -> None:
@@ -137,8 +142,11 @@ async def get_entry_file_content(
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> Response:
-    """Get raw file content from an entry's repository."""
-    _raise_for_invalid_path(path)
+    """Get raw file content or directory listing from an entry's repository."""
+    try:
+        validate_file_path_read(path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid file path") from exc
 
     repo = EntryRepository(db)
     entry = await repo.get_by_id(entry_id)
