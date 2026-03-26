@@ -44,17 +44,14 @@ from phiacta.core.services.git_service_dep import get_git_service
 router = APIRouter(prefix="/entries", tags=["entries"])
 
 
-def validate_file_path(path: str, *, allow_dotphiacta: bool = False) -> None:
+def validate_file_path(path: str) -> None:
     """Validate a file path for safety.
 
     Raises ``ValueError`` if the path is invalid:
     - Is empty
     - Contains ``..`` segments (path traversal)
     - Starts with ``/`` (absolute path)
-    - Targets the ``.phiacta`` directory (unless *allow_dotphiacta* is True)
-
-    Set *allow_dotphiacta=True* for read endpoints — users may read
-    ``.phiacta/content.md`` but must never write to ``.phiacta/``.
+    - Targets ``.phiacta/entry.yaml`` (identity file, immutable)
 
     The path is URL-decoded before validation to prevent encoding bypasses.
     """
@@ -73,7 +70,8 @@ def validate_file_path(path: str, *, allow_dotphiacta: bool = False) -> None:
     if ".." in segments:
         raise ValueError("Invalid file path")
 
-    if segments[0] == ".phiacta" and not allow_dotphiacta:
+    # .phiacta/entry.yaml is always protected (identity, immutable)
+    if segments[0] == ".phiacta" and len(segments) >= 2 and segments[1] == "entry.yaml":
         raise ValueError("File not found")
 
 
@@ -141,13 +139,7 @@ async def get_entry_file_content(
     git_service: GitService = Depends(get_git_service),
 ) -> Response:
     """Get raw file content from an entry's repository."""
-    try:
-        validate_file_path(path, allow_dotphiacta=True)
-    except ValueError as exc:
-        msg = str(exc)
-        if "not found" in msg.lower():
-            raise HTTPException(status_code=404, detail="File not found") from exc
-        raise HTTPException(status_code=400, detail="Invalid file path") from exc
+    _raise_for_invalid_path(path)
 
     repo = EntryRepository(db)
     entry = await repo.get_by_id(entry_id)
