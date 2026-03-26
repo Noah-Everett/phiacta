@@ -75,19 +75,18 @@ class TestListEntryFiles:
         assert "README.md" in names
         assert "data" in names
 
-    async def test_list_files_excludes_phiacta_directory(
+    async def test_list_files_includes_phiacta_directory(
         self,
         authed: AuthedFixture,
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """The .phiacta directory is filtered out of the listing by the API layer."""
+        """The .phiacta directory is included in file listings (not filtered)."""
         client, _, token = authed
         entry = await create_entry(client, token, title="Phiacta Filter Entry")
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        # GitService returns .phiacta in the listing, but API must filter it
         fake_git.file_listings[(UUID(entry_id), "")] = [
             {"name": "README.md", "path": "README.md", "type": "file", "size": 512},
             {"name": ".phiacta", "path": ".phiacta", "type": "dir", "size": 0},
@@ -98,7 +97,7 @@ class TestListEntryFiles:
         assert resp.status_code == 200
         data = resp.json()
         names = [item["name"] for item in data]
-        assert ".phiacta" not in names
+        assert ".phiacta" in names
         assert "README.md" in names
         assert "notes.txt" in names
         assert len(data) == 2
@@ -151,19 +150,18 @@ class TestListEntryFiles:
         assert resp.status_code == 200
         assert len(resp.json()) == 1
 
-    async def test_list_files_empty_returns_empty_list(
+    async def test_list_files_only_phiacta_returns_phiacta(
         self,
         authed: AuthedFixture,
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Entry with ready repo but no user files returns 200 with []."""
+        """Entry with only .phiacta dir returns that dir in the listing."""
         client, _, token = authed
         entry = await create_entry(client, token, title="Empty Repo Entry")
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        # Only .phiacta exists -- after filtering, the list is empty
         fake_git.file_listings[(UUID(entry_id), "")] = [
             {"name": ".phiacta", "path": ".phiacta", "type": "dir", "size": 0},
         ]
@@ -171,7 +169,8 @@ class TestListEntryFiles:
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
         data = resp.json()
-        assert data == []
+        assert len(data) == 1
+        assert data[0]["name"] == ".phiacta"
 
     async def test_list_files_includes_directories(
         self,
@@ -564,73 +563,63 @@ class TestGetFileContentPathValidation:
         assert resp.status_code == 400
         assert "invalid file path" in resp.json()["detail"].lower()
 
-    async def test_phiacta_directory_returns_404(
+    async def test_phiacta_entry_yaml_is_readable(
         self,
         authed: AuthedFixture,
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Access to .phiacta/entry.yaml returns 404 File not found."""
+        """All .phiacta/ paths are readable, including entry.yaml."""
         client, _, token = authed
-        entry = await create_entry(client, token, title="Phiacta Block Entry 1")
+        entry = await create_entry(client, token, title="Phiacta Read Entry 1")
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        # Even though the file exists in the git service, API blocks access
-        fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = b"secret"
+        fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = b"id: test"
 
         resp = await client.get(
             f"/v1/entries/{entry_id}/files/.phiacta/entry.yaml"
         )
-        assert resp.status_code == 404
-        detail = resp.json()["detail"]
-        # Must be the specific "File not found" message
-        assert "file" in detail.lower()
-        assert "not found" in detail.lower()
+        assert resp.status_code == 200
+        assert resp.content == b"id: test"
 
-    async def test_phiacta_no_slash_returns_404(
+    async def test_phiacta_bare_is_readable(
         self,
         authed: AuthedFixture,
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Access to path exactly '.phiacta' returns 404."""
+        """Path exactly '.phiacta' is readable."""
         client, _, token = authed
-        entry = await create_entry(client, token, title="Phiacta Block Entry 2")
+        entry = await create_entry(client, token, title="Phiacta Read Entry 2")
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        fake_git.files[(UUID(entry_id), ".phiacta")] = b"blocked"
+        fake_git.files[(UUID(entry_id), ".phiacta")] = b"data"
 
         resp = await client.get(f"/v1/entries/{entry_id}/files/.phiacta")
-        assert resp.status_code == 404
-        detail = resp.json()["detail"]
-        # Must be the specific "File not found" message
-        assert "file" in detail.lower()
-        assert "not found" in detail.lower()
+        assert resp.status_code == 200
+        assert resp.content == b"data"
 
-    async def test_phiacta_refs_returns_404(
+    async def test_phiacta_refs_is_readable(
         self,
         authed: AuthedFixture,
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Access to .phiacta/refs.yaml returns 404."""
+        """All .phiacta/ paths including refs.yaml are readable."""
         client, _, token = authed
-        entry = await create_entry(client, token, title="Phiacta Block Entry 3")
+        entry = await create_entry(client, token, title="Phiacta Read Entry 3")
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        fake_git.files[(UUID(entry_id), ".phiacta/refs.yaml")] = b"refs"
+        fake_git.files[(UUID(entry_id), ".phiacta/refs.yaml")] = b"refs: []"
 
         resp = await client.get(
             f"/v1/entries/{entry_id}/files/.phiacta/refs.yaml"
         )
-        assert resp.status_code == 404
-        detail = resp.json()["detail"]
-        # Must be the specific "File not found" message
-        assert "file" in detail.lower()
-        assert "not found" in detail.lower()
+        assert resp.status_code == 200
+        assert resp.content == b"refs: []"
 
     async def test_phiacta_similar_name_allowed(
         self,
@@ -654,26 +643,23 @@ class TestGetFileContentPathValidation:
         assert resp.status_code == 200
         assert resp.content == b"allowed"
 
-    async def test_url_encoded_phiacta_blocked(
+    async def test_url_encoded_phiacta_is_readable(
         self,
         authed: AuthedFixture,
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """URL-encoded '.phiacta/' components that decode to .phiacta/ are blocked."""
+        """URL-encoded '.phiacta/' paths are readable (all .phiacta/ is readable)."""
         client, _, token = authed
         entry = await create_entry(client, token, title="Encoded Phiacta Entry")
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
-        fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = b"secret"
+        fake_git.files[(UUID(entry_id), ".phiacta/entry.yaml")] = b"id: test"
 
-        # Use URL-encoded path: .phiacta -> %2Ephiacta
+        # URL-encoded path resolves to .phiacta/entry.yaml — readable
         resp = await client.get(
             f"/v1/entries/{entry_id}/files/%2Ephiacta/entry.yaml"
         )
-        assert resp.status_code == 404
-        detail = resp.json()["detail"]
-        # Must be the specific "File not found" message
-        assert "file" in detail.lower()
-        assert "not found" in detail.lower()
+        assert resp.status_code == 200
+        assert resp.content == b"id: test"
