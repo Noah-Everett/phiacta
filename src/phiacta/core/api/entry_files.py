@@ -127,8 +127,7 @@ async def list_entry_files(
             status_code=502, detail="Git service unavailable",
         ) from exc
 
-    filtered = [i for i in items if i.name != ".phiacta"]
-    return [FileListItem.model_validate(i) for i in filtered]
+    return [FileListItem.model_validate(i) for i in items]
 
 
 @router.get("/{entry_id}/files/{path:path}")
