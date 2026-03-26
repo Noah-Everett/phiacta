@@ -31,7 +31,7 @@ async def get_activity(
     before: UUID | None = Query(None, description="Cursor for pagination"),
     db: AsyncSession = Depends(get_db),
 ) -> ActivityFeedResponse:
-    """Query the activity feed with optional filters.
+    """Query the activity feed. At least one filter (actor or entity) is required.
 
     Public endpoint — no authentication required.
     """
