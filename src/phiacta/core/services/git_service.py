@@ -672,9 +672,12 @@ class ForgejoGitService:
         repo = self._repo_path(entry_id)
         last_sha = ""
 
-        for fc in files:
+        for i, fc in enumerate(files):
             raw = fc.content if isinstance(fc.content, bytes) else fc.content.encode()
             encoded = base64.b64encode(raw).decode()
+
+            # Disambiguate commit messages when committing multiple files
+            file_msg = f"{message} ({fc.path})" if len(files) > 1 else message
 
             # Check if the file already exists (to decide create vs update).
             existing_sha: str | None = None
@@ -694,7 +697,7 @@ class ForgejoGitService:
                 pass  # file does not exist yet
 
             payload: dict = {
-                "message": message,
+                "message": file_msg,
                 "content": encoded,
                 "branch": branch,
                 "author": {
