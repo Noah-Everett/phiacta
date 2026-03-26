@@ -15,12 +15,22 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/plugins", tags=["plugins"])
 
 
+class PluginProviderInfo(BaseModel):
+    """Entry data provider metadata for an extension plugin."""
+
+    fields: list[str]
+    writable_fields: list[str]
+    include_in_list: bool
+    include_in_detail: bool
+
+
 class PluginInfo(BaseModel):
     name: str
     type: str
     version: str
     description: str
     depends_on: list[str]
+    provider: PluginProviderInfo | None = None
 
 
 @router.get("", response_model=list[PluginInfo])
@@ -29,13 +39,25 @@ async def list_plugins(request: Request) -> list[PluginInfo]:
     registry = getattr(request.app.state, "plugin_registry", None)
     if registry is None:
         return []
-    return [
-        PluginInfo(
-            name=m.name,
-            type=m.type.value,
-            version=m.version,
-            description=m.description,
-            depends_on=m.depends_on,
-        )
-        for m in registry.get_manifests()
-    ]
+
+    plugins_map = registry.plugins
+    result: list[PluginInfo] = []
+    for name, reg in plugins_map.items():
+        provider_info = None
+        if reg.entry_data_provider is not None:
+            p = reg.entry_data_provider
+            provider_info = PluginProviderInfo(
+                fields=sorted(p.fields),
+                writable_fields=sorted(p.writable_fields),
+                include_in_list=p.include_in_list,
+                include_in_detail=p.include_in_detail,
+            )
+        result.append(PluginInfo(
+            name=reg.manifest.name,
+            type=reg.manifest.type.value,
+            version=reg.manifest.version,
+            description=reg.manifest.description,
+            depends_on=reg.manifest.depends_on,
+            provider=provider_info,
+        ))
+    return result
