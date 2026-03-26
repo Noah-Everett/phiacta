@@ -5,7 +5,7 @@
 
 Usage::
 
-    python -m phiacta.core.cli.reconcile [--dry-run] [--entry-id UUID ...]
+    python -m phiacta.core.cli.reconcile [--dry-run] [--reingest] [--entry-id UUID ...]
 
 Scans all Forgejo repos and re-ingests any whose HEAD SHA doesn't match
 the database.  Run inside the backend container for network access to
@@ -82,6 +82,7 @@ async def _run(args: argparse.Namespace) -> int:
         report = await service.reconcile(
             dry_run=args.dry_run,
             entry_ids=entry_ids,
+            reingest=args.reingest,
         )
 
         _print_report(report)
@@ -108,6 +109,11 @@ def main() -> None:
         "--entry-id",
         action="append",
         help="Only reconcile specific entry IDs (can be repeated).",
+    )
+    parser.add_argument(
+        "--reingest",
+        action="store_true",
+        help="Re-ingest all entries regardless of SHA match. Recomputes search tsvectors.",
     )
     parser.add_argument(
         "-v", "--verbose",

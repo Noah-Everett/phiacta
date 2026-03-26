@@ -57,6 +57,7 @@ class ReconciliationService:
         *,
         dry_run: bool = False,
         entry_ids: list[UUID] | None = None,
+        reingest: bool = False,
     ) -> ReconciliationReport:
         """Detect and repair Forgejo/DB drift."""
         report = ReconciliationReport(dry_run=dry_run)
@@ -160,7 +161,7 @@ class ReconciliationService:
                 continue
 
             # Compare SHAs
-            if snap.current_head_sha == forgejo_sha:
+            if snap.current_head_sha == forgejo_sha and not reingest:
                 continue  # up to date
 
             # Drifted
