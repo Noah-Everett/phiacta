@@ -66,6 +66,8 @@ def _request(
     url: str,
     *,
     json: dict | None = None,
+    files: dict | None = None,
+    data: dict | None = None,
     token: str | None = None,
     params: dict | None = None,
     tolerate_409: bool = False,
@@ -75,7 +77,7 @@ def _request(
     if token:
         headers["Authorization"] = f"Bearer {token}"
     for _ in range(10):
-        r = client.request(method, url, json=json, headers=headers, params=params, timeout=TIMEOUT)
+        r = client.request(method, url, json=json, files=files, data=data, headers=headers, params=params, timeout=TIMEOUT)
         if r.status_code == 429:
             wait = _retry_after(r)
             print(f"  rate-limited, retrying in {wait}s ...", file=sys.stderr)
@@ -100,6 +102,13 @@ def post(client: httpx.Client, url: str, json: dict, **kw) -> dict | None:
 
 def put(client: httpx.Client, url: str, json: dict, **kw) -> dict | None:
     return _request(client, "PUT", url, json=json, **kw)
+
+
+def put_file(client: httpx.Client, url: str, content: str, *, message: str | None = None, **kw) -> dict | None:
+    """Upload a file via multipart/form-data."""
+    files = {"content": ("file", content.encode(), "application/octet-stream")}
+    data = {"message": message} if message else None
+    return _request(client, "PUT", url, files=files, data=data, **kw)
 
 
 def patch(client: httpx.Client, url: str, json: dict, **kw) -> dict | None:
@@ -1052,10 +1061,11 @@ def seed(base_url: str) -> None:
             print(f"  SKIP {entry_key}: repo not ready after 60s", file=sys.stderr)
             continue
         for path, content in file_list:
-            resp = put(
+            resp = put_file(
                 client,
                 f"{base}/entries/{eid}/files/{path}",
-                {"content": b64(content), "message": f"Seed: add {path}"},
+                content,
+                message=f"Seed: add {path}",
                 token=token,
             )
             if resp:
@@ -1080,10 +1090,11 @@ def seed(base_url: str) -> None:
             if "note" in rd:
                 lines.append(f'    note: "{rd["note"]}"')
         refs_yaml_content = "\n".join(lines) + "\n"
-        resp = put(
+        resp = put_file(
             client,
             f"{base}/entries/{eid}/files/.phiacta/refs.yaml",
-            {"content": b64(refs_yaml_content), "message": "Seed: add refs.yaml"},
+            refs_yaml_content,
+            message="Seed: add refs.yaml",
             token=token,
         )
         if resp:
