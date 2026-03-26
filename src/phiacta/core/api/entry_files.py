@@ -149,6 +149,15 @@ async def get_entry_file_content(
             status_code=409, detail="Entry repository is not yet ready",
         )
 
+    # Try reading as a file first; if Forgejo returns a directory listing,
+    # return it as JSON instead of raw content.
+    try:
+        items = await git_service.list_files(entry_id, path=path)
+        # list_files succeeded → path is a directory
+        return [FileListItem.model_validate(i) for i in items]
+    except (RepoNotFoundError, ForgejoError):
+        pass
+
     try:
         content = await git_service.read_file(entry_id, path)
     except RepoNotFoundError as exc:
