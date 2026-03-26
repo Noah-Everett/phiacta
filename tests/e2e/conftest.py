@@ -142,6 +142,10 @@ class FakeGitService:
                         type="file",
                         size=len(self.files[(eid, fpath)]),
                     ))
+        # For non-root paths, an empty result means the path doesn't exist
+        # as a directory — real Forgejo would return 404.
+        if path and not result:
+            raise RepoNotFoundError(f"Path not found: {path} in repo {entry_id}")
         return result
 
     # Remaining protocol methods -- not needed for file-read tests.
