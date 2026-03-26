@@ -224,10 +224,9 @@ class TestArchiveEntry:
             headers=auth_header(token),
         )
 
-        import base64
         resp = await client.put(
             f"/v1/entries/{entry['id']}/files/README.md",
-            json={"content": base64.b64encode(b"hello").decode()},
+            files={"content": ("file", b"hello", "application/octet-stream")},
             headers=auth_header(token),
         )
         assert resp.status_code == 403

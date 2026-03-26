@@ -14,7 +14,6 @@ the correct data reaches the git service layer.
 
 from __future__ import annotations
 
-import base64
 from uuid import UUID, uuid4
 
 import httpx
@@ -43,11 +42,18 @@ async def authed(client: httpx.AsyncClient) -> AuthedFixture:
     return client, auth["user"], auth["access_token"]
 
 
-def _b64(content: bytes | str) -> str:
-    """Base64-encode content for the request body."""
+def _multipart(
+    content: bytes | str,
+    *,
+    message: str | None = None,
+) -> dict:
+    """Build httpx kwargs for a multipart file upload."""
     if isinstance(content, str):
         content = content.encode()
-    return base64.b64encode(content).decode()
+    kwargs: dict = {"files": {"content": ("file", content, "application/octet-stream")}}
+    if message is not None:
+        kwargs["data"] = {"message": message}
+    return kwargs
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +78,7 @@ class TestPutFile:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
-            json={"content": _b64("# Hello World")},
+            **_multipart("# Hello World"),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -101,7 +107,7 @@ class TestPutFile:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/notes.txt",
-            json={"content": _b64("new content")},
+            **_multipart("new content"),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -121,7 +127,7 @@ class TestPutFile:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/data.csv",
-            json={"content": _b64("a,b,c"), "message": "Add experiment data"},
+            **_multipart("a,b,c", message="Add experiment data"),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -136,7 +142,7 @@ class TestPutFile:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """PUT with content="" (empty base64) creates a zero-byte file."""
+        """PUT with empty content creates a zero-byte file."""
         client, _, token = authed
         entry = await create_entry(client, token, title="Empty File Entry")
         entry_id = entry["id"]
@@ -144,7 +150,7 @@ class TestPutFile:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/empty.txt",
-            json={"content": ""},
+            **_multipart(b""),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -164,7 +170,7 @@ class TestPutFile:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/data/results/output.csv",
-            json={"content": _b64("x,y\n1,2")},
+            **_multipart("x,y\n1,2"),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -186,7 +192,7 @@ class TestPutFile:
         binary_data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/image.png",
-            json={"content": _b64(binary_data)},
+            **_multipart(binary_data),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -209,7 +215,7 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
-            json={"content": _b64("hello")},
+            **_multipart("hello"),
             # No auth header
         )
         assert resp.status_code == 401
@@ -235,7 +241,7 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
-            json={"content": _b64("hacked")},
+            **_multipart("hacked"),
             headers=auth_header(token_b),
         )
         assert resp.status_code == 403
@@ -255,7 +261,7 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
-            json={"content": _b64("hello")},
+            **_multipart("hello"),
             headers=auth_header(token),
         )
         assert resp.status_code == 403
@@ -275,7 +281,7 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
-            json={"content": _b64("hello")},
+            **_multipart("hello"),
             headers=auth_header(token),
         )
         assert resp.status_code == 403
@@ -291,7 +297,7 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{fake_id}/files/README.md",
-            json={"content": _b64("hello")},
+            **_multipart("hello"),
             headers=auth_header(token),
         )
         assert resp.status_code == 404
@@ -310,17 +316,18 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/.phiacta/entry.yaml",
-            json={"content": _b64("hacked: true")},
+            **_multipart("hacked: true"),
             headers=auth_header(token),
         )
         assert resp.status_code == 404
 
-    async def test_put_phiacta_refs_returns_404(
+    async def test_put_phiacta_refs_is_allowed(
         self,
         authed: AuthedFixture,
+        fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """PUT to .phiacta/refs.yaml is blocked (returns 404)."""
+        """PUT to .phiacta/refs.yaml is allowed (only entry.yaml is immutable)."""
         client, _, token = authed
         entry = await create_entry(client, token, title="Phiacta Refs Put")
         entry_id = entry["id"]
@@ -328,10 +335,10 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/.phiacta/refs.yaml",
-            json={"content": _b64("hacked: true")},
+            **_multipart("refs: []"),
             headers=auth_header(token),
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
 
     async def test_put_repo_provisioning_returns_409(
         self,
@@ -345,7 +352,7 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
-            json={"content": _b64("hello")},
+            **_multipart("hello"),
             headers=auth_header(token),
         )
         assert resp.status_code == 409
@@ -364,29 +371,10 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
-            json={"content": _b64("hello")},
+            **_multipart("hello"),
             headers=auth_header(token),
         )
         assert resp.status_code == 409
-
-    async def test_put_invalid_base64_returns_400(
-        self,
-        authed: AuthedFixture,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """PUT with invalid base64 content returns 400."""
-        client, _, token = authed
-        entry = await create_entry(client, token, title="Bad Base64 Entry")
-        entry_id = entry["id"]
-        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
-
-        resp = await client.put(
-            f"/v1/entries/{entry_id}/files/README.md",
-            json={"content": "not-valid-base64!!!@#$"},
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 400
-        assert "base64" in resp.json()["detail"].lower()
 
     async def test_put_file_exceeding_size_limit_returns_400(
         self,
@@ -401,11 +389,10 @@ class TestPutFileErrors:
 
         # Default max is 25 MB; create content slightly over that
         oversized = b"x" * (25 * 1024 * 1024 + 1)
-        content_b64 = base64.b64encode(oversized).decode()
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/big.bin",
-            json={"content": content_b64},
+            **_multipart(oversized),
             headers=auth_header(token),
         )
         assert resp.status_code == 400
@@ -424,7 +411,7 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/%2E%2E/etc/passwd",
-            json={"content": _b64("hacked")},
+            **_multipart("hacked"),
             headers=auth_header(token),
         )
         assert resp.status_code == 400
@@ -442,7 +429,7 @@ class TestPutFileErrors:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/%2Fetc%2Fpasswd",
-            json={"content": _b64("hacked")},
+            **_multipart("hacked"),
             headers=auth_header(token),
         )
         assert resp.status_code == 400
@@ -456,7 +443,7 @@ class TestPutFileErrors:
 
         resp = await client.put(
             "/v1/entries/not-a-uuid/files/README.md",
-            json={"content": _b64("hello")},
+            **_multipart("hello"),
             headers=auth_header(token),
         )
         assert resp.status_code == 422
@@ -717,7 +704,7 @@ class TestFileWritePathValidation:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/%2E%2E/etc/passwd",
-            json={"content": _b64("x")},
+            **_multipart("x"),
             headers=auth_header(token),
         )
         assert resp.status_code == 400
@@ -735,7 +722,7 @@ class TestFileWritePathValidation:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/subdir/%2E%2E/secret",
-            json={"content": _b64("x")},
+            **_multipart("x"),
             headers=auth_header(token),
         )
         assert resp.status_code == 400
@@ -753,7 +740,7 @@ class TestFileWritePathValidation:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/%2Fetc%2Fpasswd",
-            json={"content": _b64("x")},
+            **_multipart("x"),
             headers=auth_header(token),
         )
         assert resp.status_code == 400
@@ -771,17 +758,18 @@ class TestFileWritePathValidation:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/.phiacta/entry.yaml",
-            json={"content": _b64("x")},
+            **_multipart("x"),
             headers=auth_header(token),
         )
         assert resp.status_code == 404
 
-    async def test_put_phiacta_bare_blocked(
+    async def test_put_phiacta_bare_allowed(
         self,
         authed: AuthedFixture,
+        fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """PUT to path exactly '.phiacta' returns 404."""
+        """PUT to path exactly '.phiacta' is allowed (only entry.yaml is immutable)."""
         client, _, token = authed
         entry = await create_entry(client, token, title="PV5")
         entry_id = entry["id"]
@@ -789,10 +777,10 @@ class TestFileWritePathValidation:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/.phiacta",
-            json={"content": _b64("x")},
+            **_multipart("x"),
             headers=auth_header(token),
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
 
     async def test_put_phiacta_similar_name_allowed(
         self,
@@ -808,7 +796,7 @@ class TestFileWritePathValidation:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/.phiacta_backup/file.txt",
-            json={"content": _b64("allowed")},
+            **_multipart("allowed"),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -844,7 +832,7 @@ class TestFileWritePathValidation:
 
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/%252E%252E/etc/passwd",
-            json={"content": _b64("x")},
+            **_multipart("x"),
             headers=auth_header(token),
         )
         assert resp.status_code == 400
@@ -874,7 +862,7 @@ class TestFileWriteLifecycle:
         content = b"# Lifecycle Test\nThis is a test."
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/README.md",
-            json={"content": _b64(content)},
+            **_multipart(content),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -899,7 +887,7 @@ class TestFileWriteLifecycle:
         # PUT the file
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/temp.txt",
-            json={"content": _b64("temporary")},
+            **_multipart("temporary"),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -931,7 +919,7 @@ class TestFileWriteLifecycle:
         # First PUT (create)
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/analysis.py",
-            json={"content": _b64("v1"), "message": "Initial version"},
+            **_multipart("v1", message="Initial version"),
             headers=auth_header(token),
         )
         assert resp.status_code == 200
@@ -940,7 +928,7 @@ class TestFileWriteLifecycle:
         # Second PUT (update)
         resp = await client.put(
             f"/v1/entries/{entry_id}/files/analysis.py",
-            json={"content": _b64("v2"), "message": "Revised version"},
+            **_multipart("v2", message="Revised version"),
             headers=auth_header(token),
         )
         assert resp.status_code == 200

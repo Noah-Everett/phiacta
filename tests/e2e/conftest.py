@@ -33,6 +33,13 @@ from phiacta.config import Settings, get_settings
 from phiacta.core.db.session import get_db
 from phiacta.main import app
 from phiacta.core.models.base import Base
+
+# Import all plugin models so Base.metadata.create_all includes their tables.
+from phiacta.extensions.metadata.models import ExtensionMetadata  # noqa: F401
+from phiacta.extensions.tags.models import ExtensionTag  # noqa: F401
+from phiacta.extensions.references.models import ExtensionReference  # noqa: F401
+from phiacta.extensions.types.models import ExtensionType  # noqa: F401
+from phiacta.views.search_tsv.models import ViewSearchTsv  # noqa: F401
 from phiacta.core.services.git_service import (
     AuthorInfo,
     CommitInfo,
@@ -588,6 +595,7 @@ async def client(
         jwt_secret_key="dev-only-change-me-in-production-32chars!",
         forgejo_webhook_secret=TEST_WEBHOOK_SECRET,
         environment="test",
+        enabled_plugins=["metadata", "types", "references", "tags", "search_tsv", "search"],
     )
     app.dependency_overrides[get_settings] = lambda: _test_settings
 

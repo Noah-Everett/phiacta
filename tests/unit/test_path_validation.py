@@ -121,32 +121,31 @@ class TestValidateFilePathRejectsAbsolutePaths:
 
 
 class TestValidateFilePathRejectsPhiacta:
-    """Paths targeting the .phiacta directory must be rejected."""
+    """Only .phiacta/entry.yaml is immutable and must be rejected.
 
-    def test_phiacta_exact(self) -> None:
-        """'.phiacta' exactly must be rejected."""
-        with pytest.raises(ValueError, match="[Ff]ile not found|[Pp]hiacta"):
-            validate_file_path(".phiacta")
+    All other .phiacta/* paths (content.md, refs.yaml, etc.) are writable.
+    """
 
     def test_phiacta_entry_yaml(self) -> None:
-        """'.phiacta/entry.yaml' must be rejected."""
-        with pytest.raises(ValueError, match="[Ff]ile not found|[Pp]hiacta"):
+        """'.phiacta/entry.yaml' must be rejected (immutable identity file)."""
+        with pytest.raises(ValueError, match="[Ff]ile not found"):
             validate_file_path(".phiacta/entry.yaml")
 
-    def test_phiacta_refs_yaml(self) -> None:
-        """'.phiacta/refs.yaml' must be rejected."""
-        with pytest.raises(ValueError, match="[Ff]ile not found|[Pp]hiacta"):
-            validate_file_path(".phiacta/refs.yaml")
+    def test_phiacta_exact_is_allowed(self) -> None:
+        """'.phiacta' alone is allowed (not a file, but not blocked)."""
+        validate_file_path(".phiacta")
 
-    def test_phiacta_artifacts_manifest(self) -> None:
-        """'.phiacta/artifacts/manifest.yaml' must be rejected."""
-        with pytest.raises(ValueError, match="[Ff]ile not found|[Pp]hiacta"):
-            validate_file_path(".phiacta/artifacts/manifest.yaml")
+    def test_phiacta_content_md_is_allowed(self) -> None:
+        """'.phiacta/content.md' is writable."""
+        validate_file_path(".phiacta/content.md")
 
-    def test_phiacta_with_trailing_slash(self) -> None:
-        """'.phiacta/' must be rejected."""
-        with pytest.raises(ValueError, match="[Ff]ile not found|[Pp]hiacta"):
-            validate_file_path(".phiacta/")
+    def test_phiacta_refs_yaml_is_allowed(self) -> None:
+        """'.phiacta/refs.yaml' is writable."""
+        validate_file_path(".phiacta/refs.yaml")
+
+    def test_phiacta_artifacts_manifest_is_allowed(self) -> None:
+        """'.phiacta/artifacts/manifest.yaml' is writable."""
+        validate_file_path(".phiacta/artifacts/manifest.yaml")
 
 
 class TestValidateFilePathAllowsPhiactaSimilarNames:
