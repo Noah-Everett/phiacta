@@ -19,6 +19,7 @@ class MetadataProvider(EntryDataProvider):
     include_in_list = True
     include_in_detail = True
     writable_fields = frozenset({"title", "summary"})
+    required_on_create = frozenset({"title"})
 
     async def get_one(self, entity_id: UUID, db: AsyncSession) -> dict:
         meta = await MetadataRepository(db).get_by_entry_id(entity_id)
@@ -41,7 +42,28 @@ class MetadataProvider(EntryDataProvider):
         self, entity_id: UUID, data: dict, user_id: UUID, db: AsyncSession,
     ) -> None:
         repo = MetadataRepository(db)
-        await repo.update_partial(entity_id, data)
+        existing = await repo.get_by_entry_id(entity_id)
+        if existing is None:
+            # Create path — validate title is present and valid.
+            title = data.get("title")
+            if title is None:
+                raise ValueError("title is required when creating metadata")
+            if not isinstance(title, str) or len(title) < 1:
+                raise ValueError("title must be a non-empty string")
+            if len(title) > 500:
+                raise ValueError("title must be at most 500 characters")
+            await repo.create(
+                entity_id, title, user_id, data.get("summary"),
+            )
+        else:
+            # Update path — validate title if present.
+            title = data.get("title")
+            if title is not None:
+                if not isinstance(title, str) or len(title) < 1:
+                    raise ValueError("title must be a non-empty string")
+                if len(title) > 500:
+                    raise ValueError("title must be at most 500 characters")
+            await repo.update_partial(entity_id, data)
 
 
 entry_data_provider = MetadataProvider()

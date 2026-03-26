@@ -42,8 +42,13 @@ class EntryDataProvider(ABC):
     #: Whether to include in detail responses by default.
     include_in_detail: bool = True
 
-    #: Fields writable via PATCH /entries/{id}.  Empty if not writable.
+    #: Fields writable via PATCH /entries/{id} or POST /entries.
+    #: Empty if not writable.
     writable_fields: frozenset[str] = frozenset()
+
+    #: Fields that MUST be present in the request body when creating an
+    #: entry.  Validated before any DB work so failures produce clean 422s.
+    required_on_create: frozenset[str] = frozenset()
 
     @abstractmethod
     async def get_one(self, entity_id: UUID, db: AsyncSession) -> dict | None:
@@ -70,8 +75,9 @@ class EntryDataProvider(ABC):
     ) -> None:
         """Write data for a single entity.
 
-        Only called for fields in ``writable_fields``.  The PATCH endpoint
-        already validates ownership and repo_status via entry guards.
+        Called for fields in ``writable_fields`` during both POST (create)
+        and PATCH (update).  Implementations must handle the case where
+        no row exists yet (create path).
 
         Subclasses that support writes must override this method.
         """

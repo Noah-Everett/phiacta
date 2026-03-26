@@ -106,8 +106,21 @@ async def create_entry(
     request: Request, body: EntryCreate,
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ) -> EntryResponse:
-    entry = await EntryService(db).create_entry(body, user)
     providers = _get_providers(request)
+    # Extract provider-destined fields: everything except declared core fields.
+    all_fields = body.model_dump(exclude_unset=True)
+    core_fields = set(EntryCreate.model_fields)
+    provider_fields = {k: v for k, v in all_fields.items() if k not in core_fields}
+    try:
+        entry = await EntryService(db).create_entry(
+            body, user, providers=providers, provider_fields=provider_fields,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     composed = await compose_entry_response(entry, providers, db)
     return EntryResponse(**composed)
 
@@ -139,6 +152,8 @@ async def update_entry(
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             except PermissionError as exc:
                 raise HTTPException(status_code=403, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Enqueue async view recomputation (search tsvector, etc.)
     if entry.repo_status == "ready" and entry.current_head_sha is not None:

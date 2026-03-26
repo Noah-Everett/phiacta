@@ -363,7 +363,6 @@ class OutboxWorker:
         This is the full sequence for provisioning a new entry repository.
         """
         entry_id = UUID(payload["entry_id"])
-        title = self._sanitize_string(payload["title"])
         content_format = self._validate_format(payload.get("content_format", "markdown"))
         author_handle = self._sanitize_string(
             payload.get("author_handle", "phiacta-service"), max_length=100
@@ -419,14 +418,14 @@ class OutboxWorker:
 
         # Content file inside .phiacta/ with appropriate extension
         ext = FORMAT_EXTENSIONS.get(content_format, ".md")
-        content_text = content if content else f"# {title}\n"
+        content_text = content if content else ""
 
         files = [
             FileContent(path=".phiacta/entry.yaml", content=entry_yaml),
             FileContent(path=f".phiacta/content{ext}", content=content_text),
         ]
         sha = await self._git.commit_files(
-            entry_id, files, author, f"Initial entry: {title}"
+            entry_id, files, author, f"Initial entry: {entry_id}"
         )
 
         # Step 4: Setup branch protection on main

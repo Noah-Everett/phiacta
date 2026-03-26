@@ -10,13 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class EntryCreate(BaseModel):
+    """Request body for POST /entries.
+
+    Only core fields (content, content_format) are declared explicitly.
+    Extension fields (title, summary, entry_type, tags, …) arrive via
+    ``extra="allow"`` and are dispatched to registered providers.
+    """
+
     model_config = ConfigDict(extra="allow")
 
-    title: str = Field(min_length=1, max_length=500)
-    summary: str | None = None
     content: str | None = Field(None, max_length=100_000)
     content_format: str = Field("markdown", pattern="^(markdown|latex|plain)$")
-    entry_type: str | None = None
 
 
 class EntryUpdate(BaseModel):

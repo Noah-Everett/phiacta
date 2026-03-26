@@ -9,14 +9,13 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.compose import EntryDataProvider
 from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.outbox import Outbox
 from phiacta.core.schemas.entry import EntryCreate
 from phiacta.core.services.entity_service import EntityService
 from phiacta.core.services.git_service import GitService
-from phiacta.extensions.metadata.service import MetadataService
-from phiacta.extensions.types.service import TypeService
 
 
 class EntryService:
@@ -24,10 +23,29 @@ class EntryService:
         self._session = session
         self._git = git_service
         self._entity_service = EntityService(session)
-        self._metadata_service = MetadataService(session)
-        self._type_service = TypeService(session)
 
-    async def create_entry(self, body: EntryCreate, user: User) -> Entry:
+    async def create_entry(
+        self,
+        body: EntryCreate,
+        user: User,
+        *,
+        providers: list[EntryDataProvider] | None = None,
+        provider_fields: dict | None = None,
+    ) -> Entry:
+        providers = providers or []
+        provider_fields = provider_fields or {}
+
+        # Validate required_on_create before any DB work.
+        missing: list[str] = []
+        for provider in providers:
+            for field in provider.required_on_create:
+                if field not in provider_fields or provider_fields[field] is None:
+                    missing.append(field)
+        if missing:
+            raise ValueError(
+                f"Missing required fields: {', '.join(sorted(missing))}"
+            )
+
         entity = await self._entity_service.register_entity(
             entity_type="entry", created_by=user.id,
         )
@@ -35,19 +53,21 @@ class EntryService:
         self._session.add(entry)
         await self._session.flush()
 
-        await self._metadata_service.create_for_entry(
-            entry_id=entry.id, title=body.title, user_id=user.id, summary=body.summary,
-        )
-        if body.entry_type is not None:
-            await self._type_service.create_for_entry(
-                entry_id=entry.id, entry_type=body.entry_type, user_id=user.id,
-            )
+        # Generic provider dispatch — route extra fields to owning providers.
+        for provider in providers:
+            if not provider.writable_fields:
+                continue
+            pdata = {
+                k: v for k, v in provider_fields.items()
+                if k in provider.writable_fields
+            }
+            if pdata:
+                await provider.write(entry.id, pdata, user.id, self._session)
 
         outbox_entry = Outbox(
             aggregate_id=entry.id, aggregate_type="entry", operation="create_repo",
             payload={
                 "entry_id": str(entry.id),
-                "title": body.title,
                 "content_format": body.content_format,
                 "author_id": str(user.id),
                 "author_handle": user.handle,
@@ -59,7 +79,7 @@ class EntryService:
 
         await self._entity_service.log_activity(
             actor_id=user.id, action="entry.created",
-            entity_id=entry.id, metadata={"title": body.title},
+            entity_id=entry.id, metadata={},
         )
 
         await self._session.commit()
