@@ -89,9 +89,19 @@ class FakeGitService:
         # Issue support
         self.issues: dict[UUID, list[dict]] = {}
         self._pr_counter: dict[UUID, int] = {}  # entry_id -> next PR number
+        # Error injection: set to an exception instance to make the next call raise it.
+        self._next_error: Exception | None = None
+
+    def _check_error(self) -> None:
+        """Raise the injected error if one is pending, then clear it."""
+        if self._next_error is not None:
+            err = self._next_error
+            self._next_error = None
+            raise err
 
     async def read_file(self, entry_id: UUID, path: str, ref: str = "main") -> bytes:
         """Return the file contents or raise RepoNotFoundError."""
+        self._check_error()
         key = (entry_id, path)
         if key not in self.files:
             raise RepoNotFoundError(f"File not found: {path} in repo {entry_id}")
@@ -99,6 +109,7 @@ class FakeGitService:
 
     async def list_files(self, entry_id: UUID, path: str = "", ref: str = "main") -> list[FileInfo]:
         """Return the file listing for a directory, or derive from self.files keys."""
+        self._check_error()
         key = (entry_id, path)
         if key in self.file_listings:
             return [FileInfo(**d) for d in self.file_listings[key]]
@@ -162,6 +173,7 @@ class FakeGitService:
         Branch-aware: files committed to a non-main branch are stored in
         ``branch_files`` rather than ``files``, so they don't appear on main.
         """
+        self._check_error()
         self._commit_counter += 1
         for fc in files:
             raw = fc.content if isinstance(fc.content, bytes) else fc.content.encode()
@@ -611,6 +623,8 @@ async def client(
     _fake_git_service.branches.clear()
     _fake_git_service.branch_files.clear()
     _fake_git_service._pr_counter.clear()
+    _fake_git_service.issues.clear()
+    _fake_git_service._next_error = None
     app.dependency_overrides[get_git_service] = lambda: _fake_git_service
 
     # Disable rate limiting during tests.

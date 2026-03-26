@@ -3,16 +3,17 @@
 
 """Unit tests for file path validation logic (NEV-124).
 
-Tests the path validation function(s) used by the file read API to reject
-path traversal attempts, absolute paths, and access to the .phiacta/
-directory. These functions must work in isolation with no I/O.
+Tests both ``validate_file_path`` (write operations) and
+``validate_file_path_read`` (read operations). Write validation blocks
+``.phiacta/entry.yaml``; read validation allows all paths.
+Both block traversal attacks and absolute paths.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from phiacta.core.api.entry_files import validate_file_path
+from phiacta.core.api.entry_files import validate_file_path, validate_file_path_read
 
 
 class TestValidateFilePathAcceptsValidPaths:
@@ -177,14 +178,9 @@ class TestValidateFilePathEdgeCases:
         with pytest.raises(ValueError):
             validate_file_path("")
 
-    def test_single_dot_is_handled(self) -> None:
-        """Path '.' should either be rejected or handled gracefully."""
-        # A single dot is not a useful file path; implementation may reject it
-        # or treat it as root. Either way it should not crash.
-        try:
-            validate_file_path(".")
-        except ValueError:
-            pass  # Acceptable to reject
+    def test_single_dot_is_accepted(self) -> None:
+        """Path '.' is accepted (not '..' so not traversal)."""
+        validate_file_path(".")
 
     def test_url_decoded_dotdot(self) -> None:
         """A path with URL-decoded '..' components must still be caught."""
@@ -196,3 +192,51 @@ class TestValidateFilePathEdgeCases:
         """A path that decodes to .phiacta must still be caught."""
         with pytest.raises(ValueError, match="[Ff]ile not found|[Pp]hiacta"):
             validate_file_path(".phiacta/entry.yaml")
+
+
+# ---------------------------------------------------------------------------
+# validate_file_path_read — read validator (all paths readable)
+# ---------------------------------------------------------------------------
+
+
+class TestValidateFilePathReadAllowsAllPaths:
+    """Read validation allows all paths including .phiacta/entry.yaml."""
+
+    def test_normal_file(self) -> None:
+        validate_file_path_read("README.md")
+
+    def test_nested_path(self) -> None:
+        validate_file_path_read("data/results/output.csv")
+
+    def test_phiacta_entry_yaml_is_readable(self) -> None:
+        """The identity file is readable even though it's write-blocked."""
+        validate_file_path_read(".phiacta/entry.yaml")
+
+    def test_phiacta_content_md_is_readable(self) -> None:
+        validate_file_path_read(".phiacta/content.md")
+
+    def test_phiacta_bare_is_readable(self) -> None:
+        validate_file_path_read(".phiacta")
+
+    def test_phiacta_refs_is_readable(self) -> None:
+        validate_file_path_read(".phiacta/refs.yaml")
+
+
+class TestValidateFilePathReadBlocksTraversal:
+    """Read validation still blocks traversal and absolute paths."""
+
+    def test_dotdot_blocked(self) -> None:
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path_read("../etc/passwd")
+
+    def test_middle_dotdot_blocked(self) -> None:
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path_read("data/../../../etc/passwd")
+
+    def test_absolute_path_blocked(self) -> None:
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path_read("/etc/passwd")
+
+    def test_empty_string_blocked(self) -> None:
+        with pytest.raises(ValueError):
+            validate_file_path_read("")

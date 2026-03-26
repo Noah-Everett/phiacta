@@ -166,9 +166,8 @@ class TestMultipartPutFile:
             **_multipart_kwargs(b"some notes"),
         )
         assert resp.status_code == 200
-        # Should have exactly one commit, with a non-empty default message
         assert len(fake_git.commits) >= 1
-        assert fake_git.commits[-1]["message"]  # non-empty string
+        assert fake_git.commits[-1]["message"] == "Update notes.txt"
 
     async def test_multipart_upload_empty_file(
         self,
@@ -524,3 +523,153 @@ class TestMultipartLifecycle:
         recorded_messages = [c["message"] for c in fake_git.commits]
         for msg in messages:
             assert msg in recorded_messages
+
+
+# ---------------------------------------------------------------------------
+# Error injection tests — ForgejoError / RepoNotFoundError paths
+# ---------------------------------------------------------------------------
+
+
+class TestMultipartErrorInjection:
+    """Test 502 and 404 error paths using FakeGitService error injection."""
+
+    async def test_forgejo_error_on_commit_returns_502(
+        self,
+        authed: AuthedFixture,
+        fake_git: FakeGitService,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """When GitService raises ForgejoError, endpoint returns 502."""
+        from phiacta.core.services.git_service import ForgejoError
+
+        client, _, token = authed
+        entry = await create_entry(client, token, title="ForgejoError Test")
+        entry_id = entry["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+
+        fake_git._next_error = ForgejoError("Forgejo unavailable")
+
+        resp = await client.put(
+            f"/v1/entries/{entry_id}/files/test.txt",
+            headers=auth_header(token),
+            **_multipart_kwargs(b"content"),
+        )
+        assert resp.status_code == 502
+        assert "git service unavailable" in resp.json()["detail"].lower()
+
+    async def test_repo_not_found_on_commit_returns_404(
+        self,
+        authed: AuthedFixture,
+        fake_git: FakeGitService,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """When GitService raises RepoNotFoundError, endpoint returns 404."""
+        from phiacta.core.services.git_service import RepoNotFoundError
+
+        client, _, token = authed
+        entry = await create_entry(client, token, title="RepoNotFound Test")
+        entry_id = entry["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+
+        fake_git._next_error = RepoNotFoundError("Repo missing")
+
+        resp = await client.put(
+            f"/v1/entries/{entry_id}/files/test.txt",
+            headers=auth_header(token),
+            **_multipart_kwargs(b"content"),
+        )
+        assert resp.status_code == 404
+        assert "repository not found" in resp.json()["detail"].lower()
+
+    async def test_forgejo_error_on_read_returns_502(
+        self,
+        authed: AuthedFixture,
+        fake_git: FakeGitService,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """When GitService raises ForgejoError on read, endpoint returns 502."""
+        from phiacta.core.services.git_service import ForgejoError
+
+        client, _, token = authed
+        entry = await create_entry(client, token, title="Read ForgejoError")
+        entry_id = entry["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+
+        fake_git._next_error = ForgejoError("Forgejo unavailable")
+
+        resp = await client.get(f"/v1/entries/{entry_id}/files/test.txt")
+        assert resp.status_code == 502
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage — boundary values, author info, delete defaults
+# ---------------------------------------------------------------------------
+
+
+class TestMultipartAdditionalCoverage:
+    """Additional tests from the audit — boundary values, author info, etc."""
+
+    async def test_exact_max_size_is_accepted(
+        self,
+        authed: AuthedFixture,
+        fake_git: FakeGitService,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Upload exactly max_file_size_bytes (25MB) is accepted."""
+        client, _, token = authed
+        entry = await create_entry(client, token, title="Exact Max Size")
+        entry_id = entry["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+
+        exact_max = b"x" * (25 * 1024 * 1024)
+        resp = await client.put(
+            f"/v1/entries/{entry_id}/files/max.bin",
+            headers=auth_header(token),
+            **_multipart_kwargs(exact_max),
+        )
+        assert resp.status_code == 200
+
+    async def test_commit_has_correct_author_info(
+        self,
+        authed: AuthedFixture,
+        fake_git: FakeGitService,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Commit author uses the user's handle and phiacta.local email."""
+        client, user, token = authed
+        entry = await create_entry(client, token, title="Author Info Test")
+        entry_id = entry["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+
+        resp = await client.put(
+            f"/v1/entries/{entry_id}/files/auth.txt",
+            headers=auth_header(token),
+            **_multipart_kwargs(b"content", message="Check author"),
+        )
+        assert resp.status_code == 200
+        commit = fake_git.commits[-1]
+        assert commit["author"].name == user["handle"]
+        assert commit["author"].email == f"{user['id']}@phiacta.local"
+
+    async def test_delete_without_message_uses_default(
+        self,
+        authed: AuthedFixture,
+        fake_git: FakeGitService,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """DELETE without a message body uses default 'Delete {path}'."""
+        client, _, token = authed
+        entry = await create_entry(client, token, title="Delete Default Msg")
+        entry_id = entry["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
+
+        # Create file first
+        fake_git.files[(UUID(entry_id), "old.txt")] = b"old"
+
+        resp = await client.request(
+            "DELETE",
+            f"/v1/entries/{entry_id}/files/old.txt",
+            headers=auth_header(token),
+        )
+        assert resp.status_code == 200
+        assert fake_git.commits[-1]["message"] == "Delete old.txt"
