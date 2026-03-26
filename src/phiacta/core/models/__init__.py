@@ -6,6 +6,7 @@ from phiacta.core.models.base import Base, TimestampMixin, UUIDMixin
 from phiacta.core.models.entity import Entity
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.outbox import Outbox
+from phiacta.core.models.personal_access_token import PersonalAccessToken
 from phiacta.core.models.user import User
 from phiacta.core.models.view_version import ViewVersion
 
@@ -15,6 +16,7 @@ __all__ = [
     "Entity",
     "Entry",
     "Outbox",
+    "PersonalAccessToken",
     "TimestampMixin",
     "UUIDMixin",
     "User",
