@@ -100,7 +100,7 @@ class TestListEntryFiles:
         assert ".phiacta" in names
         assert "README.md" in names
         assert "notes.txt" in names
-        assert len(data) == 2
+        assert len(data) == 3
 
     async def test_list_files_response_has_expected_fields(
         self,
