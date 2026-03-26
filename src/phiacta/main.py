@@ -42,8 +42,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Create async engine
     engine = create_async_engine(settings.database_url)
 
-    # Start outbox worker for Forgejo sync
-    outbox_worker = await start_outbox_worker(engine)
+    # Start outbox worker for Forgejo sync (with view hooks)
+    on_ingest_hooks = registry.get_on_ingest_hooks()
+    outbox_worker = await start_outbox_worker(engine, on_ingest_hooks=on_ingest_hooks)
 
     # Store on app state for access in endpoints
     app.state.engine = engine

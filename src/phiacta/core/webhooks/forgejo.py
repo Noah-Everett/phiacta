@@ -51,6 +51,14 @@ def _verify_signature(body: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+def _get_on_ingest_hooks(request: Request) -> list:
+    """Read on_ingest hooks from the plugin registry."""
+    registry = getattr(request.app.state, "plugin_registry", None)
+    if registry is not None:
+        return registry.get_on_ingest_hooks()
+    return getattr(request.app.state, "on_ingest_hooks", [])
+
+
 @router.post("/forgejo")
 async def handle_forgejo_webhook(
     request: Request,
@@ -75,7 +83,8 @@ async def handle_forgejo_webhook(
 
     if event_type == "push":
         payload = await request.json()
-        await _handle_push(payload, db, git_service)
+        hooks = _get_on_ingest_hooks(request)
+        await _handle_push(payload, db, git_service, hooks)
     else:
         logger.debug("Ignoring Forgejo event type: %s", event_type)
 
@@ -83,7 +92,7 @@ async def handle_forgejo_webhook(
 
 
 async def _handle_push(
-    payload: dict, db: AsyncSession, git_service: GitService
+    payload: dict, db: AsyncSession, git_service: GitService, hooks: list,
 ) -> None:
     """Handle a push event: update entry head SHA and run ingestion.
 
@@ -148,7 +157,7 @@ async def _handle_push(
     # Update current_head_sha only AFTER successful ingestion so that
     # a transient failure will be retried on the next push.
     try:
-        await ingest_entry(entry, after_sha, db, git_service)
+        await ingest_entry(entry, after_sha, db, git_service, on_ingest_hooks=hooks)
         entry.current_head_sha = after_sha
     except Exception:
         logger.exception("Ingestion failed for entry %s at SHA %s", entry_id, after_sha[:12])

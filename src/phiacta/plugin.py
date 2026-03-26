@@ -21,10 +21,16 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter
 
+from collections.abc import Callable, Coroutine
+
 if TYPE_CHECKING:
     from pydantic_settings import BaseSettings
 
     from phiacta.core.compose import EntryDataProvider
+
+# Type alias for on_ingest hook functions.
+# Signature: async def on_ingest(entry_id: UUID, content: str | None, metadata: dict, db: AsyncSession) -> None
+OnIngestHook = Callable[..., Coroutine]
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +71,8 @@ class PluginRegistration:
     settings: Any = None
     # Optional data provider for auto-composed entry responses.
     entry_data_provider: EntryDataProvider | None = None
+    # Optional hook called during ingestion (content changes, reconciliation).
+    on_ingest: OnIngestHook | None = None
 
 
 # Maps PluginType to the directory name under src/phiacta/
@@ -223,12 +231,14 @@ class PluginRegistry:
 
         router = getattr(module, "router", None)
         edp = getattr(module, "entry_data_provider", None)
+        on_ingest = getattr(module, "on_ingest", None)
 
         self._plugins[manifest.name] = PluginRegistration(
             manifest=manifest,
             router=router,
             settings=settings,
             entry_data_provider=edp,
+            on_ingest=on_ingest,
         )
 
     def resolve_dependencies(self) -> list[str]:
@@ -302,6 +312,14 @@ class PluginRegistry:
             reg.entry_data_provider
             for reg in self._plugins.values()
             if reg.entry_data_provider is not None
+        ]
+
+    def get_on_ingest_hooks(self) -> list[OnIngestHook]:
+        """Return all registered on_ingest hooks."""
+        return [
+            reg.on_ingest
+            for reg in self._plugins.values()
+            if reg.on_ingest is not None
         ]
 
     def get_settings(self, name: str) -> Any:

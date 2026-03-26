@@ -21,6 +21,7 @@ from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
 from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.common import PaginatedResponse
+from phiacta.core.models.outbox import Outbox
 from phiacta.core.schemas.entry import (
     EntryCreate,
     EntryDetailResponse,
@@ -138,6 +139,15 @@ async def update_entry(
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             except PermissionError as exc:
                 raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    # Enqueue async view recomputation (search tsvector, etc.)
+    if entry.repo_status == "ready" and entry.current_head_sha is not None:
+        db.add(Outbox(
+            aggregate_id=entry_id,
+            aggregate_type="entry",
+            operation="recompute_views",
+            payload={"entry_id": str(entry_id)},
+        ))
 
     await db.commit()
     await db.refresh(entry)

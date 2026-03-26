@@ -41,6 +41,7 @@ from phiacta.core.services.git_service import (
     ForgejoGitService,
     ForgejoUnavailableError,
 )
+from phiacta.core.services.ingestion import ingest_entry
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +68,11 @@ def _backoff_seconds(attempts: int) -> float:
 class OutboxWorker:
     """Processes outbox entries by dispatching to Forgejo."""
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, on_ingest_hooks: list | None = None) -> None:
         self._engine = engine
         self._session_factory = async_sessionmaker(engine, expire_on_commit=False)
         self._git = ForgejoGitService()
+        self._on_ingest_hooks = on_ingest_hooks or []
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -304,6 +306,8 @@ class OutboxWorker:
             old_name = self._validate_git_ref(payload["old_name"])
             new_name = self._validate_git_ref(payload["new_name"])
             await self._git.rename_branch(entry_id, old_name, new_name)
+        elif op == "recompute_views":
+            await self._handle_recompute_views(payload)
         else:
             raise ValueError(f"Unknown outbox operation: {op}")
 
@@ -329,6 +333,28 @@ class OutboxWorker:
         if fmt not in FORMAT_EXTENSIONS:
             raise ValueError(f"Invalid format: {fmt!r}, must be one of {set(FORMAT_EXTENSIONS)}")
         return fmt
+
+    async def _handle_recompute_views(self, payload: dict) -> None:
+        """Re-ingest an entry to recompute all view data.
+
+        Triggered by PATCH /entries/{id} when extension data changes.
+        Reads current content from git, reads metadata from DB, and
+        calls all on_ingest hooks.
+        """
+        entry_id = UUID(payload["entry_id"])
+
+        async with self._session_factory() as session:
+            repo = EntryRepository(session)
+            entry = await repo.get_by_id(entry_id)
+            if entry is None or entry.current_head_sha is None:
+                logger.warning("recompute_views: entry %s not found or no HEAD SHA", entry_id)
+                return
+
+            await ingest_entry(
+                entry, entry.current_head_sha, session, self._git,
+                on_ingest_hooks=self._on_ingest_hooks,
+            )
+            await session.commit()
 
     async def _handle_create_repo(self, payload: dict) -> None:
         """Compound operation: create repo + commit initial files + setup
@@ -467,8 +493,10 @@ class OutboxWorker:
         await self._git.create_branch(entry_id, branch_name, from_ref)
 
 
-async def start_outbox_worker(engine: AsyncEngine) -> OutboxWorker:
+async def start_outbox_worker(
+    engine: AsyncEngine, on_ingest_hooks: list | None = None,
+) -> OutboxWorker:
     """Create and start an outbox worker. Returns the worker for shutdown."""
-    worker = OutboxWorker(engine)
+    worker = OutboxWorker(engine, on_ingest_hooks=on_ingest_hooks)
     await worker.start()
     return worker

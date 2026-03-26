@@ -22,9 +22,11 @@ import logging
 import sys
 from uuid import UUID
 
+from phiacta.config import get_settings
 from phiacta.core.db.session import get_engine, get_session_factory
 from phiacta.core.services.git_service import ForgejoGitService
 from phiacta.core.services.reconciliation import ReconciliationReport, ReconciliationService
+from phiacta.plugin import PluginRegistry
 
 logger = logging.getLogger("phiacta.core.cli.reconcile")
 
@@ -73,12 +75,19 @@ async def _run(args: argparse.Namespace) -> int:
     session_factory = get_session_factory()
     git_service = ForgejoGitService()
 
+    # Load plugins to get on_ingest hooks
+    settings = get_settings()
+    registry = PluginRegistry(enabled_plugins=settings.enabled_plugins)
+    registry.discover()
+    registry.resolve_dependencies()
+    on_ingest_hooks = registry.get_on_ingest_hooks()
+
     try:
         entry_ids: list[UUID] | None = None
         if args.entry_id:
             entry_ids = [UUID(eid) for eid in args.entry_id]
 
-        service = ReconciliationService(session_factory, git_service)
+        service = ReconciliationService(session_factory, git_service, on_ingest_hooks)
         report = await service.reconcile(
             dry_run=args.dry_run,
             entry_ids=entry_ids,

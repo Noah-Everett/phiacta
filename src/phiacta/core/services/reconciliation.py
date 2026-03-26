@@ -48,9 +48,11 @@ class ReconciliationService:
         self,
         session_factory: async_sessionmaker,
         git_service: GitService,
+        on_ingest_hooks: list | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._git_service = git_service
+        self._on_ingest_hooks = on_ingest_hooks or []
 
     async def reconcile(
         self,
@@ -201,7 +203,10 @@ class ReconciliationService:
                 return
 
             # Re-ingest
-            await ingest_entry(entry, forgejo_sha, session, self._git_service)
+            await ingest_entry(
+                entry, forgejo_sha, session, self._git_service,
+                on_ingest_hooks=self._on_ingest_hooks,
+            )
 
             # Only update SHA after successful ingest
             entry.current_head_sha = forgejo_sha
