@@ -50,6 +50,22 @@ def upgrade() -> None:
         postgresql_using="gin",
     )
 
+    # Seed the initial view_versions row for search_tsv v1.
+    op.execute(
+        "INSERT INTO view_versions (id, view_type, version, status, parameters) "
+        "VALUES ("
+        "  uuid_generate_v4(), "
+        "  'search_tsv', "
+        "  'v1', "
+        "  'active', "
+        "  '{\"language\": \"english\"}'::jsonb"
+        ")"
+    )
+
 
 def downgrade() -> None:
+    op.execute(
+        "DELETE FROM view_versions "
+        "WHERE view_type = 'search_tsv' AND version = 'v1'"
+    )
     op.drop_table("view_search_tsv")
