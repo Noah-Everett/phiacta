@@ -19,9 +19,6 @@ class TypeService:
         self._type_repo = TypeRepository(session)
         self._entry_repo = EntryRepository(session)
 
-    async def create_for_entry(self, entry_id: UUID, entry_type: str, user_id: UUID) -> ExtensionType:
-        return await self._type_repo.create(entry_id, entry_type, user_id)
-
     async def set_type(self, entry_id: UUID, entry_type: str, user_id: UUID) -> ExtensionType:
         entry = await self._entry_repo.get_by_id(entry_id)
         if entry is None:

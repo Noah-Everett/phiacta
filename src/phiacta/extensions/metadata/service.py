@@ -20,11 +20,6 @@ class MetadataService:
         self._metadata_repo = MetadataRepository(session)
         self._entry_repo = EntryRepository(session)
 
-    async def create_for_entry(
-        self, entry_id: UUID, title: str, user_id: UUID, summary: str | None = None,
-    ) -> ExtensionMetadata:
-        return await self._metadata_repo.create(entry_id, title, user_id, summary)
-
     async def set_metadata(
         self, entry_id: UUID, title: str, user_id: UUID, summary: str | None = None,
     ) -> ExtensionMetadata:
