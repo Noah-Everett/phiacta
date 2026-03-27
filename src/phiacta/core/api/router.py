@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from phiacta.core.api.activity import router as activity_router
 from phiacta.core.api.auth import router as auth_router
+from phiacta.core.api.docs import router as docs_router
 from phiacta.core.api.entities import router as entities_router
 from phiacta.core.api.entries import router as entries_router
 from phiacta.core.api.entry_edits import router as entry_edits_router
@@ -17,6 +18,7 @@ from phiacta.core.api.users import router as users_router
 v1_router = APIRouter()
 v1_router.include_router(activity_router)
 v1_router.include_router(auth_router)
+v1_router.include_router(docs_router)
 v1_router.include_router(entities_router)
 v1_router.include_router(entries_router)
 v1_router.include_router(entry_edits_router)

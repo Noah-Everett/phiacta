@@ -30,6 +30,9 @@ dependencies = [
 
     # Logging
     "structlog>=24.4",
+
+    # YAML parsing (used by entry_yaml, docs endpoint)
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
