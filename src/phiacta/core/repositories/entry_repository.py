@@ -16,11 +16,26 @@ class EntryRepository(BaseRepository[Entry]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, Entry)
 
-    async def list_entries(self, limit: int = 50, offset: int = 0, status: str | None = "active") -> list[Entry]:
+    SORTABLE_COLUMNS = {"created_at", "updated_at"}
+
+    async def list_entries(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = "active",
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+    ) -> list[Entry]:
+        if sort_by not in self.SORTABLE_COLUMNS:
+            sort_by = "created_at"
+        if sort_order not in ("asc", "desc"):
+            sort_order = "desc"
         stmt = select(Entry)
         if status is not None:
             stmt = stmt.where(Entry.status == status)
-        stmt = stmt.order_by(Entry.created_at.desc()).limit(limit).offset(offset)
+        column = getattr(Entry, sort_by)
+        stmt = stmt.order_by(column.asc() if sort_order == "asc" else column.desc())
+        stmt = stmt.limit(limit).offset(offset)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

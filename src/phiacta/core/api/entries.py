@@ -54,6 +54,8 @@ async def list_entries(
     status: str = Query("active"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    sort: str = Query("created_at", pattern=r"^(created_at|updated_at)$"),
+    order: str = Query("desc", pattern=r"^(asc|desc)$"),
     include: str | None = Query(None),
     exclude: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -64,7 +66,10 @@ async def list_entries(
         )
     repo = EntryRepository(db)
     repo_status = None if status == "all" else status
-    entries = await repo.list_entries(limit=limit, offset=offset, status=repo_status)
+    entries = await repo.list_entries(
+        limit=limit, offset=offset, status=repo_status,
+        sort_by=sort, sort_order=order,
+    )
     total = await repo.count_entries(status=repo_status)
     providers = _get_providers(request)
     inc = parse_field_filter(include)
