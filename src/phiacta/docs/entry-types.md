@@ -1,31 +1,33 @@
 ---
 name: Entry Types
 slug: entry-types
-description: "Conventional entry type names (definition, theorem, result, paper, etc.) and what each represents"
+description: "Entry types are open-ended strings — use any value that fits. This doc lists conventional recommendations."
 ---
 
 # Entry Types
 
-Entry types classify what kind of knowledge an entry represents. Types are open-ended strings — use whatever fits — but prefer these conventional types for consistency.
+**Entry types are open-ended strings. You can use any value.** The field accepts whatever text you provide — there is no fixed set of allowed types.
 
-## Knowledge types
+The types listed below are recommendations for consistency. Use them when they fit. When they don't, use something more descriptive.
 
-- **definition** — A precise specification of a concept, object, or notation. Should be general-purpose and source-agnostic.
-- **theorem** — A mathematical statement with a proof (or proof sketch). Include the statement, proof or proof sketch, and any conditions/assumptions.
+## Knowledge
+
+- **definition** — A precise specification of a concept, object, or notation.
+- **theorem** — A mathematical statement with a proof or proof sketch.
 - **lemma** — A supporting result used in proving a theorem.
 - **corollary** — A result that follows directly from a theorem.
 - **conjecture** — An unproven mathematical claim.
-- **proposition** — A mathematical statement that is proved but is less central than a theorem.
+- **proposition** — A proved mathematical statement, less central than a theorem.
 
-## Empirical types
+## Empirical
 
-- **result** — An empirical finding, measurement, or benchmark outcome. Present as an independently verifiable fact with methodology.
+- **result** — An empirical finding, measurement, or benchmark outcome.
 - **experiment** — A description of an experimental setup and procedure.
 - **dataset** — A description of a dataset, its structure, and how to access it.
 
-## Composite types
+## Composite
 
-- **paper** — A research paper. Contains references to its component entries.
+- **paper** — A research paper, containing references to its component entries.
 - **review-paper** — A survey or review article.
 - **blog-post** — A blog post or informal writeup.
 - **textbook-chapter** — A chapter from a textbook.
@@ -33,9 +35,9 @@ Entry types classify what kind of knowledge an entry represents. Types are open-
 - **technical-report** — A technical report or whitepaper.
 - **argument** — A structured argument composed of claims, evidence, and reasoning.
 
-## Other types
+## Other
 
 - **method** — An algorithm, technique, or approach.
-- **comparison** — A structured comparison between two or more things.
+- **comparison** — A structured comparison between things.
 - **tutorial** — A step-by-step guide or explanation.
 - **note** — An informal observation or working note.
