@@ -1,33 +1,52 @@
 ---
-name: Content Writing Guide
+name: Getting Started
 slug: content-guide
-description: "How to write entry content: standalone readability, knowledge identity, linking, file attachments"
+description: "Start here — how entries work, how to structure content, and tips for making entries useful"
 ---
 
 # Content Writing Guide
 
-Every Phiacta entry must be understandable on its own. A reader may arrive at any entry via search without having seen the source document or any other entry.
+This guide covers how to write entry content — the part readers interact with most directly.
 
-## Standalone readability
+## Entries and structure
 
-- **Open with context.** The first 1–2 sentences should explain what this entry is about and why it matters, in plain language that orients a cold reader.
-- **Gloss technical terms inline.** The first time you use a concept defined in another entry, briefly explain it in parentheses AND link to the entry. Example: "the [NMSE](/entries/{id}) (normalized mean squared error — the fraction of signal power lost to quantization)."
-- **Link, don't re-derive.** Use markdown links `[descriptive text](/entries/{id})` to other Phiacta entries for depth. The link text should provide enough context that the sentence is meaningful even if the reader doesn't click through.
+An entry can represent anything — a single theorem, a full paper, a dataset, a method, a comparison. There's no single right granularity. Two common approaches:
 
-## Knowledge identity, not document identity
+- **Atomic entries** — one idea per entry. A definition, a theorem, a single experimental result. These are highly reusable and easy to reference from other entries.
+- **Composite entries** — a paper, a chapter, or an argument that ties together multiple ideas. These reference their component entries using `contains` or `uses` references.
 
-Entries represent knowledge — facts, theorems, definitions, results — not sections of a document. Write each entry as if the source document doesn't exist:
+Both are valid. You can publish a paper as a single entry, or decompose it into atomic entries and create a composite entry that links them together. Mix and match however makes sense for the material.
 
-- **No document-specific numbering in titles.** Write "Minimax NMSE Optimality of Log-Uniform Quantization", not "Theorem 2.1: Minimax NMSE Optimality..." The source document's numbering scheme is meaningless outside that document.
-- **No section references in content.** Write "as shown in the [product error decomposition](/entries/{id})" not "as shown in Section 3". Link to the entry that contains the result.
-- **Summaries should be source-agnostic.** Describe the result itself, not its role in a paper. "Log-uniform quantization uniquely minimizes worst-case NMSE over all densities" not "The paper's central theorem proves that..."
-- **Definitions should be general-purpose.** If the source defines a mathematical object, define it in full generality, then *mention* that a specific project uses it — don't frame the whole entry around one source.
-- **Results should stand as independent findings.** Present empirical results as independently verifiable measurements, with the source as provenance (via a `contains` reference), not their identity.
+## Tips for readability
 
-## Provenance vs. identity
+These are suggestions, not rules — write in whatever style fits your content.
 
-The source document `contains` the entry — that's provenance, captured by a reference. But the entry's *content* should be written as universal knowledge that happens to have been established (or formalized, or measured) in that source. Future entries from other sources may reference the same atomic entries.
+- **A little context goes a long way.** Readers might arrive via search or a link from another entry. A sentence or two at the top explaining what the entry is about helps them orient themselves.
+- **Gloss terms on first use.** When referencing a concept that has its own entry, a brief inline explanation plus a link helps readers who aren't familiar: "measured by [SQNR](/entries/{id}) (signal-to-quantization-noise ratio — higher means less distortion)."
+- **Descriptive titles help with discovery.** "Minimax optimality of log-uniform quantization" is easier to find and understand than "Theorem 2.1."
 
-## File attachments
+## Knowledge, not documents
 
-Entries can have files attached (proofs, code, data, analysis notes). Use descriptive paths: `proofs/theorem.lean`, `src/implementation.py`, `results/benchmark-data.md`. Plan which files belong to which entries during the planning phase, not as an afterthought.
+When decomposing a source into entries, it helps to write each entry as if the source document doesn't exist:
+
+- **Prefer descriptive titles over document numbering.** If you want to preserve the original numbering for traceability, consider including it alongside a descriptive title.
+- **Prefer linking to specific entries over section references.** "See Section 3" doesn't help a reader who doesn't have the source open. Link to the entry that contains the result instead.
+- **Summaries tend to be more useful when they describe the knowledge itself.** For example, "Log-uniform quantization minimizes worst-case NMSE over all distributions" works better as a standalone summary than "The paper's main theorem proves that..." which requires knowing which paper.
+- **Definitions are often most reusable when written in full generality.** If a concept has a domain-specific meaning, consider noting that alongside the general definition so the entry is useful to a wider audience.
+- **Results tend to be most useful when presented as independent, reproducible findings.** Capturing the source via a `contains` reference preserves provenance while keeping the entry's content focused on the result itself.
+
+None of this applies if you're publishing a paper or document as a single entry — in that case, the content is the document itself.
+
+## Provenance
+
+The relationship between a source and its entries is captured by references — typically a `contains` reference from the source to each component entry. That's provenance: where this knowledge was established.
+
+The entry's content is the knowledge itself. Other sources may cite the same entry. A definition entry might be referenced by entries from ten different papers.
+
+## Using files
+
+Every entry is backed by a git repository. Files are a core part of what makes an entry valuable — a theorem entry with a Lean proof attached, a result entry with the raw data and analysis script, a method entry with a reference implementation.
+
+Verification support (formal proofs in Lean, Coq, etc.) is coming soon as a platform extension. In the meantime, you can attach proof files to entries and they'll be ready for verification when the feature lands.
+
+See the [files guide](/guides/files) for details on what to attach and how.

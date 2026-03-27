@@ -887,61 +887,23 @@ class ForgejoGitService:
     ) -> DiffInfo:
         """Get the diff between two refs.
 
-        Uses the Forgejo compare endpoint first; if it returns no file
-        diffs (Forgejo's compare endpoint omits ``files`` in some
-        versions), falls back to fetching the head commit directly
-        via ``GET /repos/{owner}/{repo}/git/commits/{sha}`` which
-        always includes file-level changes.
+        Uses the Forgejo ``GET /repos/{repo}/git/commits/{sha}.diff``
+        endpoint which returns the full unified diff as plain text.
+        The raw diff is parsed via ``_parse_unified_diff``.
         """
         repo = self._repo_path(entry_id)
         resolved_base = await self._resolve_ref(repo, base)
         resolved_head = await self._resolve_ref(repo, head)
 
-        # Try the compare endpoint first.
-        resp = await self._request(
-            "GET",
-            f"/repos/{repo}/compare/{resolved_base}...{resolved_head}",
+        diff_resp = await self._request(
+            "GET", f"/repos/{repo}/git/commits/{resolved_head}.diff",
         )
-        data = resp.json()
-
-        files_changed: list[FileDiff] = []
-        for f in data.get("files", []):
-            files_changed.append(
-                FileDiff(
-                    path=f.get("filename", ""),
-                    patch=f.get("patch", ""),
-                    additions=f.get("additions", 0),
-                    deletions=f.get("deletions", 0),
-                )
-            )
-
-        # Fallback: if compare returned no files, fetch the head commit
-        # directly — its ``files`` field always includes changes.
-        if not files_changed:
-            try:
-                commit_resp = await self._request(
-                    "GET", f"/repos/{repo}/git/commits/{resolved_head}",
-                )
-                commit_data = commit_resp.json()
-                for f in commit_data.get("files", []):
-                    files_changed.append(
-                        FileDiff(
-                            path=f.get("filename", ""),
-                            patch=f.get("patch", ""),
-                            additions=f.get("additions", 0),
-                            deletions=f.get("deletions", 0),
-                        )
-                    )
-            except (RepoNotFoundError, ForgejoError):
-                pass  # Best-effort — return empty diff
-
-        commits = data.get("commits", [])
-        base_sha = commits[0]["sha"] if commits else resolved_base
-        head_sha = commits[-1]["sha"] if commits else resolved_head
+        raw_diff = diff_resp.text
+        files_changed = _parse_unified_diff(raw_diff)
 
         return DiffInfo(
-            base_sha=base_sha,
-            head_sha=head_sha,
+            base_sha=resolved_base,
+            head_sha=resolved_head,
             files_changed=files_changed,
         )
 
