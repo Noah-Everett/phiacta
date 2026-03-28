@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.compose import EntryDataProvider
+from phiacta.extensions.types.models import ExtensionType
 from phiacta.extensions.types.repository import TypeRepository
 
 
@@ -19,6 +22,21 @@ class TypeProvider(EntryDataProvider):
     include_in_list = True
     include_in_detail = True
     writable_fields = frozenset({"entry_type"})
+    filterable_fields = frozenset({"entry_type"})
+
+    def apply_search_filter(
+        self, stmt: Any, entry_id_col: Any, field: str, value: str,
+    ) -> Any:
+        values = [v.strip() for v in value.split(",") if v.strip()]
+        if not values:
+            return stmt
+        # Use a subquery so this works regardless of whether ExtensionType
+        # is already joined (enrichment) or not (count query).
+        subq = (
+            select(ExtensionType.entity_id)
+            .where(ExtensionType.entry_type.in_(values))
+        ).scalar_subquery()
+        return stmt.where(entry_id_col.in_(subq))
 
     async def get_one(self, entity_id: UUID, db: AsyncSession) -> dict:
         ext_type = await TypeRepository(db).get_by_entry_id(entity_id)

@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.compose import EntryDataProvider
 from phiacta.core.db.session import get_db
 from phiacta.tools.search.repository import search_text
 from phiacta.tools.search.schemas import SearchResponse, SearchResultItem
@@ -23,10 +24,23 @@ router = APIRouter()
 # Must match search_tsv compute default
 _DEFAULT_LANGUAGE = "english"
 
+# Query params that are NOT extension filters
+_RESERVED_PARAMS = frozenset({"q", "status", "limit", "offset"})
+
+
+def _get_providers(request: Request) -> list[EntryDataProvider]:
+    """Read registered entry data providers from the plugin registry."""
+    registry = getattr(request.app.state, "plugin_registry", None)
+    if registry is not None:
+        return registry.get_entry_data_providers()
+    return getattr(request.app.state, "entry_data_providers", [])
+
 
 @router.get("/", response_model=SearchResponse)
 async def search_entries(
+    request: Request,
     q: str = Query(..., min_length=1, max_length=500),
+    status: str = Query("active"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -35,11 +49,27 @@ async def search_entries(
 
     Returns entries ranked by relevance to the query string.
     Uses precomputed tsvectors from the search_tsv view.
+
+    Supports filtering by core fields (``status``) and by any extension
+    field declared as filterable (e.g. ``entry_type=theorem``,
+    ``tags=math,physics;mode=and``).  Unknown filter params are ignored.
     """
     # Strip whitespace and reject blank queries
     q = q.strip()
     if not q:
         raise HTTPException(status_code=422, detail="Query must not be blank")
+
+    # Collect extension filters from remaining query params
+    providers = _get_providers(request)
+    filterable = {
+        field: provider
+        for provider in providers
+        for field in provider.filterable_fields
+    }
+    ext_filters: dict[str, str] = {}
+    for param, value in request.query_params.items():
+        if param not in _RESERVED_PARAMS and param in filterable:
+            ext_filters[param] = value
 
     # Resolve active search_tsv version
     version = await get_active_version(db=db)
@@ -59,6 +89,8 @@ async def search_entries(
         else _DEFAULT_LANGUAGE
     )
 
+    repo_status = None if status == "all" else status
+
     # Execute search with language fallback on invalid regconfig
     try:
         rows, total = await search_text(
@@ -68,6 +100,9 @@ async def search_entries(
             db=db,
             limit=limit,
             offset=offset,
+            status=repo_status,
+            filters=ext_filters if ext_filters else None,
+            providers=providers if ext_filters else None,
         )
     except ProgrammingError:
         if language != _DEFAULT_LANGUAGE:
@@ -83,6 +118,9 @@ async def search_entries(
                 db=db,
                 limit=limit,
                 offset=offset,
+                status=repo_status,
+                filters=ext_filters if ext_filters else None,
+                providers=providers if ext_filters else None,
             )
         else:
             raise

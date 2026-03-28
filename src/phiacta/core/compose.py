@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,6 +66,33 @@ class EntryDataProvider(ABC):
         data are omitted from the result (not mapped to None).
         """
         ...
+
+    #: Fields that can be used as search/list filters.
+    #: Each field name can be passed as a query param to the search endpoint.
+    filterable_fields: frozenset[str] = frozenset()
+
+    def apply_search_filter(
+        self,
+        stmt: Any,
+        entry_id_col: Any,
+        field: str,
+        value: str,
+    ) -> Any:
+        """Apply a filter to a SQLAlchemy search query statement.
+
+        *stmt*: the current SELECT statement.
+        *entry_id_col*: the Entry.id column expression for joining.
+        *field*: the filter field name (must be in ``filterable_fields``).
+        *value*: the raw query param value (comma-separated for multi-value).
+
+        Returns the modified statement with any necessary joins and WHERE
+        clauses added.  Raises ``NotImplementedError`` if the field is
+        declared filterable but not implemented.
+        """
+        raise NotImplementedError(
+            f"Provider {self.name!r} declares {field!r} as filterable "
+            f"but does not implement apply_search_filter"
+        )
 
     async def write(
         self,

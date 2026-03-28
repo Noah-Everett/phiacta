@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.compose import EntryDataProvider
 from phiacta.core.models.entry import Entry
 from phiacta.views.search_tsv.models import ViewSearchTsv
 
@@ -48,8 +49,17 @@ def _build_prefix_tsquery(q: str, language: str):
 async def search_text(
     *, q: str, version_id: UUID, language: str, db: AsyncSession,
     limit: int, offset: int,
+    status: str | None = "active",
+    filters: dict[str, str] | None = None,
+    providers: list[EntryDataProvider] | None = None,
 ) -> tuple[list[Row], int]:
-    """Full-text search. Outerjoins metadata/types for optional enrichment."""
+    """Full-text search with optional filtering.
+
+    *status*: core Entry status filter.  ``None`` means all statuses.
+    *filters*: mapping of field name to raw value string, routed to
+        extension providers via ``apply_search_filter``.
+    *providers*: registered entry data providers (needed for filter routing).
+    """
     tsquery = _build_prefix_tsquery(q, language)
     rank = func.ts_rank(ViewSearchTsv.tsv, tsquery)
     total_window = func.count().over()
@@ -71,31 +81,49 @@ async def search_text(
     if ExtensionType is not None:
         stmt = stmt.outerjoin(ExtensionType, ExtensionType.entity_id == Entry.id)
 
-    stmt = (
-        stmt.where(
-            ViewSearchTsv.version_id == version_id,
-            ViewSearchTsv.tsv.op("@@")(tsquery),
-            Entry.status == "active",
-        )
-        .order_by(rank.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    # Core where clauses
+    where_clauses = [
+        ViewSearchTsv.version_id == version_id,
+        ViewSearchTsv.tsv.op("@@")(tsquery),
+    ]
+    if status is not None:
+        where_clauses.append(Entry.status == status)
+
+    stmt = stmt.where(*where_clauses)
+
+    # Apply extension filters through providers
+    if filters and providers:
+        for field, value in filters.items():
+            for provider in providers:
+                if field in provider.filterable_fields:
+                    stmt = provider.apply_search_filter(
+                        stmt, Entry.id, field, value,
+                    )
+                    break
+
+    stmt = stmt.order_by(rank.desc()).limit(limit).offset(offset)
 
     result = await db.execute(stmt)
     rows = result.all()
     if rows:
         return rows, rows[0].total
 
+    # Empty result — need separate count query
     count_stmt = (
         select(func.count())
         .select_from(ViewSearchTsv)
         .join(Entry, Entry.id == ViewSearchTsv.entry_id)
-        .where(
-            ViewSearchTsv.version_id == version_id,
-            ViewSearchTsv.tsv.op("@@")(tsquery),
-            Entry.status == "active",
-        )
+        .where(*where_clauses)
     )
+    # Re-apply extension filters for count
+    if filters and providers:
+        for field, value in filters.items():
+            for provider in providers:
+                if field in provider.filterable_fields:
+                    count_stmt = provider.apply_search_filter(
+                        count_stmt, Entry.id, field, value,
+                    )
+                    break
+
     count_result = await db.execute(count_stmt)
     return [], count_result.scalar_one()
