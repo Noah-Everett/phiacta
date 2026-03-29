@@ -1,7 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Search tool router — GET /v1/tools/search/?q=... endpoint."""
+"""Search tool router — GET /v1/tools/search/?q=... endpoint.
+
+Tool isolation: this router does NOT import Entry models, DB sessions
+from core.db, or extension models directly. DB access goes through
+core.tool_deps; query logic lives in the search_tsv search service.
+"""
 
 from __future__ import annotations
 
@@ -13,21 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.compose import EntryDataProvider
-from phiacta.core.db.session import get_db
-from phiacta.core.models.user import User
-from phiacta.tools.search.repository import search_text
+from phiacta.core.tool_deps import get_db
+from phiacta.extensions.search_tsv.repository import get_active_version
+from phiacta.extensions.search_tsv.search_service import search_text
 from phiacta.tools.search.schemas import SearchResponse, SearchResultItem
-from phiacta.views.search_tsv.repository import get_active_version
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Must match search_tsv compute default
 _DEFAULT_LANGUAGE = "english"
 
-# Query params that are NOT extension filters
-_RESERVED_PARAMS = frozenset({"q", "status", "limit", "offset"})
+_RESERVED_PARAMS = frozenset({"q", "visibility", "limit", "offset"})
 
 
 def _get_providers(request: Request) -> list[EntryDataProvider]:
@@ -42,27 +44,21 @@ def _get_providers(request: Request) -> list[EntryDataProvider]:
 async def search_entries(
     request: Request,
     q: str = Query(..., min_length=1, max_length=500),
-    status: str = Query("active"),
+    visibility: str = Query("public"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    user: User | None = Depends(get_optional_user),
+    user=Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> SearchResponse:
-    """Full-text search over entries. Public read — no auth required.
+    """Full-text search over entries.
 
     Returns entries ranked by relevance to the query string.
-    Uses precomputed tsvectors from the search_tsv view.
-
-    Supports filtering by core fields (``status``) and by any extension
-    field declared as filterable (e.g. ``entry_type=theorem``,
-    ``tags=math,physics;mode=and``).  Unknown filter params are ignored.
+    Uses precomputed tsvectors from the search_tsv extension.
     """
-    # Strip whitespace and reject blank queries
     q = q.strip()
     if not q:
         raise HTTPException(status_code=422, detail="Query must not be blank")
 
-    # Collect extension filters from remaining query params
     providers = _get_providers(request)
     filterable = {
         field: provider
@@ -74,38 +70,25 @@ async def search_entries(
         if param not in _RESERVED_PARAMS and param in filterable:
             ext_filters[param] = value
 
-    # Resolve active search_tsv version
     version = await get_active_version(db=db)
     if version is None:
         return SearchResponse(
-            items=[],
-            total=0,
-            limit=limit,
-            offset=offset,
-            version_id=None,
+            items=[], total=0, limit=limit, offset=offset, version_id=None,
         )
 
-    # Read language from version parameters, fallback to default
     language = (
         version.parameters.get("language", _DEFAULT_LANGUAGE)
         if version.parameters
         else _DEFAULT_LANGUAGE
     )
 
-    repo_status = None if status == "all" else status
-    viewer_id = user.id if user else None
+    repo_visibility = None if visibility == "all" else visibility
 
-    # Execute search with language fallback on invalid regconfig
     try:
         rows, total = await search_text(
-            q=q,
-            version_id=version.id,
-            language=language,
-            db=db,
-            limit=limit,
-            offset=offset,
-            status=repo_status,
-            viewer_id=viewer_id,
+            q=q, version_id=version.id, language=language,
+            db=db, limit=limit, offset=offset,
+            visibility=repo_visibility, user=user,
             filters=ext_filters if ext_filters else None,
             providers=providers if ext_filters else None,
         )
@@ -113,18 +96,12 @@ async def search_entries(
         if language != _DEFAULT_LANGUAGE:
             logger.warning(
                 "search failed with language=%r, retrying with '%s'",
-                language,
-                _DEFAULT_LANGUAGE,
+                language, _DEFAULT_LANGUAGE,
             )
             rows, total = await search_text(
-                q=q,
-                version_id=version.id,
-                language=_DEFAULT_LANGUAGE,
-                db=db,
-                limit=limit,
-                offset=offset,
-                status=repo_status,
-                viewer_id=viewer_id,
+                q=q, version_id=version.id, language=_DEFAULT_LANGUAGE,
+                db=db, limit=limit, offset=offset,
+                visibility=repo_visibility, user=user,
                 filters=ext_filters if ext_filters else None,
                 providers=providers if ext_filters else None,
             )
@@ -143,9 +120,6 @@ async def search_entries(
     ]
 
     return SearchResponse(
-        items=items,
-        total=total,
-        limit=limit,
-        offset=offset,
+        items=items, total=total, limit=limit, offset=offset,
         version_id=version.id,
     )

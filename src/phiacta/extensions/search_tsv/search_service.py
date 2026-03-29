@@ -1,7 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Search tool repository — full-text search queries against view_search_tsv."""
+"""Full-text search query service for the search_tsv extension.
+
+Contains the search query logic that was previously in
+tools/search/repository.py. Tools call this service instead of
+building SQLAlchemy queries with Entry/extension models directly.
+"""
 
 from __future__ import annotations
 
@@ -11,10 +16,11 @@ from uuid import UUID
 from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.visibility import archive_visibility_condition
 from phiacta.core.compose import EntryDataProvider
 from phiacta.core.models.entry import Entry
-from phiacta.views.search_tsv.models import ViewSearchTsv
+from phiacta.core.models.user import User
+from phiacta.core.visibility import discovery_condition
+from phiacta.extensions.search_tsv.models import ViewSearchTsv
 
 try:
     from phiacta.extensions.metadata.models import ExtensionMetadata
@@ -50,15 +56,15 @@ def _build_prefix_tsquery(q: str, language: str):
 async def search_text(
     *, q: str, version_id: UUID, language: str, db: AsyncSession,
     limit: int, offset: int,
-    status: str | None = "active",
-    viewer_id: UUID | None = None,
+    visibility: str | None = "public",
+    user: User | None = None,
     filters: dict[str, str] | None = None,
     providers: list[EntryDataProvider] | None = None,
 ) -> tuple[list[Row], int]:
     """Full-text search with optional filtering.
 
-    *status*: core Entry status filter.  ``None`` means all statuses.
-    *viewer_id*: archived entries are only visible to their owner.
+    *visibility*: core Entry visibility filter. ``None`` means all.
+    *user*: private entries are only visible to their owner.
     *filters*: mapping of field name to raw value string, routed to
         extension providers via ``apply_search_filter``.
     *providers*: registered entry data providers (needed for filter routing).
@@ -67,7 +73,6 @@ async def search_text(
     rank = func.ts_rank(ViewSearchTsv.tsv, tsquery)
     total_window = func.count().over()
 
-    # Build select columns — metadata/type fields included if extensions loaded
     columns = [Entry.id.label("entry_id"), rank.label("rank")]
     if ExtensionMetadata is not None:
         columns.extend([ExtensionMetadata.title, ExtensionMetadata.summary])
@@ -84,19 +89,16 @@ async def search_text(
     if ExtensionType is not None:
         stmt = stmt.outerjoin(ExtensionType, ExtensionType.entity_id == Entry.id)
 
-    # Core where clauses
     where_clauses = [
         ViewSearchTsv.version_id == version_id,
         ViewSearchTsv.tsv.op("@@")(tsquery),
     ]
-    if status is not None:
-        where_clauses.append(Entry.status == status)
-    # Archived entries are only visible to their owner
-    where_clauses.append(archive_visibility_condition(viewer_id))
+    if visibility is not None:
+        where_clauses.append(Entry.visibility == visibility)
+    where_clauses.append(discovery_condition(user))
 
     stmt = stmt.where(*where_clauses)
 
-    # Apply extension filters through providers
     if filters and providers:
         for field, value in filters.items():
             for provider in providers:
@@ -113,14 +115,12 @@ async def search_text(
     if rows:
         return rows, rows[0].total
 
-    # Empty result — need separate count query
     count_stmt = (
         select(func.count())
         .select_from(ViewSearchTsv)
         .join(Entry, Entry.id == ViewSearchTsv.entry_id)
         .where(*where_clauses)
     )
-    # Re-apply extension filters for count
     if filters and providers:
         for field, value in filters.items():
             for provider in providers:
