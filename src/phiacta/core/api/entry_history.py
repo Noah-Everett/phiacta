@@ -15,11 +15,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.api.entry_guards import check_archive_visibility
+from phiacta.core.api.entry_guards import get_readable_entry
 from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
-from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.entry_history import CommitDiffResponse, CommitListItem
 from phiacta.core.services.git_service import ForgejoError, GitService, RepoNotFoundError
 from phiacta.core.services.git_service_dep import get_git_service
@@ -37,15 +36,7 @@ async def list_entry_commits(
     git_service: GitService = Depends(get_git_service),
 ) -> list[CommitListItem]:
     """List commits for an entry's repository, newest first."""
-    repo = EntryRepository(db)
-    entry = await repo.get_by_id(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Entry not found")
-    check_archive_visibility(entry, user)
-    if entry.repo_status != "ready":
-        raise HTTPException(
-            status_code=409, detail="Entry repository is not yet ready",
-        )
+    await get_readable_entry(entry_id, db, user=user)
 
     try:
         commits = await git_service.list_commits(
@@ -72,15 +63,7 @@ async def get_entry_commit_diff(
     git_service: GitService = Depends(get_git_service),
 ) -> CommitDiffResponse:
     """Get the diff for a specific commit in an entry's repository."""
-    repo = EntryRepository(db)
-    entry = await repo.get_by_id(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Entry not found")
-    check_archive_visibility(entry, user)
-    if entry.repo_status != "ready":
-        raise HTTPException(
-            status_code=409, detail="Entry repository is not yet ready",
-        )
+    await get_readable_entry(entry_id, db, user=user)
 
     try:
         diff = await git_service.get_diff(entry_id, f"{sha}~1", sha)

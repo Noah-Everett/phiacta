@@ -12,9 +12,10 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.visibility import archive_visibility_condition
 from phiacta.core.models.entry import Entry
 from phiacta.extensions.tags.models import ExtensionTag
 
@@ -127,12 +128,7 @@ class TagRepository:
             base_query = base_query.where(Entry.status == status)
 
         # Archived entries are only visible to their owner
-        if viewer_id is None:
-            base_query = base_query.where(Entry.status != "archived")
-        else:
-            base_query = base_query.where(
-                or_(Entry.status != "archived", Entry.created_by == viewer_id)
-            )
+        base_query = base_query.where(archive_visibility_condition(viewer_id))
 
         # Count total
         count_query = select(func.count()).select_from(

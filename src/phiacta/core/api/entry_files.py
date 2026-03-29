@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.api.entry_guards import check_archive_visibility, get_writable_entry
+from phiacta.core.api.entry_guards import get_readable_entry, get_writable_entry
 from phiacta.core.api.rate_limit import limiter
 from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.config import Settings, get_settings
@@ -110,15 +110,7 @@ async def list_entry_files(
     git_service: GitService = Depends(get_git_service),
 ) -> list[FileListItem]:
     """List files at the root of an entry's repository."""
-    repo = EntryRepository(db)
-    entry = await repo.get_by_id(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Entry not found")
-    check_archive_visibility(entry, user)
-    if entry.repo_status != "ready":
-        raise HTTPException(
-            status_code=409, detail="Entry repository is not yet ready",
-        )
+    await get_readable_entry(entry_id, db, user=user)
 
     try:
         items = await git_service.list_files(entry_id)
@@ -148,15 +140,7 @@ async def get_entry_file_content(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid file path") from exc
 
-    repo = EntryRepository(db)
-    entry = await repo.get_by_id(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Entry not found")
-    check_archive_visibility(entry, user)
-    if entry.repo_status != "ready":
-        raise HTTPException(
-            status_code=409, detail="Entry repository is not yet ready",
-        )
+    await get_readable_entry(entry_id, db, user=user)
 
     try:
         content = await git_service.read_file(entry_id, path)

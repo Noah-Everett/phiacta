@@ -8,9 +8,10 @@ from __future__ import annotations
 from collections import defaultdict
 from uuid import UUID
 
-from sqlalchemy import Row, or_, select
+from sqlalchemy import Row, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.visibility import archive_visibility_condition
 from phiacta.core.models.entry import Entry
 from phiacta.extensions.references.models import ExtensionReference
 
@@ -28,13 +29,6 @@ try:
     from phiacta.extensions.tags.models import ExtensionTag
 except ImportError:
     ExtensionTag = None  # type: ignore[assignment,misc]
-
-
-def _archive_visibility(viewer_id: UUID | None):
-    """Archived entries are only visible to their owner."""
-    if viewer_id is None:
-        return Entry.status != "archived"
-    return or_(Entry.status != "archived", Entry.created_by == viewer_id)
 
 
 async def traverse_references(
@@ -63,7 +57,7 @@ async def traverse_references(
     valid_stmt = (
         select(Entry.id)
         .where(Entry.id.in_(seed_ids))
-        .where(_archive_visibility(viewer_id))
+        .where(archive_visibility_condition(viewer_id))
     )
     valid_result = await db.execute(valid_stmt)
     valid_seeds = {row.id for row in valid_result.all()}
@@ -130,7 +124,7 @@ async def _get_neighbors(
     if not node_ids:
         return set()
 
-    vis = _archive_visibility(viewer_id)
+    vis = archive_visibility_condition(viewer_id)
     neighbors: set[UUID] = set()
 
     if direction in ("outgoing", "both"):

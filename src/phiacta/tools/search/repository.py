@@ -8,9 +8,10 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
-from sqlalchemy import Row, func, or_, select
+from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.visibility import archive_visibility_condition
 from phiacta.core.compose import EntryDataProvider
 from phiacta.core.models.entry import Entry
 from phiacta.views.search_tsv.models import ViewSearchTsv
@@ -91,12 +92,7 @@ async def search_text(
     if status is not None:
         where_clauses.append(Entry.status == status)
     # Archived entries are only visible to their owner
-    if viewer_id is None:
-        where_clauses.append(Entry.status != "archived")
-    else:
-        where_clauses.append(
-            or_(Entry.status != "archived", Entry.created_by == viewer_id)
-        )
+    where_clauses.append(archive_visibility_condition(viewer_id))
 
     stmt = stmt.where(*where_clauses)
 

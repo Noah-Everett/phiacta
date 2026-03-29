@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Shared precondition checks for entry write endpoints.
+"""Shared precondition checks and visibility guards for entry endpoints.
 
-Extracted from ``entry_files.py`` so that both file-write and metadata-update
-endpoints reuse the same ownership and status checks.
+Provides guard functions for write endpoints (ownership, editable status)
+and read endpoints (archive visibility).  Also provides the canonical
+SQL-level archive visibility filter for use in repository queries.
 """
 
 from __future__ import annotations
@@ -12,12 +13,12 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.repositories.entry_repository import EntryRepository
+from phiacta.core.visibility import archive_visibility_condition  # noqa: F401 — re-export
 
 # Statuses that allow modifications (file writes, metadata updates).
 EDITABLE_STATUSES = ("active", "draft")
@@ -31,18 +32,6 @@ def check_archive_visibility(entry: Entry, user: User | None) -> None:
     """
     if entry.status == "archived" and (user is None or entry.created_by != user.id):
         raise HTTPException(status_code=404, detail="Entry not found")
-
-
-def archive_visibility_condition(viewer_id: UUID | None):
-    """Return a SQLAlchemy filter that hides archived entries from non-owners.
-
-    Use in list/search queries so archived entries only appear for their
-    creator.  When ``viewer_id`` is None (unauthenticated), all archived
-    entries are excluded.
-    """
-    if viewer_id is None:
-        return Entry.status != "archived"
-    return or_(Entry.status != "archived", Entry.created_by == viewer_id)
 
 
 async def get_writable_entry(
