@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.visibility import archive_visibility_condition
+from phiacta.core.visibility import discovery_condition
 from phiacta.core.models.entry import Entry
 from phiacta.extensions.tags.models import ExtensionTag
 
@@ -27,10 +27,7 @@ class TagRepository:
         self.session = session
 
     async def list_by_entry(self, entry_id: UUID) -> list[ExtensionTag]:
-        """List all tags for a given entry, ordered alphabetically.
-
-        entry_id is also the entity_id (shared-PK strategy).
-        """
+        """List all tags for a given entry, ordered alphabetically."""
         stmt = (
             select(ExtensionTag)
             .where(ExtensionTag.entity_id == entry_id)
@@ -42,17 +39,11 @@ class TagRepository:
     async def replace_tags(
         self, entry_id: UUID, tags: list[str], created_by: UUID
     ) -> list[ExtensionTag]:
-        """Atomically replace all tags on an entry.
-
-        Deletes all existing tags for the entry, then inserts the new set.
-        Returns the newly created ExtensionTag objects.
-        """
-        # Delete existing tags
+        """Atomically replace all tags on an entry."""
         await self.session.execute(
             delete(ExtensionTag).where(ExtensionTag.entity_id == entry_id)
         )
 
-        # Insert new tags
         new_tags: list[ExtensionTag] = []
         for tag in tags:
             ext_tag = ExtensionTag(
@@ -89,7 +80,6 @@ class TagRepository:
         mode: str = "or",
         limit: int = 50,
         offset: int = 0,
-        status: str | None = "active",
         viewer_id: UUID | None = None,
     ) -> tuple[list[Entry], int]:
         """Find entries that match the given tags.
@@ -97,8 +87,7 @@ class TagRepository:
         mode="or": entries with ANY of the specified tags.
         mode="and": entries with ALL of the specified tags.
 
-        status: filter entries by status. None means no filter (all statuses).
-        viewer_id: archived entries are only visible to their owner.
+        viewer_id: private entries are only visible to their owner.
 
         Returns (entries, total_count) for pagination.
         """
@@ -121,14 +110,10 @@ class TagRepository:
                 .distinct()
             ).subquery()
 
-        # Join with entries — works because entry.id == entity.id (shared PK)
         base_query = select(Entry).join(subq, Entry.id == subq.c.entity_id)
 
-        if status is not None:
-            base_query = base_query.where(Entry.status == status)
-
-        # Archived entries are only visible to their owner
-        base_query = base_query.where(archive_visibility_condition(viewer_id))
+        # Private entries are only visible to their owner
+        base_query = base_query.where(discovery_condition(viewer_id))
 
         # Count total
         count_query = select(func.count()).select_from(

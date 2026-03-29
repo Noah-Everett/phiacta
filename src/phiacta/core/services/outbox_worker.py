@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from phiacta.formats import FORMAT_EXTENSIONS
 from phiacta.core.models.outbox import Outbox
 from phiacta.core.repositories.entry_repository import EntryRepository
-from phiacta.core.services.entry_yaml import generate_entry_yaml
+# entry.yaml is no longer generated for new entries
 from phiacta.core.services.git_service import (
     AuthorInfo,
     FileContent,
@@ -407,21 +407,13 @@ class OutboxWorker:
             else:
                 raise
 
-        # Step 3: Commit initial .phiacta/entry.yaml + .phiacta/content.{ext}
-        entry_yaml = generate_entry_yaml(
-            entry_id=entry_id,
-            schema_version=1,
-            author_id=author_id,
-            author_name=author_handle,
-            created_at=created_at,
-        )
-
-        # Content file inside .phiacta/ with appropriate extension
+        # Step 3: Commit initial .phiacta/content.{ext}
+        # entry.yaml is no longer generated — git stores content only,
+        # DB stores everything else.
         ext = FORMAT_EXTENSIONS.get(content_format, ".md")
         content_text = content if content else ""
 
         files = [
-            FileContent(path=".phiacta/entry.yaml", content=entry_yaml),
             FileContent(path=f".phiacta/content{ext}", content=content_text),
         ]
         sha = await self._git.commit_files(

@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.api.entry_guards import check_archive_visibility
+from phiacta.core.visibility import check_entry_access
 from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.compose import compose_entry_response
 from phiacta.core.db.session import get_db
@@ -54,7 +54,7 @@ async def resolve_entity(
         entry = await EntryRepository(db).get_by_id(entity_id)
         if entry is None:
             return base
-        check_archive_visibility(entry, user)
+        check_entry_access(entry, user)
         providers = _get_providers(request)
         composed = await compose_entry_response(entry, providers, db)
         base.update(composed)

@@ -36,7 +36,7 @@ class GraphNode(BaseModel):
     summary: str | None = None
     entry_type: str | None = None
     tags: list[str] = []
-    status: str = "active"
+    visibility: str = "public"
     depth: int
 
 

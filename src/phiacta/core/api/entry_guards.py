@@ -3,9 +3,8 @@
 
 """Shared precondition checks and visibility guards for entry endpoints.
 
-Provides guard functions for write endpoints (ownership, editable status)
-and read endpoints (archive visibility).  Also provides the canonical
-SQL-level archive visibility filter for use in repository queries.
+Provides guard functions for write endpoints (ownership, repo readiness)
+and read endpoints (visibility).
 """
 
 from __future__ import annotations
@@ -18,20 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.repositories.entry_repository import EntryRepository
-from phiacta.core.visibility import archive_visibility_condition  # noqa: F401 — re-export
-
-# Statuses that allow modifications (file writes, metadata updates).
-EDITABLE_STATUSES = ("active", "draft")
-
-
-def check_archive_visibility(entry: Entry, user: User | None) -> None:
-    """Raise 404 if the entry is archived and the user is not the owner.
-
-    Archived entries are only visible to their creator.  For everyone
-    else they behave as if they don't exist.
-    """
-    if entry.status == "archived" and (user is None or entry.created_by != user.id):
-        raise HTTPException(status_code=404, detail="Entry not found")
+from phiacta.core.visibility import check_entry_access  # noqa: F401 — re-export
 
 
 async def get_writable_entry(
@@ -42,7 +28,7 @@ async def get_writable_entry(
     """Load an entry and verify it is writable by the given user.
 
     Raises HTTPException for missing entry (404), unready repo (409),
-    non-editable status (403), or non-owner (403).
+    or non-owner (403).  Entries are always editable by their owner.
     """
     repo = EntryRepository(db)
     entry = await repo.get_by_id(entry_id)
@@ -51,10 +37,6 @@ async def get_writable_entry(
     if entry.repo_status != "ready":
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",
-        )
-    if entry.status not in EDITABLE_STATUSES:
-        raise HTTPException(
-            status_code=403, detail="Entry is not editable",
         )
     if entry.created_by != user.id:
         raise HTTPException(
@@ -70,9 +52,8 @@ async def get_proposable_entry(
 ) -> Entry:
     """Load an entry and verify it can receive edit proposals.
 
-    Checks that the entry exists (404), repo is ready (409), and status
-    is editable (403).  Does NOT check ownership — any authenticated
-    user can create a proposal.
+    Checks that the entry exists (404) and repo is ready (409).
+    Does NOT check ownership — any authenticated user can create a proposal.
     """
     repo = EntryRepository(db)
     entry = await repo.get_by_id(entry_id)
@@ -82,10 +63,6 @@ async def get_proposable_entry(
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",
         )
-    if entry.status not in EDITABLE_STATUSES:
-        raise HTTPException(
-            status_code=403, detail="Entry is not editable",
-        )
     return entry
 
 
@@ -94,18 +71,16 @@ async def get_readable_entry(
     db: AsyncSession,
     user: User | None = None,
 ) -> Entry:
-    """Load an entry and verify its repo is ready for read operations.
+    """Load an entry and verify it is readable by the caller.
 
-    Checks that the entry exists (404), repo is ready (409), and the
-    entry is visible to the caller (archived entries are owner-only).
-    Does NOT check ownership or editable status — used for public
-    read endpoints like listing proposals on any entry.
+    Checks that the entry exists (404), visibility allows access (403),
+    and repo is ready (409).
     """
     repo = EntryRepository(db)
     entry = await repo.get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
-    check_archive_visibility(entry, user)
+    check_entry_access(entry, user)
     if entry.repo_status != "ready":
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",
@@ -120,9 +95,8 @@ async def get_owned_entry(
 ) -> Entry:
     """Load an entry and verify the user is the owner.
 
-    Like ``get_writable_entry`` but does NOT check editable status or
-    repo_status. Used for archival/unarchival where the entry may already
-    be archived.
+    Like ``get_writable_entry`` but does NOT check repo_status.
+    Used for operations where the entry may not be ready yet.
 
     Raises HTTPException for missing entry (404) or non-owner (403).
     """

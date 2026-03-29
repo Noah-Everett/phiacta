@@ -4,7 +4,7 @@
 """Tags extension API router.
 
 Endpoints:
-- GET  /              List tags for an entry (public)
+- GET  /              List tags for an entry (visibility-checked)
 - PUT  /{entry_id}    Replace all tags on an entry (owner-only)
 - GET  /entries        Find entries by tags (public, paginated)
 
@@ -21,13 +21,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.api.entry_guards import check_archive_visibility
 from phiacta.core.api.rate_limit import limiter
 from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
 from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.common import PaginatedResponse
+from phiacta.core.visibility import check_entry_access
 from phiacta.extensions.tags.repository import TagRepository
 from phiacta.extensions.tags.schemas import (
     EntryTagItem,
@@ -50,10 +50,10 @@ async def list_tags_for_entry(
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> TagListResponse:
-    """List all tags for a given entry. Public read — no auth required."""
+    """List all tags for a given entry. Checks visibility."""
     entry = await EntryRepository(db).get_by_id(entry_id)
     if entry is not None:
-        check_archive_visibility(entry, user)
+        check_entry_access(entry, user)
     repo = TagRepository(db)
     tags = await repo.list_by_entry(entry_id)
     return TagListResponse(
@@ -100,7 +100,6 @@ async def set_tags(
 async def find_entries_by_tags(
     tags: str = Query(..., description="Comma-separated tag names"),
     mode: str = Query("or", pattern="^(and|or)$"),
-    include_archived: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     user: User | None = Depends(get_optional_user),
@@ -110,8 +109,8 @@ async def find_entries_by_tags(
 
     OR mode returns entries with ANY matching tag.
     AND mode returns entries with ALL matching tags.
+    Private entries are only visible to their owner.
     """
-    # Normalize, deduplicate, and filter empty tags from query
     tag_list = list(dict.fromkeys(
         t.strip().lower() for t in tags.split(",") if t.strip()
     ))
@@ -127,8 +126,6 @@ async def find_entries_by_tags(
             detail=f"Maximum {_MAX_SEARCH_TAGS} tags allowed in search query",
         )
 
-    # Map include_archived to status filter (None = no filter)
-    repo_status = None if include_archived else "active"
     viewer_id = user.id if user else None
 
     repo = TagRepository(db)
@@ -137,7 +134,6 @@ async def find_entries_by_tags(
         mode=mode,
         limit=limit,
         offset=offset,
-        status=repo_status,
         viewer_id=viewer_id,
     )
 

@@ -8,8 +8,9 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.visibility import archive_visibility_condition
+from phiacta.core.visibility import discovery_condition
 from phiacta.core.models.entry import Entry
+from phiacta.core.models.user import User
 from phiacta.core.repositories.base import BaseRepository
 
 
@@ -23,19 +24,19 @@ class EntryRepository(BaseRepository[Entry]):
         self,
         limit: int = 50,
         offset: int = 0,
-        status: str | None = "active",
+        visibility: str | None = "public",
         sort_by: str = "created_at",
         sort_order: str = "desc",
-        viewer_id: UUID | None = None,
+        user: User | None = None,
     ) -> list[Entry]:
         if sort_by not in self.SORTABLE_COLUMNS:
             sort_by = "created_at"
         if sort_order not in ("asc", "desc"):
             sort_order = "desc"
         stmt = select(Entry)
-        if status is not None:
-            stmt = stmt.where(Entry.status == status)
-        stmt = stmt.where(archive_visibility_condition(viewer_id))
+        if visibility is not None:
+            stmt = stmt.where(Entry.visibility == visibility)
+        stmt = stmt.where(discovery_condition(user))
         column = getattr(Entry, sort_by)
         stmt = stmt.order_by(column.asc() if sort_order == "asc" else column.desc())
         stmt = stmt.limit(limit).offset(offset)
@@ -43,12 +44,12 @@ class EntryRepository(BaseRepository[Entry]):
         return list(result.scalars().all())
 
     async def count_entries(
-        self, status: str | None = "active", viewer_id: UUID | None = None,
+        self, visibility: str | None = "public", user: User | None = None,
     ) -> int:
         stmt = select(func.count()).select_from(Entry)
-        if status is not None:
-            stmt = stmt.where(Entry.status == status)
-        stmt = stmt.where(archive_visibility_condition(viewer_id))
+        if visibility is not None:
+            stmt = stmt.where(Entry.visibility == visibility)
+        stmt = stmt.where(discovery_condition(user))
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
