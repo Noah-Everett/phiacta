@@ -21,10 +21,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.api.entry_guards import check_archive_visibility
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_user
+from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
+from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.common import PaginatedResponse
 from phiacta.extensions.tags.repository import TagRepository
 from phiacta.extensions.tags.schemas import (
@@ -45,9 +47,13 @@ _MAX_SEARCH_TAGS = 10
 @router.get("/", response_model=TagListResponse)
 async def list_tags_for_entry(
     entry_id: UUID = Query(...),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> TagListResponse:
     """List all tags for a given entry. Public read — no auth required."""
+    entry = await EntryRepository(db).get_by_id(entry_id)
+    if entry is not None:
+        check_archive_visibility(entry, user)
     repo = TagRepository(db)
     tags = await repo.list_by_entry(entry_id)
     return TagListResponse(
@@ -97,6 +103,7 @@ async def find_entries_by_tags(
     include_archived: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[EntryTagItem]:
     """Find entries matching tags. Public read — no auth required.
@@ -122,6 +129,7 @@ async def find_entries_by_tags(
 
     # Map include_archived to status filter (None = no filter)
     repo_status = None if include_archived else "active"
+    viewer_id = user.id if user else None
 
     repo = TagRepository(db)
     entries, total = await repo.find_entries_by_tags(
@@ -130,6 +138,7 @@ async def find_entries_by_tags(
         limit=limit,
         offset=offset,
         status=repo_status,
+        viewer_id=viewer_id,
     )
 
     # Optionally enrich with metadata/types if those extensions are loaded

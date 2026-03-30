@@ -30,7 +30,7 @@ from phiacta.core.api.entry_guards import (
     get_writable_entry,
 )
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_user
+from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.config import Settings, get_settings
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
@@ -224,11 +224,12 @@ async def list_edit_proposals(
     state: str | None = Query(None, pattern="^(open|closed|merged)$"),
     limit: int = Query(50, ge=1, le=200),
     page: int = Query(1, ge=1),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> list[EditProposalListItem]:
     """List edit proposals for an entry, optionally filtered by state."""
-    await get_readable_entry(entry_id, db)
+    await get_readable_entry(entry_id, db, user=user)
 
     try:
         prs = await git_service.list_pull_requests(
@@ -258,11 +259,12 @@ async def list_edit_proposals(
 async def get_edit_proposal_detail(
     entry_id: UUID,
     number: int,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> EditProposalDetail:
     """Get full detail for a single edit proposal, including the diff."""
-    await get_readable_entry(entry_id, db)
+    await get_readable_entry(entry_id, db, user=user)
 
     try:
         pr = await git_service.get_pull_request(entry_id, number)

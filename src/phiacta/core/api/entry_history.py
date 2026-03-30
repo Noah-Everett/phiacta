@@ -15,7 +15,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.api.entry_guards import check_archive_visibility
+from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.db.session import get_db
+from phiacta.core.models.user import User
 from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.entry_history import CommitDiffResponse, CommitListItem
 from phiacta.core.services.git_service import ForgejoError, GitService, RepoNotFoundError
@@ -29,6 +32,7 @@ async def list_entry_commits(
     entry_id: UUID,
     limit: int = Query(50, ge=1, le=200),
     page: int = Query(1, ge=1),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> list[CommitListItem]:
@@ -37,6 +41,7 @@ async def list_entry_commits(
     entry = await repo.get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
+    check_archive_visibility(entry, user)
     if entry.repo_status != "ready":
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",
@@ -62,6 +67,7 @@ async def list_entry_commits(
 async def get_entry_commit_diff(
     entry_id: UUID,
     sha: str = Path(..., pattern=r"^[0-9a-f]{40}$"),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> CommitDiffResponse:
@@ -70,6 +76,7 @@ async def get_entry_commit_diff(
     entry = await repo.get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
+    check_archive_visibility(entry, user)
     if entry.repo_status != "ready":
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",

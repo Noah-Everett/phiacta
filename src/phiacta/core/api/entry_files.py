@@ -16,9 +16,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.api.entry_guards import get_writable_entry
+from phiacta.core.api.entry_guards import check_archive_visibility, get_writable_entry
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_user
+from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.config import Settings, get_settings
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
@@ -105,6 +105,7 @@ async def _get_writable_entry(
 @router.get("/{entry_id}/files", response_model=list[FileListItem])
 async def list_entry_files(
     entry_id: UUID,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> list[FileListItem]:
@@ -113,6 +114,7 @@ async def list_entry_files(
     entry = await repo.get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
+    check_archive_visibility(entry, user)
     if entry.repo_status != "ready":
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",
@@ -136,6 +138,7 @@ async def list_entry_files(
 async def get_entry_file_content(
     entry_id: UUID,
     path: str,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> Response:
@@ -149,6 +152,7 @@ async def get_entry_file_content(
     entry = await repo.get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
+    check_archive_visibility(entry, user)
     if entry.repo_status != "ready":
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",

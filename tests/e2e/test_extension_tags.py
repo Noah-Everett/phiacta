@@ -503,7 +503,20 @@ class TestFindEntriesByTags:
 
         await set_entry_status(e2e_session_factory, entry["id"], "archived")
 
-        # With include_archived=true
+        # With include_archived=true, owner sees their archived entry
+        resp = await client.get(
+            "/v1/extensions/tags/entries",
+            params={
+                "tags": "archive-include-test",
+                "include_archived": "true",
+            },
+            headers=auth_header(token),
+        )
+        assert resp.status_code == 200
+        found_ids = [item["entry_id"] for item in resp.json()["items"]]
+        assert entry["id"] in found_ids
+
+        # Without auth, archived entry is hidden even with include_archived
         resp = await client.get(
             "/v1/extensions/tags/entries",
             params={
@@ -513,7 +526,7 @@ class TestFindEntriesByTags:
         )
         assert resp.status_code == 200
         found_ids = [item["entry_id"] for item in resp.json()["items"]]
-        assert entry["id"] in found_ids
+        assert entry["id"] not in found_ids
 
 
 # ---------------------------------------------------------------------------

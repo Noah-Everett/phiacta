@@ -12,10 +12,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.api.entry_guards import check_archive_visibility
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_user
+from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
+from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.common import PaginatedResponse
 from phiacta.extensions.references.repository import ReferenceRepository
 from phiacta.extensions.references.schemas import ReferenceCreateRequest, ReferenceResponse
@@ -38,8 +40,13 @@ async def list_references(
     entry_id: UUID = Query(...),
     direction: str = Query("both", pattern="^(both|incoming|outgoing)$"),
     limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[ReferenceResponse]:
+    entry = await EntryRepository(db).get_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    check_archive_visibility(entry, user)
     repo = ReferenceRepository(db)
     refs = await repo.list_by_entry(entry_id, direction=direction, limit=limit, offset=offset)
     total = await repo.count_by_entry(entry_id, direction=direction)

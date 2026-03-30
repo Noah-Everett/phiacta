@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
-from sqlalchemy import Row, func, select
+from sqlalchemy import Row, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.compose import EntryDataProvider
@@ -50,12 +50,14 @@ async def search_text(
     *, q: str, version_id: UUID, language: str, db: AsyncSession,
     limit: int, offset: int,
     status: str | None = "active",
+    viewer_id: UUID | None = None,
     filters: dict[str, str] | None = None,
     providers: list[EntryDataProvider] | None = None,
 ) -> tuple[list[Row], int]:
     """Full-text search with optional filtering.
 
     *status*: core Entry status filter.  ``None`` means all statuses.
+    *viewer_id*: archived entries are only visible to their owner.
     *filters*: mapping of field name to raw value string, routed to
         extension providers via ``apply_search_filter``.
     *providers*: registered entry data providers (needed for filter routing).
@@ -88,6 +90,13 @@ async def search_text(
     ]
     if status is not None:
         where_clauses.append(Entry.status == status)
+    # Archived entries are only visible to their owner
+    if viewer_id is None:
+        where_clauses.append(Entry.status != "archived")
+    else:
+        where_clauses.append(
+            or_(Entry.status != "archived", Entry.created_by == viewer_id)
+        )
 
     stmt = stmt.where(*where_clauses)
 

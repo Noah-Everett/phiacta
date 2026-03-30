@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.models.entry import Entry
@@ -18,6 +18,12 @@ class EntryRepository(BaseRepository[Entry]):
 
     SORTABLE_COLUMNS = {"created_at", "updated_at"}
 
+    def _archive_visibility(self, viewer_id: UUID | None):
+        """Archived entries are only visible to their owner."""
+        if viewer_id is None:
+            return Entry.status != "archived"
+        return or_(Entry.status != "archived", Entry.created_by == viewer_id)
+
     async def list_entries(
         self,
         limit: int = 50,
@@ -25,6 +31,7 @@ class EntryRepository(BaseRepository[Entry]):
         status: str | None = "active",
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        viewer_id: UUID | None = None,
     ) -> list[Entry]:
         if sort_by not in self.SORTABLE_COLUMNS:
             sort_by = "created_at"
@@ -33,16 +40,20 @@ class EntryRepository(BaseRepository[Entry]):
         stmt = select(Entry)
         if status is not None:
             stmt = stmt.where(Entry.status == status)
+        stmt = stmt.where(self._archive_visibility(viewer_id))
         column = getattr(Entry, sort_by)
         stmt = stmt.order_by(column.asc() if sort_order == "asc" else column.desc())
         stmt = stmt.limit(limit).offset(offset)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def count_entries(self, status: str | None = "active") -> int:
+    async def count_entries(
+        self, status: str | None = "active", viewer_id: UUID | None = None,
+    ) -> int:
         stmt = select(func.count()).select_from(Entry)
         if status is not None:
             stmt = stmt.where(Entry.status == status)
+        stmt = stmt.where(self._archive_visibility(viewer_id))
         result = await self.session.execute(stmt)
         return result.scalar_one()
 

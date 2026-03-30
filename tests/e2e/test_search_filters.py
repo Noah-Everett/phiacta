@@ -231,11 +231,13 @@ class TestSearchStatusFilter:
         assert search_env["beta"]["id"] in ids
         assert search_env["archived"]["id"] not in ids
 
-    async def test_status_archived(self, search_env: dict) -> None:
-        """status=archived returns only archived entries."""
-        client = search_env["client"]
+    async def test_status_archived_owner(self, search_env: dict) -> None:
+        """status=archived returns owner's archived entries."""
+        client, token = search_env["client"], search_env["token"]
         resp = await client.get(
-            "/v1/tools/search/", params={"q": "quantum", "status": "archived"}
+            "/v1/tools/search/",
+            params={"q": "quantum", "status": "archived"},
+            headers=auth_header(token),
         )
         assert resp.status_code == 200
         ids = _ids(resp.json()["items"])
@@ -243,8 +245,30 @@ class TestSearchStatusFilter:
         assert search_env["alpha"]["id"] not in ids
         assert search_env["beta"]["id"] not in ids
 
-    async def test_status_all(self, search_env: dict) -> None:
-        """status=all returns both active and archived entries."""
+    async def test_status_archived_unauthenticated(self, search_env: dict) -> None:
+        """status=archived without auth returns no archived entries."""
+        client = search_env["client"]
+        resp = await client.get(
+            "/v1/tools/search/", params={"q": "quantum", "status": "archived"}
+        )
+        assert resp.status_code == 200
+        assert search_env["archived"]["id"] not in _ids(resp.json()["items"])
+
+    async def test_status_all_owner(self, search_env: dict) -> None:
+        """status=all returns both active and owner's archived entries."""
+        client, token = search_env["client"], search_env["token"]
+        resp = await client.get(
+            "/v1/tools/search/",
+            params={"q": "quantum", "status": "all"},
+            headers=auth_header(token),
+        )
+        assert resp.status_code == 200
+        ids = _ids(resp.json()["items"])
+        assert search_env["alpha"]["id"] in ids
+        assert search_env["archived"]["id"] in ids
+
+    async def test_status_all_unauthenticated(self, search_env: dict) -> None:
+        """status=all without auth hides archived entries."""
         client = search_env["client"]
         resp = await client.get(
             "/v1/tools/search/", params={"q": "quantum", "status": "all"}
@@ -252,7 +276,7 @@ class TestSearchStatusFilter:
         assert resp.status_code == 200
         ids = _ids(resp.json()["items"])
         assert search_env["alpha"]["id"] in ids
-        assert search_env["archived"]["id"] in ids
+        assert search_env["archived"]["id"] not in ids
 
 
 class TestSearchEntryTypeFilter:
@@ -340,11 +364,12 @@ class TestSearchTagsFilter:
 
 class TestSearchCombinedFilters:
     async def test_status_and_entry_type(self, search_env: dict) -> None:
-        """Combine status=all with entry_type=empirical."""
-        client = search_env["client"]
+        """Combine status=all with entry_type=empirical (owner sees archived)."""
+        client, token = search_env["client"], search_env["token"]
         resp = await client.get(
             "/v1/tools/search/",
             params={"q": "quantum", "status": "all", "entry_type": "empirical"},
+            headers=auth_header(token),
         )
         assert resp.status_code == 200
         ids = _ids(resp.json()["items"])

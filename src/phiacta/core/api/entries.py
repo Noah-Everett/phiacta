@@ -8,9 +8,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.api.entry_guards import get_owned_entry, get_writable_entry
+from phiacta.core.api.entry_guards import (
+    check_archive_visibility,
+    get_owned_entry,
+    get_writable_entry,
+)
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_user
+from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.compose import (
     EntryDataProvider,
     compose_entry_list_responses,
@@ -58,6 +62,7 @@ async def list_entries(
     order: str = Query("desc", pattern=r"^(asc|desc)$"),
     include: str | None = Query(None),
     exclude: str | None = Query(None),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[EntryListItem]:
     if include is not None and exclude is not None:
@@ -66,11 +71,12 @@ async def list_entries(
         )
     repo = EntryRepository(db)
     repo_status = None if status == "all" else status
+    viewer_id = user.id if user else None
     entries = await repo.list_entries(
         limit=limit, offset=offset, status=repo_status,
-        sort_by=sort, sort_order=order,
+        sort_by=sort, sort_order=order, viewer_id=viewer_id,
     )
-    total = await repo.count_entries(status=repo_status)
+    total = await repo.count_entries(status=repo_status, viewer_id=viewer_id)
     providers = _get_providers(request)
     inc = parse_field_filter(include)
     exc = parse_field_filter(exclude)
@@ -87,6 +93,7 @@ async def get_entry(
     entry_id: UUID,
     include: str | None = Query(None),
     exclude: str | None = Query(None),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> EntryDetailResponse:
     if include is not None and exclude is not None:
@@ -96,6 +103,7 @@ async def get_entry(
     entry = await EntryRepository(db).get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
+    check_archive_visibility(entry, user)
     providers = _get_providers(request)
     inc = parse_field_filter(include)
     exc = parse_field_filter(exclude)

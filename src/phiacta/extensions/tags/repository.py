@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.models.entry import Entry
@@ -89,6 +89,7 @@ class TagRepository:
         limit: int = 50,
         offset: int = 0,
         status: str | None = "active",
+        viewer_id: UUID | None = None,
     ) -> tuple[list[Entry], int]:
         """Find entries that match the given tags.
 
@@ -96,6 +97,7 @@ class TagRepository:
         mode="and": entries with ALL of the specified tags.
 
         status: filter entries by status. None means no filter (all statuses).
+        viewer_id: archived entries are only visible to their owner.
 
         Returns (entries, total_count) for pagination.
         """
@@ -123,6 +125,14 @@ class TagRepository:
 
         if status is not None:
             base_query = base_query.where(Entry.status == status)
+
+        # Archived entries are only visible to their owner
+        if viewer_id is None:
+            base_query = base_query.where(Entry.status != "archived")
+        else:
+            base_query = base_query.where(
+                or_(Entry.status != "archived", Entry.created_by == viewer_id)
+            )
 
         # Count total
         count_query = select(func.count()).select_from(

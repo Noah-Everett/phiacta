@@ -153,12 +153,12 @@ class TestArchiveEntry:
         )
         assert resp.status_code == 409
 
-    async def test_archived_entry_still_readable(
+    async def test_archived_entry_readable_by_owner(
         self,
         ready_entry: tuple[AuthedFixture, dict],
         fake_git: FakeGitService,
     ) -> None:
-        """GET /entries/{id} should still return archived entries."""
+        """GET /entries/{id} should return archived entries to the owner."""
         (client, _, token), entry = ready_entry
 
         # Archive it
@@ -168,10 +168,39 @@ class TestArchiveEntry:
         )
         assert resp.status_code == 200
 
-        # Should still be readable by ID
-        resp = await client.get(f"/v1/entries/{entry['id']}")
+        # Should be readable by owner
+        resp = await client.get(
+            f"/v1/entries/{entry['id']}",
+            headers=auth_header(token),
+        )
         assert resp.status_code == 200
         assert resp.json()["status"] == "archived"
+
+    async def test_archived_entry_hidden_from_non_owner(
+        self,
+        ready_entry: tuple[AuthedFixture, dict],
+        fake_git: FakeGitService,
+    ) -> None:
+        """GET /entries/{id} should return 404 for archived entries to non-owners."""
+        (client, _, token), entry = ready_entry
+
+        # Archive it
+        await client.post(
+            f"/v1/entries/{entry['id']}/archive",
+            headers=auth_header(token),
+        )
+
+        # Unauthenticated — should get 404
+        resp = await client.get(f"/v1/entries/{entry['id']}")
+        assert resp.status_code == 404
+
+        # Different user — should also get 404
+        other = await register_user(client, handle="other-vis")
+        resp = await client.get(
+            f"/v1/entries/{entry['id']}",
+            headers=auth_header(other["access_token"]),
+        )
+        assert resp.status_code == 404
 
     async def test_archived_entry_excluded_from_default_list(
         self,
@@ -193,12 +222,12 @@ class TestArchiveEntry:
         ids = [item["id"] for item in resp.json()["items"]]
         assert entry["id"] not in ids
 
-    async def test_archived_entry_included_in_all_list(
+    async def test_archived_entry_included_in_all_list_for_owner(
         self,
         ready_entry: tuple[AuthedFixture, dict],
         fake_git: FakeGitService,
     ) -> None:
-        """GET /entries?status=all should include archived entries."""
+        """GET /entries?status=all should include archived entries for owner."""
         (client, _, token), entry = ready_entry
 
         await client.post(
@@ -206,10 +235,45 @@ class TestArchiveEntry:
             headers=auth_header(token),
         )
 
-        resp = await client.get("/v1/entries", params={"status": "all"})
+        # Owner sees it in status=all
+        resp = await client.get(
+            "/v1/entries",
+            params={"status": "all"},
+            headers=auth_header(token),
+        )
         assert resp.status_code == 200
         ids = [item["id"] for item in resp.json()["items"]]
         assert entry["id"] in ids
+
+    async def test_archived_entry_hidden_from_all_list_for_non_owner(
+        self,
+        ready_entry: tuple[AuthedFixture, dict],
+        fake_git: FakeGitService,
+    ) -> None:
+        """GET /entries?status=all should hide archived entries from non-owners."""
+        (client, _, token), entry = ready_entry
+
+        await client.post(
+            f"/v1/entries/{entry['id']}/archive",
+            headers=auth_header(token),
+        )
+
+        # Unauthenticated — should not see it
+        resp = await client.get("/v1/entries", params={"status": "all"})
+        assert resp.status_code == 200
+        ids = [item["id"] for item in resp.json()["items"]]
+        assert entry["id"] not in ids
+
+        # Different user — should not see it either
+        other = await register_user(client, handle="other-list")
+        resp = await client.get(
+            "/v1/entries",
+            params={"status": "all"},
+            headers=auth_header(other["access_token"]),
+        )
+        assert resp.status_code == 200
+        ids = [item["id"] for item in resp.json()["items"]]
+        assert entry["id"] not in ids
 
     async def test_archived_entry_file_write_returns_403(
         self,
