@@ -25,7 +25,6 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]

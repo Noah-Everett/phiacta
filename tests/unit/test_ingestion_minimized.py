@@ -22,11 +22,11 @@ def _make_yaml(entry_id: UUID, author_id: UUID | None = None) -> bytes:
     return yaml.dump({"entry_id": f"ent_{entry_id}", "schema_version": 1, "author": {"id": f"usr_{author_id or uuid4()}", "name": "test"}, "created_at": "2026-01-01T00:00:00"}, sort_keys=False).encode()
 
 
-async def _create(db: AsyncSession, status="active"):
+async def _create(db: AsyncSession, visibility="public"):
     user = User(**make_user())
     db.add(user)
     await db.flush()
-    entry = Entry(**make_entry(created_by=user.id, status=status))
+    entry = Entry(**make_entry(created_by=user.id, visibility=visibility))
     db.add(entry)
     await db.flush()
     return entry, user

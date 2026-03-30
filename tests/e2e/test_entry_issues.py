@@ -28,7 +28,6 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -224,23 +223,6 @@ class TestCreateIssueErrors:
             headers=auth_header(token),
         )
         assert resp.status_code == 409
-
-    async def test_create_issue_archived_entry_returns_403(
-        self,
-        owner: AuthedFixture,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """POST /issues on an archived entry returns 403."""
-        client, _, token = owner
-        entry = await _create_ready_entry(client, token, e2e_session_factory)
-        await set_entry_status(e2e_session_factory, entry["id"], "archived")
-
-        resp = await client.post(
-            f"/v1/entries/{entry['id']}/issues",
-            json={"title": "Should fail"},
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 403
 
     async def test_create_issue_empty_title_returns_422(
         self,

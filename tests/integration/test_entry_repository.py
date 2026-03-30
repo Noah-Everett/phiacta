@@ -46,18 +46,18 @@ class TestCreateAndGetEntry:
 
 
 @needs_db
-class TestListEntriesByStatus:
-    async def test_list_entries_by_status(self, db_session: AsyncSession) -> None:
+class TestListEntriesByVisibility:
+    async def test_list_entries_by_visibility(self, db_session: AsyncSession) -> None:
         user = User(**make_user())
         db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
-        entry = Entry(**make_entry(created_by=user.id, status="active"))
+        entry = Entry(**make_entry(created_by=user.id, visibility="public"))
         await repo.create(entry)
 
-        active = await repo.list_entries(status="active")
-        assert any(e.id == entry.id for e in active)
+        public = await repo.list_entries(visibility="public")
+        assert any(e.id == entry.id for e in public)
 
-        archived = await repo.list_entries(status="archived")
-        assert all(e.id != entry.id for e in archived)
+        private = await repo.list_entries(visibility="private")
+        assert all(e.id != entry.id for e in private)

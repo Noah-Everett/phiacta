@@ -39,7 +39,7 @@ from phiacta.extensions.metadata.models import ExtensionMetadata  # noqa: F401
 from phiacta.extensions.tags.models import ExtensionTag  # noqa: F401
 from phiacta.extensions.references.models import ExtensionReference  # noqa: F401
 from phiacta.extensions.types.models import ExtensionType  # noqa: F401
-from phiacta.views.search_tsv.models import ViewSearchTsv  # noqa: F401
+from phiacta.extensions.search_tsv.models import ViewSearchTsv  # noqa: F401
 from phiacta.core.services.git_service import (
     AuthorInfo,
     CommitInfo,
@@ -732,12 +732,12 @@ async def set_entry_repo_status(
         await session.commit()
 
 
-async def set_entry_status(
+async def set_entry_visibility(
     session_factory: async_sessionmaker[AsyncSession],
     entry_id: str,
-    status: str,
+    visibility: str,
 ) -> None:
-    """Set an entry's status directly in the DB."""
+    """Set an entry's visibility directly in the DB."""
     from phiacta.core.models.entry import Entry
 
     async with session_factory() as session:
@@ -745,7 +745,7 @@ async def set_entry_status(
             select(Entry).where(Entry.id == UUID(entry_id))
         )
         entry = result.scalar_one()
-        entry.status = status
+        entry.visibility = visibility
         await session.commit()
 
 

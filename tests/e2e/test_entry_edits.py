@@ -29,7 +29,7 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
+    set_entry_visibility,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -318,54 +318,6 @@ class TestCreateEditProposalErrors:
         )
         assert resp.status_code == 409
         assert "not yet ready" in resp.json()["detail"].lower()
-
-    async def test_create_archived_entry_403(
-        self,
-        owner: AuthedFixture,
-        proposer: AuthedFixture,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """POST /edits on an archived entry returns 403."""
-        client, _, owner_token = owner
-        _, _, proposer_token = proposer
-        entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
-        entry_id = entry["id"]
-        await set_entry_status(e2e_session_factory, entry_id, "archived")
-
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/edits",
-            json={
-                "title": "Archived entry edit",
-                "files": [{"path": "README.md", "content": _b64("x")}],
-            },
-            headers=auth_header(proposer_token),
-        )
-        assert resp.status_code == 403
-        assert "not editable" in resp.json()["detail"].lower()
-
-    async def test_create_retracted_entry_403(
-        self,
-        owner: AuthedFixture,
-        proposer: AuthedFixture,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """POST /edits on a retracted entry returns 403."""
-        client, _, owner_token = owner
-        _, _, proposer_token = proposer
-        entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
-        entry_id = entry["id"]
-        await set_entry_status(e2e_session_factory, entry_id, "retracted")
-
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/edits",
-            json={
-                "title": "Retracted entry edit",
-                "files": [{"path": "README.md", "content": _b64("x")}],
-            },
-            headers=auth_header(proposer_token),
-        )
-        assert resp.status_code == 403
-        assert "not editable" in resp.json()["detail"].lower()
 
     async def test_create_phiacta_path_blocked_400(
         self,
@@ -1205,40 +1157,6 @@ class TestMergeEditProposalErrors:
         )
         assert resp.status_code == 409
 
-    async def test_merge_archived_entry_403(
-        self,
-        owner: AuthedFixture,
-        proposer: AuthedFixture,
-        fake_git: FakeGitService,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """POST /edits/{number}/merge on an archived entry returns 403."""
-        client, _, owner_token = owner
-        _, _, proposer_token = proposer
-        entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
-        entry_id = entry["id"]
-
-        # Create proposal while active
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/edits",
-            json={
-                "title": "Archived merge attempt",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
-            },
-            headers=auth_header(proposer_token),
-        )
-        assert resp.status_code == 201
-        number = resp.json()["number"]
-
-        # Archive the entry
-        await set_entry_status(e2e_session_factory, entry_id, "archived")
-
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/edits/{number}/merge",
-            headers=auth_header(owner_token),
-        )
-        assert resp.status_code == 403
-
     async def test_merge_phiacta_files_in_diff_422(
         self,
         owner: AuthedFixture,
@@ -1439,24 +1357,24 @@ class TestCloseEditProposal:
         assert resp.status_code == 200
         assert resp.json()["state"] == "closed"
 
-    async def test_close_on_archived_entry(
+    async def test_close_on_private_entry(
         self,
         owner: AuthedFixture,
         proposer: AuthedFixture,
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Owner can close proposals even on archived entries (no status check)."""
+        """Owner can close proposals even on private entries (no visibility check)."""
         client, _, owner_token = owner
         _, _, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
         entry_id = entry["id"]
 
-        # Create proposal while active
+        # Create proposal while public
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits",
             json={
-                "title": "Close on archived",
+                "title": "Close on private",
                 "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
@@ -1464,10 +1382,10 @@ class TestCloseEditProposal:
         assert resp.status_code == 201
         number = resp.json()["number"]
 
-        # Archive entry
-        await set_entry_status(e2e_session_factory, entry_id, "archived")
+        # Set entry to private
+        await set_entry_visibility(e2e_session_factory, entry_id, "private")
 
-        # Close should still work (no entry status check for close)
+        # Close should still work (no visibility check for close)
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits/{number}/close",
             headers=auth_header(owner_token),

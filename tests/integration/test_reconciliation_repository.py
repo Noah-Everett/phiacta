@@ -30,16 +30,16 @@ class TestListAllForReconciliation:
     """Tests for EntryRepository.list_all_for_reconciliation()."""
 
     async def test_returns_all_entries(self, db_session: AsyncSession) -> None:
-        """Should return all entries regardless of status."""
+        """Should return all entries regardless of visibility."""
         user = User(**make_user())
         db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
 
-        active = Entry(**make_entry(created_by=user.id, title="Active", status="active"))
-        archived = Entry(**make_entry(created_by=user.id, title="Archived", status="archived"))
-        draft = Entry(**make_entry(created_by=user.id, title="Draft", status="draft"))
+        active = Entry(**make_entry(created_by=user.id, visibility="public"))
+        archived = Entry(**make_entry(created_by=user.id, visibility="private"))
+        draft = Entry(**make_entry(created_by=user.id, visibility="public"))
 
         for entry in [active, archived, draft]:
             await repo.create(entry)
@@ -59,13 +59,13 @@ class TestListAllForReconciliation:
         assert results == []
 
     async def test_includes_required_fields(self, db_session: AsyncSession) -> None:
-        """Each result must include: id, current_head_sha, repo_status, status."""
+        """Each result must include: id, current_head_sha, repo_status, visibility."""
         user = User(**make_user())
         db_session.add(user)
         await db_session.flush()
 
         repo = EntryRepository(db_session)
-        entry = Entry(**make_entry(created_by=user.id, title="Fields Test"))
+        entry = Entry(**make_entry(created_by=user.id))
         entry.current_head_sha = "a" * 40
         entry.repo_status = "ready"
         await repo.create(entry)
@@ -77,7 +77,7 @@ class TestListAllForReconciliation:
         assert our_result.id == entry.id
         assert our_result.current_head_sha == "a" * 40
         assert our_result.repo_status == "ready"
-        assert our_result.status == "active"
+        assert our_result.visibility == "public"
 
     async def test_entries_with_null_head_sha_included(
         self, db_session: AsyncSession
@@ -88,7 +88,7 @@ class TestListAllForReconciliation:
         await db_session.flush()
 
         repo = EntryRepository(db_session)
-        entry = Entry(**make_entry(created_by=user.id, title="No SHA"))
+        entry = Entry(**make_entry(created_by=user.id))
         assert entry.current_head_sha is None
         await repo.create(entry)
 
@@ -105,7 +105,7 @@ class TestListAllForReconciliation:
         repo = EntryRepository(db_session)
         created_ids = set()
         for i in range(25):
-            entry = Entry(**make_entry(created_by=user.id, title=f"Entry {i}"))
+            entry = Entry(**make_entry(created_by=user.id))
             await repo.create(entry)
             created_ids.add(entry.id)
 
@@ -122,7 +122,7 @@ class TestListAllForReconciliation:
         await db_session.flush()
 
         repo = EntryRepository(db_session)
-        entry = Entry(**make_entry(created_by=user.id, title="Provisioning"))
+        entry = Entry(**make_entry(created_by=user.id))
         assert entry.repo_status == "provisioning"
         await repo.create(entry)
 

@@ -321,4 +321,4 @@ class TestAppWithPluginEnabled:
         token = auth["access_token"]
         entry = await create_entry(client, token, title="Plugin Coexistence Test")
         assert entry["title"] == "Plugin Coexistence Test"
-        assert entry["status"] == "active"
+        assert entry["visibility"] == "public"

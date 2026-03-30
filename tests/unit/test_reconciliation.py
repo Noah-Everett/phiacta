@@ -158,16 +158,15 @@ class TestDriftClassificationLogic:
         with pytest.raises(ValueError, match="badly formed"):
             UUID(".gitea")
 
-    def test_skippable_statuses(self) -> None:
-        """Archived and retracted entries should be skipped.
-        Active and draft entries should NOT be skipped."""
-        skippable = {"archived", "retracted"}
-        active_statuses = {"active", "draft"}
+    def test_visibility_values(self) -> None:
+        """Visibility values are well-defined and non-overlapping."""
+        visible = {"public"}
+        hidden = {"private"}
 
-        assert "archived" in skippable
-        assert "retracted" in skippable
-        assert "active" not in skippable
-        assert "draft" not in skippable
+        assert "public" in visible
+        assert "private" in hidden
+        assert "public" not in hidden
+        assert "private" not in visible
 
         # Verify no overlap
-        assert skippable & active_statuses == set()
+        assert visible & hidden == set()

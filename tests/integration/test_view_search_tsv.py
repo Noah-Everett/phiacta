@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.view_version import ViewVersion
-from phiacta.views.search_tsv.models import ViewSearchTsv  # noqa: F401 — register with Base before create_all
+from phiacta.extensions.search_tsv.models import ViewSearchTsv  # noqa: F401 — register with Base before create_all
 
 needs_pg = pytest.mark.skipif(
     "postgresql" not in os.environ.get("TEST_DATABASE_URL", ""),
@@ -54,11 +54,9 @@ async def _create_entry(db: AsyncSession, user_id: UUID) -> Entry:
     eid = uuid4()
     entry = Entry(
         id=eid,
-        title="Integration Test Entry",
-        content_format="markdown",
         repo_name=str(eid),
         created_by=user_id,
-        status="active",
+        visibility="public",
         repo_status="ready",
     )
     db.add(entry)
@@ -96,7 +94,7 @@ class TestViewSearchTsvModel:
 
     async def test_create_and_read_back(self, db_session: AsyncSession) -> None:
         """ViewSearchTsv can be created with entry_id, version_id and read back."""
-        from phiacta.views.search_tsv.models import ViewSearchTsv
+        from phiacta.extensions.search_tsv.models import ViewSearchTsv
 
         user = await _create_user(db_session)
         entry = await _create_entry(db_session, user.id)
@@ -133,7 +131,7 @@ class TestViewSearchTsvModel:
 
     async def test_composite_primary_key(self, db_session: AsyncSession) -> None:
         """ViewSearchTsv has a composite PK of (entry_id, version_id)."""
-        from phiacta.views.search_tsv.models import ViewSearchTsv
+        from phiacta.extensions.search_tsv.models import ViewSearchTsv
 
         pk_cols = [
             c.name for c in ViewSearchTsv.__table__.primary_key.columns
@@ -222,7 +220,7 @@ class TestCascadeConstraint:
         self, db_session: AsyncSession
     ) -> None:
         """Deleting an entry row cascades to remove its view_search_tsv rows."""
-        from phiacta.views.search_tsv.models import ViewSearchTsv  # noqa: F401
+        from phiacta.extensions.search_tsv.models import ViewSearchTsv  # noqa: F401
 
         user = await _create_user(db_session)
         entry = await _create_entry(db_session, user.id)
@@ -323,7 +321,7 @@ class TestSearchTsvRepository:
 
     async def test_upsert_creates_new_row(self, db_session: AsyncSession) -> None:
         """repository.upsert() creates a new row when none exists."""
-        from phiacta.views.search_tsv.repository import upsert
+        from phiacta.extensions.search_tsv.repository import upsert
 
         user = await _create_user(db_session)
         entry = await _create_entry(db_session, user.id)
@@ -350,7 +348,7 @@ class TestSearchTsvRepository:
         self, db_session: AsyncSession
     ) -> None:
         """repository.upsert() updates the tsvector when the row already exists."""
-        from phiacta.views.search_tsv.repository import upsert, get_by_entry
+        from phiacta.extensions.search_tsv.repository import upsert, get_by_entry
 
         user = await _create_user(db_session)
         entry = await _create_entry(db_session, user.id)
@@ -388,7 +386,7 @@ class TestSearchTsvRepository:
         self, db_session: AsyncSession
     ) -> None:
         """repository.get_by_entry() returns the row for a given entry+version."""
-        from phiacta.views.search_tsv.repository import upsert, get_by_entry
+        from phiacta.extensions.search_tsv.repository import upsert, get_by_entry
 
         user = await _create_user(db_session)
         entry = await _create_entry(db_session, user.id)
@@ -413,7 +411,7 @@ class TestSearchTsvRepository:
         self, db_session: AsyncSession
     ) -> None:
         """repository.get_by_entry() returns None when no row exists."""
-        from phiacta.views.search_tsv.repository import get_by_entry
+        from phiacta.extensions.search_tsv.repository import get_by_entry
 
         version = await _create_version(db_session)
 
@@ -426,7 +424,7 @@ class TestSearchTsvRepository:
         self, db_session: AsyncSession
     ) -> None:
         """repository.delete_by_entry() removes the row for a given entry+version."""
-        from phiacta.views.search_tsv.repository import (
+        from phiacta.extensions.search_tsv.repository import (
             upsert,
             delete_by_entry,
             get_by_entry,
@@ -458,7 +456,7 @@ class TestSearchTsvRepository:
         self, db_session: AsyncSession
     ) -> None:
         """repository.delete_by_entry() is a no-op when no row exists."""
-        from phiacta.views.search_tsv.repository import delete_by_entry
+        from phiacta.extensions.search_tsv.repository import delete_by_entry
 
         version = await _create_version(db_session)
 
@@ -471,7 +469,7 @@ class TestSearchTsvRepository:
         self, db_session: AsyncSession
     ) -> None:
         """repository.get_active_version() returns the active version for search_tsv."""
-        from phiacta.views.search_tsv.repository import get_active_version
+        from phiacta.extensions.search_tsv.repository import get_active_version
 
         version = await _create_version(db_session, status="active")
 
@@ -485,7 +483,7 @@ class TestSearchTsvRepository:
         self, db_session: AsyncSession
     ) -> None:
         """repository.get_active_version() returns None when no active version."""
-        from phiacta.views.search_tsv.repository import get_active_version
+        from phiacta.extensions.search_tsv.repository import get_active_version
 
         # Create a non-active version
         await _create_version(db_session, status="deprecated")
@@ -497,7 +495,7 @@ class TestSearchTsvRepository:
         self, db_session: AsyncSession
     ) -> None:
         """repository.get_active_version() only returns search_tsv versions."""
-        from phiacta.views.search_tsv.repository import get_active_version
+        from phiacta.extensions.search_tsv.repository import get_active_version
 
         # Create an active version for a different view type
         vv = ViewVersion(
@@ -526,7 +524,7 @@ class TestComputedAtTimestamp:
         self, db_session: AsyncSession
     ) -> None:
         """computed_at is automatically set to approximately now on insert."""
-        from phiacta.views.search_tsv.repository import upsert, get_by_entry
+        from phiacta.extensions.search_tsv.repository import upsert, get_by_entry
 
         user = await _create_user(db_session)
         entry = await _create_entry(db_session, user.id)

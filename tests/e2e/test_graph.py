@@ -179,7 +179,7 @@ class TestGraphNodeFields:
             assert "summary" in node
             assert "entry_type" in node
             assert "tags" in node
-            assert "status" in node
+            assert "visibility" in node
             assert "depth" in node
 
     async def test_seed_has_depth_0(

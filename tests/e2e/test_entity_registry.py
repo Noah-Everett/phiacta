@@ -32,7 +32,6 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -699,7 +698,7 @@ class TestRegressionEntryOperations:
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Regression Test"
-        assert data["status"] == "active"
+        assert data["visibility"] == "public"
         assert data["repo_status"] == "provisioning"
         assert data["created_by"] == user["id"]
 
