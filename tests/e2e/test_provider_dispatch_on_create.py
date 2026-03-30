@@ -446,4 +446,5 @@ class TestActivityLog:
         ]
         assert len(created_activities) >= 1
         metadata = created_activities[0].get("metadata", {})
-        assert "title" not in metadata
+        # Title is now included in entry.created activity metadata
+        assert "title" in metadata

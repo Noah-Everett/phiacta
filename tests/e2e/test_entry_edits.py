@@ -325,7 +325,7 @@ class TestCreateEditProposalErrors:
         proposer: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """POST /edits with a file targeting .phiacta/ is rejected with 400."""
+        """POST /edits with .phiacta/entry.yaml is allowed (no longer protected)."""
         client, _, owner_token = owner
         _, _, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
@@ -334,15 +334,14 @@ class TestCreateEditProposalErrors:
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits",
             json={
-                "title": "Sneaky phiacta edit",
+                "title": "Phiacta entry.yaml edit",
                 "files": [
-                    {"path": ".phiacta/entry.yaml", "content": _b64("hacked: true")},
+                    {"path": ".phiacta/entry.yaml", "content": _b64("updated: true")},
                 ],
             },
             headers=auth_header(proposer_token),
         )
-        # File path validation should block .phiacta/ paths
-        assert resp.status_code == 400
+        assert resp.status_code == 201
 
     async def test_create_empty_files_422(
         self,
@@ -463,7 +462,7 @@ class TestCreateEditProposalErrors:
         proposer: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """POST /edits with invalid base64 file content returns 400."""
+        """POST /edits with any string content succeeds (base64 no longer required)."""
         client, _, owner_token = owner
         _, _, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
@@ -472,15 +471,14 @@ class TestCreateEditProposalErrors:
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits",
             json={
-                "title": "Bad base64",
+                "title": "Plain text content",
                 "files": [
-                    {"path": "data.csv", "content": "not-valid-base64!!!@#$"},
+                    {"path": "data.csv", "content": "plain text, not base64"},
                 ],
             },
             headers=auth_header(proposer_token),
         )
-        assert resp.status_code == 400
-        assert "base64" in resp.json()["detail"].lower()
+        assert resp.status_code == 201
 
     async def test_create_file_exceeds_size_limit_400(
         self,
@@ -1194,13 +1192,12 @@ class TestMergeEditProposalErrors:
             (UUID(entry_id), head_branch, ".phiacta/entry.yaml")
         ] = b"hacked: true"
 
-        # Attempt merge -- should be rejected due to .phiacta/ in diff
+        # Merge succeeds -- .phiacta/entry.yaml is no longer protected
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits/{number}/merge",
             headers=auth_header(owner_token),
         )
-        assert resp.status_code == 422
-        assert "phiacta" in resp.json()["detail"].lower()
+        assert resp.status_code == 200
 
     async def test_merge_already_merged_409(
         self,
