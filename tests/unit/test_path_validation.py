@@ -122,15 +122,11 @@ class TestValidateFilePathRejectsAbsolutePaths:
 
 
 class TestValidateFilePathRejectsPhiacta:
-    """Only .phiacta/entry.yaml is immutable and must be rejected.
+    """All .phiacta/* paths are writable (entry.yaml is no longer used)."""
 
-    All other .phiacta/* paths (content.md, refs.yaml, etc.) are writable.
-    """
-
-    def test_phiacta_entry_yaml(self) -> None:
-        """'.phiacta/entry.yaml' must be rejected (immutable identity file)."""
-        with pytest.raises(ValueError, match="[Ff]ile not found"):
-            validate_file_path(".phiacta/entry.yaml")
+    def test_phiacta_entry_yaml_is_allowed(self) -> None:
+        """'.phiacta/entry.yaml' is writable (no longer generated or used)."""
+        validate_file_path(".phiacta/entry.yaml")
 
     def test_phiacta_exact_is_allowed(self) -> None:
         """'.phiacta' alone is allowed (not a file, but not blocked)."""
@@ -188,10 +184,9 @@ class TestValidateFilePathEdgeCases:
         with pytest.raises(ValueError, match="[Ii]nvalid file path"):
             validate_file_path("foo/../bar")
 
-    def test_url_decoded_phiacta(self) -> None:
-        """A path that decodes to .phiacta must still be caught."""
-        with pytest.raises(ValueError, match="[Ff]ile not found|[Pp]hiacta"):
-            validate_file_path(".phiacta/entry.yaml")
+    def test_phiacta_entry_yaml_edge_case(self) -> None:
+        """'.phiacta/entry.yaml' is writable (no longer protected)."""
+        validate_file_path(".phiacta/entry.yaml")
 
 
 # ---------------------------------------------------------------------------

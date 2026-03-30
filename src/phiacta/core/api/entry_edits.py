@@ -339,12 +339,12 @@ async def merge_edit_proposal(
                 validate_file_path(fd.path)
             except ValueError as exc:
                 logger.warning(
-                    "Merge blocked: PR #%d on entry %s contains .phiacta/ changes",
+                    "Merge blocked: PR #%d on entry %s contains invalid file path",
                     number, entry_id,
                 )
                 raise HTTPException(
                     status_code=422,
-                    detail="Proposal contains changes to .phiacta/ which is not allowed",
+                    detail="Proposal contains an invalid file path",
                 ) from exc
     except HTTPException:
         raise

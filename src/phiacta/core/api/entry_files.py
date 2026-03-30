@@ -60,12 +60,10 @@ def _validate_path_common(path: str) -> list[str]:
 def validate_file_path(path: str) -> None:
     """Validate a file path for write/delete operations.
 
-    Blocks ``.phiacta/entry.yaml`` (identity file, immutable).
-    All other paths including ``.phiacta/content.*`` are writable.
+    Only blocks traversal attacks. All paths including ``.phiacta/``
+    are writable (entry.yaml is no longer generated or used).
     """
-    segments = _validate_path_common(path)
-    if segments[0] == ".phiacta" and len(segments) >= 2 and segments[1] == "entry.yaml":
-        raise ValueError("File not found")
+    _validate_path_common(path)
 
 
 def validate_file_path_read(path: str) -> None:
