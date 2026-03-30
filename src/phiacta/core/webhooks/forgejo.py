@@ -11,8 +11,8 @@ Verification uses HMAC-SHA256 over the request body, matching the shared
 secret stored in ``FORGEJO_WEBHOOK_SECRET``.
 
 After verifying the push, the handler runs ingestion: fetches
-``.phiacta/entry.yaml`` and ``.phiacta/content.*`` from the new HEAD,
-validates identity, and computes the search tsvector.
+``.phiacta/content.*`` from the new HEAD and runs on_ingest hooks
+(extensions, views) to keep derived data in sync.
 """
 
 from __future__ import annotations

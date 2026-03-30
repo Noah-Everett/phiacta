@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Plugin framework for Phiacta extensions, views, and tools.
+"""Plugin framework for Phiacta extensions and tools.
 
 Provides the manifest dataclass, plugin type enum, and the registry
 that discovers, validates, and mounts plugins at startup.
@@ -101,7 +101,7 @@ class PluginRegistry:
     Parameters
     ----------
     plugin_dirs
-        Mapping of plugin type key ("extension", "view", "tool") to the
+        Mapping of plugin type key ("extension", "tool") to the
         directory Path containing plugin packages. If ``None``, uses the
         default directories under ``src/phiacta/``.
     enabled_plugins

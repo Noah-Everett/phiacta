@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Integration tests covering entry update, archival, history, webhook HMAC
+"""Integration tests covering entry update, history, webhook HMAC
 verification, content format, and cross-user access.
 
 These tests require the full Docker stack to be running:
@@ -218,92 +218,6 @@ class TestEntryUpdate:
             assert patch_resp.status_code == 403, (
                 f"Expected 403 for non-owner PATCH, "
                 f"got {patch_resp.status_code}: {patch_resp.text}"
-            )
-
-
-# ---------------------------------------------------------------------------
-# Archival (POST /v1/entries/{id}/archive  &  /unarchive)
-# ---------------------------------------------------------------------------
-
-
-class TestArchival:
-    """Archive and unarchive endpoints."""
-
-    async def test_archive_entry(self) -> None:
-        """Create entry, wait ready, archive it, verify visibility='private'."""
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            token, entry_id, _ = await _setup_ready_entry(
-                client, title="Archive Test",
-            )
-
-            archive_resp = await client.post(
-                f"/v1/entries/{entry_id}/archive",
-                headers=_auth_header(token),
-            )
-            assert archive_resp.status_code == 200, (
-                f"archive failed: {archive_resp.text}"
-            )
-
-            get_resp = await client.get(
-                f"/v1/entries/{entry_id}",
-                headers=_auth_header(token),
-            )
-            assert get_resp.status_code == 200
-            assert get_resp.json()["visibility"] == "private", (
-                f"Expected visibility='private', got: {get_resp.json()['visibility']!r}"
-            )
-
-    async def test_unarchive_entry(self) -> None:
-        """Archive then unarchive an entry, verify visibility returns to 'public'."""
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            token, entry_id, _ = await _setup_ready_entry(
-                client, title="Unarchive Test",
-            )
-
-            # Archive first.
-            archive_resp = await client.post(
-                f"/v1/entries/{entry_id}/archive",
-                headers=_auth_header(token),
-            )
-            assert archive_resp.status_code == 200, (
-                f"archive failed: {archive_resp.text}"
-            )
-
-            # Then unarchive.
-            unarchive_resp = await client.post(
-                f"/v1/entries/{entry_id}/unarchive",
-                headers=_auth_header(token),
-            )
-            assert unarchive_resp.status_code == 200, (
-                f"unarchive failed: {unarchive_resp.text}"
-            )
-
-            get_resp = await client.get(f"/v1/entries/{entry_id}")
-            assert get_resp.status_code == 200
-            assert get_resp.json()["visibility"] == "public", (
-                f"Expected visibility='public' after unarchive, "
-                f"got: {get_resp.json()['visibility']!r}"
-            )
-
-    async def test_archive_non_owner_rejected(self) -> None:
-        """A non-owner trying to archive an entry gets 403."""
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            # User A creates the entry.
-            _token_a, entry_id, _ = await _setup_ready_entry(
-                client, title="Non-Owner Archive Test",
-            )
-
-            # User B tries to archive it.
-            auth_b = await register_user(client)
-            token_b = auth_b["access_token"]
-
-            archive_resp = await client.post(
-                f"/v1/entries/{entry_id}/archive",
-                headers=_auth_header(token_b),
-            )
-            assert archive_resp.status_code == 403, (
-                f"Expected 403 for non-owner archive, "
-                f"got {archive_resp.status_code}: {archive_resp.text}"
             )
 
 

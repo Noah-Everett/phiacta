@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+VALID_VISIBILITY = ("public", "private")
+
 
 class EntryCreate(BaseModel):
     """Request body for POST /entries.

@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Dependencies for tool plugins.
+"""Conventional facade for tool plugin dependencies.
 
-Tools must not import from ``core.db`` or ``core.models`` directly.
-This module re-exports the dependencies tools need through a safe path.
+Tools import their FastAPI dependencies (DB session, auth) from here
+rather than reaching into ``core.db`` or ``core.auth`` directly.  This
+keeps tool code decoupled from internal module paths and makes it easy
+to swap or extend dependency wiring in one place.
 """
 
 from phiacta.core.db.session import get_db as get_db  # noqa: F401

@@ -6,7 +6,6 @@
 Provides SQLAlchemy-level conditions and a guard function for enforcing
 entry visibility based on the ``visibility`` column (public/private).
 
-- ``access_condition`` — for direct access (GET by ID, sub-resources).
 - ``discovery_condition`` — for listings, search, graph traversal.
 - ``check_entry_access`` — guard that raises 403 for private entries.
 
@@ -38,24 +37,12 @@ def _resolve_viewer_id(viewer: User | UUID | None) -> UUID | None:
     return viewer.id
 
 
-def access_condition(user: User | UUID | None = None):
-    """SQLAlchemy filter for direct access (GET by ID, sub-resources).
-
-    Public entries are visible to everyone.  Private entries are visible
-    only to their creator.  Accepts a User object or a raw UUID.
-    """
-    viewer_id = _resolve_viewer_id(user)
-    if viewer_id is None:
-        return Entry.visibility == "public"
-    return or_(Entry.visibility == "public", Entry.created_by == viewer_id)
-
-
 def discovery_condition(user: User | UUID | None = None):
     """SQLAlchemy filter for listings, search, and graph traversal.
 
-    Same logic as ``access_condition`` — public entries visible to all,
-    private only to owner.  The behavioral difference is in the caller:
-    direct access returns 403, discovery silently excludes.
+    Public entries are visible to all, private only to their owner.
+    For direct access endpoints, use ``check_entry_access`` instead
+    (returns 403).  Discovery silently excludes non-visible entries.
     """
     viewer_id = _resolve_viewer_id(user)
     if viewer_id is None:

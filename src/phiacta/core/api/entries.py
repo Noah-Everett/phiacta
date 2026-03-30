@@ -25,6 +25,7 @@ from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.common import PaginatedResponse
 from phiacta.core.models.outbox import Outbox
 from phiacta.core.schemas.entry import (
+    VALID_VISIBILITY,
     EntryCreate,
     EntryDetailResponse,
     EntryListItem,
@@ -145,7 +146,7 @@ async def update_entry(
     # Handle visibility change (core field, not routed to providers)
     if "visibility" in updates:
         vis = updates.pop("visibility")
-        if vis not in ("public", "private"):
+        if vis not in VALID_VISIBILITY:
             raise HTTPException(status_code=422, detail="visibility must be 'public' or 'private'")
         entry.visibility = vis
 

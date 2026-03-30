@@ -4,7 +4,7 @@
 """Seed the Phiacta database with test entries via the REST API.
 
 Exercises every major API feature: entry CRUD, tags extension, file uploads,
-edit proposals (create + merge + close), entry updates, archive/unarchive,
+edit proposals (create + merge + close), entry updates,
 entry references with notes, and a second collaborator user.
 
 This is a test/development tool — not for production data.  Historical
@@ -929,8 +929,6 @@ UPDATES = [
     ("cell_theory", {"license": "CC-BY-4.0", "content_format": "markdown"}),
 ]
 
-# Entry to archive then unarchive (exercises both endpoints)
-ARCHIVE_KEY = "thermo_0"
 
 
 # ---------------------------------------------------------------------------
@@ -967,8 +965,8 @@ def seed(base_url: str) -> None:
     entry_ids: dict[str, str] = {}
     entries_need_lookup: list[dict] = []
 
-    # Fetch existing entries (including archived) to skip duplicates
-    existing_resp = get(client, f"{base}/entries", token=token, params={"limit": 200, "status": "all"})
+    # Fetch existing entries to skip duplicates
+    existing_resp = get(client, f"{base}/entries", token=token, params={"limit": 200, "visibility": "all"})
     existing_by_title = {e["title"]: e["id"] for e in existing_resp.get("items", [])}
 
     for entry_def in ENTRIES:
@@ -999,7 +997,7 @@ def seed(base_url: str) -> None:
     # Resolve any IDs for entries that returned 500
     if entries_need_lookup:
         print(f"\n  Resolving {len(entries_need_lookup)} entry IDs...")
-        all_resp = get(client, f"{base}/entries", token=token, params={"limit": 200, "status": "all"})
+        all_resp = get(client, f"{base}/entries", token=token, params={"limit": 200, "visibility": "all"})
         all_entries = all_resp.get("items", [])
         title_to_id = {e["title"]: e["id"] for e in all_entries}
         for entry_def in entries_need_lookup:
@@ -1116,23 +1114,7 @@ def seed(base_url: str) -> None:
             fields = ", ".join(update_payload.keys())
             print(f"  {entry_key}: updated {fields}")
 
-    # -- 7. Archive and unarchive ------------------------------------------
-    print("\n=== Archive / unarchive ===")
-    if ARCHIVE_KEY in entry_ids:
-        eid = entry_ids[ARCHIVE_KEY]
-        if wait_for_ready(client, base, eid, token, max_wait=30):
-            resp = post(client, f"{base}/entries/{eid}/archive", {}, token=token, tolerate_409=True)
-            if resp and resp.get("status") == "archived":
-                print(f"  {ARCHIVE_KEY}: archived")
-                resp = post(client, f"{base}/entries/{eid}/unarchive", {}, token=token)
-                if resp and resp.get("status") == "active":
-                    print(f"  {ARCHIVE_KEY}: unarchived")
-            else:
-                print(f"  {ARCHIVE_KEY}: skipped (already archived or not ready)")
-        else:
-            print(f"  {ARCHIVE_KEY}: skipped (repo not ready)")
-
-    # -- 8. Create edit proposals (as collab-user) ------------------------
+    # -- 7. Create edit proposals (as collab-user) -------------------------
     print("\n=== Creating edit proposals ===")
     for entry_key, title, body, files in EDIT_PROPOSALS:
         if entry_key not in entry_ids:
@@ -1152,7 +1134,7 @@ def seed(base_url: str) -> None:
             counters["edits"] += 1
             print(f"  {entry_key} PR#{resp.get('number')}: {title}")
 
-    # -- 9. Merge first proposal, close second -----------------------------
+    # -- 8. Merge first proposal, close second -----------------------------
     print("\n=== Merge / close proposals ===")
     if len(EDIT_PROPOSALS) >= 1:
         entry_key = EDIT_PROPOSALS[0][0]

@@ -17,7 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.visibility import discovery_condition
 from phiacta.core.models.entry import Entry
-from phiacta.extensions.references.models import ExtensionReference
+try:
+    from phiacta.extensions.references.models import ExtensionReference
+except ImportError:
+    ExtensionReference = None  # type: ignore[assignment,misc]
 
 try:
     from phiacta.extensions.metadata.models import ExtensionMetadata
@@ -50,7 +53,7 @@ async def traverse_references(
     Returns (node_id -> min_depth mapping, raw edge rows).
     Private entries are only visible to their owner (``viewer_id``).
     """
-    if not seed_ids:
+    if not seed_ids or ExtensionReference is None:
         return {}, []
 
     valid_stmt = (
@@ -112,7 +115,7 @@ async def _get_neighbors(
     db: AsyncSession,
 ) -> set[UUID]:
     """Get all entry neighbors visible to the caller."""
-    if not node_ids:
+    if not node_ids or ExtensionReference is None:
         return set()
 
     vis = discovery_condition(viewer_id)
@@ -153,7 +156,7 @@ async def _fetch_edges(
     db: AsyncSession,
 ) -> list[Row]:
     """Fetch all reference edges where both endpoints are in node_ids."""
-    if not node_ids:
+    if not node_ids or ExtensionReference is None:
         return []
 
     stmt = select(

@@ -12,17 +12,17 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.db.session import get_db
+from phiacta.core.models.entry import Entry
 from phiacta.core.models.user import User
 from phiacta.core.repositories.activity_repository import ActivityRepository
-from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.repositories.entity_repository import EntityRepository
 from phiacta.core.repositories.user_repository import UserRepository
 from phiacta.core.schemas.activity import ActivityFeedResponse, ActivityItem
-from phiacta.core.visibility import check_entry_access
 
 router = APIRouter(prefix="/activity", tags=["activity"])
 
@@ -98,17 +98,19 @@ async def get_activity(
     # Batch-load entries for visibility checks
     visible_entries: dict[UUID, bool] = {}
     if candidate_entry_ids:
-        entry_repo = EntryRepository(db)
+        stmt = select(Entry).where(Entry.id.in_(list(candidate_entry_ids)))
+        result = await db.execute(stmt)
+        entries_by_id = {e.id: e for e in result.scalars().all()}
+
         for eid in candidate_entry_ids:
-            entry_obj = await entry_repo.get_by_id(eid)
+            entry_obj = entries_by_id.get(eid)
             if entry_obj is None:
                 visible_entries[eid] = True  # entry deleted, allow activity
             else:
-                try:
-                    check_entry_access(entry_obj, user)
-                    visible_entries[eid] = True
-                except HTTPException:
-                    visible_entries[eid] = False
+                visible_entries[eid] = (
+                    entry_obj.visibility == "public"
+                    or (user is not None and entry_obj.created_by == user.id)
+                )
 
     result_items: list[ActivityItem] = []
     for a in items:
@@ -130,4 +132,6 @@ async def get_activity(
             created_at=a.created_at,
         ))
 
-    return ActivityFeedResponse(items=result_items, next_cursor=next_cursor)
+    # Compute next_cursor AFTER filtering
+    filtered_cursor = result_items[-1].id if result_items and len(result_items) == limit else None
+    return ActivityFeedResponse(items=result_items, next_cursor=filtered_cursor)

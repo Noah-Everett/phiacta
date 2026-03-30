@@ -43,8 +43,9 @@ async def get_type(
     db: AsyncSession = Depends(get_db),
 ) -> TypeResponse:
     entry = await EntryRepository(db).get_by_id(entry_id)
-    if entry is not None:
-        check_entry_access(entry, user)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    check_entry_access(entry, user)
     repo = TypeRepository(db)
     ext_type = await repo.get_by_entry_id(entry_id)
     if ext_type is None:
