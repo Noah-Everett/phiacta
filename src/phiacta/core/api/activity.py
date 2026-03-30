@@ -50,10 +50,10 @@ async def get_activity(
     entity_repo = EntityRepository(db)
 
     if actor is not None:
-        # Verify user exists
+        # Verify actor user exists (don't shadow the `user` param)
         user_repo = UserRepository(db)
-        user = await user_repo.get_by_id(actor)
-        if user is None:
+        actor_user = await user_repo.get_by_id(actor)
+        if actor_user is None:
             raise HTTPException(status_code=404, detail="User not found")
 
         items, next_cursor = await activity_repo.list_by_actor(

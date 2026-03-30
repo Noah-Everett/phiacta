@@ -56,7 +56,7 @@ def _build_prefix_tsquery(q: str, language: str):
 async def search_text(
     *, q: str, version_id: UUID, language: str, db: AsyncSession,
     limit: int, offset: int,
-    visibility: str | None = "public",
+    visibility: str | None = None,
     user: User | None = None,
     filters: dict[str, str] | None = None,
     providers: list[EntryDataProvider] | None = None,
