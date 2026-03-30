@@ -65,20 +65,9 @@ async def get_activity(
         if target is None:
             raise HTTPException(status_code=404, detail="Entity not found")
 
-        all_items = await activity_repo.list_by_entity(entity_id=entity)  # type: ignore[arg-type]
-        # Manual cursor pagination for entity queries
-        if before is not None:
-            skip = True
-            filtered = []
-            for a in all_items:
-                if skip:
-                    if a.id == before:
-                        skip = False
-                    continue
-                filtered.append(a)
-            all_items = filtered
-        items = all_items[:limit]
-        next_cursor = items[-1].id if len(items) == limit and len(all_items) > limit else None
+        items, next_cursor = await activity_repo.list_by_entity(
+            entity_id=entity, limit=limit, before=before,  # type: ignore[arg-type]
+        )
 
     # Batch fetch entities to avoid N+1
     entity_ids = list({a.entity_id for a in items})

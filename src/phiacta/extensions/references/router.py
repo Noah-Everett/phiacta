@@ -12,8 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.api.entry_guards import get_readable_entry
-from phiacta.core.api.rate_limit import limiter
+from phiacta.core.shared_deps import get_readable_entry, limiter
 from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User

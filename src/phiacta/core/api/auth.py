@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.rate_limit import limiter
 from phiacta.core.auth.dependencies import get_current_user, get_current_user_jwt_only
-from phiacta.core.auth.passwords import hash_password, verify_password
+from phiacta.core.auth.passwords import hash_password_async, verify_password_async
 from phiacta.core.auth.pat import extract_pat_prefix, generate_pat, hash_pat
 from phiacta.core.auth.tokens import create_access_token
 from phiacta.core.db.session import get_db
@@ -66,7 +66,7 @@ async def register(
     user = User(
         id=entity.id,
         username=body.username,
-        password_hash=hash_password(body.password),
+        password_hash=await hash_password_async(body.password),
     )
     db.add(user)
     try:
@@ -98,13 +98,13 @@ async def login(
 
     if user is None:
         # Timing-safe: still run bcrypt verify against dummy hash
-        verify_password(body.password, _DUMMY_HASH)
+        await verify_password_async(body.password, _DUMMY_HASH)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
         )
 
-    if not verify_password(body.password, user.password_hash):
+    if not await verify_password_async(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",

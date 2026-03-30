@@ -9,8 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
-
 from phiacta.config import get_settings
 from phiacta.core.api.rate_limit import limiter
 from phiacta.core.api.router import v1_router
@@ -39,8 +37,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         subprocess.run(["alembic", "upgrade", "heads"], check=True)
 
-    # Create async engine
-    engine = create_async_engine(settings.database_url)
+    # Reuse the cached, properly-configured engine
+    engine = get_engine()
 
     # Start outbox worker for Forgejo sync (with view hooks)
     on_ingest_hooks = registry.get_on_ingest_hooks()

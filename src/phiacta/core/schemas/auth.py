@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RegisterRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=50)
+    username: str = Field(min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9][-a-zA-Z0-9_]{0,49}$")
     password: str = Field(min_length=8, max_length=128)
 
 

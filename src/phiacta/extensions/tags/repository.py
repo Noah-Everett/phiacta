@@ -48,7 +48,7 @@ class TagRepository:
         for tag in tags:
             ext_tag = ExtensionTag(
                 entity_id=entry_id,
-                tag=tag,
+                tag=tag.lower().strip(),
                 created_by=created_by,
             )
             self.session.add(ext_tag)
