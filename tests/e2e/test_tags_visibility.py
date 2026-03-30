@@ -154,7 +154,7 @@ class TestFindEntriesByTagsVisibility:
             headers=auth_header(other_token),
         )
         assert resp.status_code == 200
-        entry_ids = {item["id"] for item in resp.json()["items"]}
+        entry_ids = {item["entry_id"] for item in resp.json()["items"]}
         assert tagged_entries["public_physics"]["id"] in entry_ids
         assert tagged_entries["private_physics"]["id"] not in entry_ids
 
@@ -167,7 +167,7 @@ class TestFindEntriesByTagsVisibility:
             params={"tags": "physics"},
         )
         assert resp.status_code == 200
-        entry_ids = {item["id"] for item in resp.json()["items"]}
+        entry_ids = {item["entry_id"] for item in resp.json()["items"]}
         assert tagged_entries["public_physics"]["id"] in entry_ids
         assert tagged_entries["private_physics"]["id"] not in entry_ids
 
@@ -182,7 +182,7 @@ class TestFindEntriesByTagsVisibility:
             headers=auth_header(owner_token),
         )
         assert resp.status_code == 200
-        entry_ids = {item["id"] for item in resp.json()["items"]}
+        entry_ids = {item["entry_id"] for item in resp.json()["items"]}
         assert tagged_entries["public_physics"]["id"] in entry_ids
         assert tagged_entries["private_physics"]["id"] in entry_ids
 
@@ -210,7 +210,7 @@ class TestFindEntriesByTagsVisibility:
             headers=auth_header(owner_token),
         )
         assert resp.status_code == 200
-        entry_ids = {item["id"] for item in resp.json()["items"]}
+        entry_ids = {item["entry_id"] for item in resp.json()["items"]}
         assert tagged_entries["private_physics"]["id"] in entry_ids
 
 

@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import phiacta.extensions.metadata.models  # noqa: F401
 import phiacta.extensions.tags.models  # noqa: F401
 import phiacta.extensions.types.models  # noqa: F401
-import phiacta.views.search_tsv.models  # noqa: F401
+import phiacta.extensions.search_tsv.models  # noqa: F401
 
 from tests.e2e.conftest import (
     auth_header,

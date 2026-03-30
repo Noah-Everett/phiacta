@@ -44,7 +44,6 @@ def _create_synthetic_plugin_module(
 
     type_map = {
         "extension": PluginType.EXTENSION,
-        "view": PluginType.VIEW,
         "tool": PluginType.TOOL,
     }
 
@@ -189,21 +188,21 @@ class TestAppWithPluginEnabled:
 
     @pytest.fixture
     def _install_test_view(self, client: httpx.AsyncClient) -> str:
-        """Mount a synthetic view plugin router on the app."""
+        """Mount a synthetic extension plugin router on the app (views are now extensions)."""
         from phiacta.main import app as _app
 
         name = "test_view"
         mod = _create_synthetic_plugin_module(
             name,
-            "view",
+            "extension",
             route_path="/query",
-            route_response={"plugin": name, "type": "view", "results": []},
+            route_response={"plugin": name, "type": "extension", "results": []},
         )
-        _app.include_router(mod.router, prefix=f"/v1/views/{name}", tags=[name])
+        _app.include_router(mod.router, prefix=f"/v1/extensions/{name}", tags=[name])
         yield name
         _app.routes[:] = [
             r for r in _app.routes
-            if not (hasattr(r, "path") and r.path.startswith(f"/v1/views/{name}"))
+            if not (hasattr(r, "path") and r.path.startswith(f"/v1/extensions/{name}"))
         ]
 
     @pytest.fixture
@@ -246,15 +245,15 @@ class TestAppWithPluginEnabled:
         client: httpx.AsyncClient,
         _install_test_view: str,
     ) -> None:
-        """An enabled view plugin's router is mounted at
-        /v1/views/{name}/... and returns the expected response.
+        """An enabled extension plugin (formerly view) is mounted at
+        /v1/extensions/{name}/... and returns the expected response.
         """
         name = _install_test_view
-        resp = await client.get(f"/v1/views/{name}/query")
+        resp = await client.get(f"/v1/extensions/{name}/query")
         assert resp.status_code == 200
         body = resp.json()
         assert body["plugin"] == name
-        assert body["type"] == "view"
+        assert body["type"] == "extension"
         assert body["results"] == []
 
     async def test_tool_router_mounted_at_correct_prefix(

@@ -41,10 +41,10 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -72,10 +72,10 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -101,10 +101,10 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -130,10 +130,10 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -163,15 +163,15 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.get_active_version",
+                "phiacta.extensions.search_tsv.compute.get_active_version",
                 new_callable=AsyncMock,
                 return_value=mock_version,
             ) as mock_get_version,
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -196,15 +196,15 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.get_active_version",
+                "phiacta.extensions.search_tsv.compute.get_active_version",
                 new_callable=AsyncMock,
                 return_value=None,
             ) as mock_get_version,
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -237,10 +237,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -264,10 +264,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -291,10 +291,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -317,10 +317,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -343,10 +343,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ),
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -376,12 +376,12 @@ class TestSearchTsvManifest:
 
         assert manifest.name == "search_tsv"
 
-    def test_manifest_type_is_view(self) -> None:
-        """The search_tsv manifest type is PluginType.VIEW."""
+    def test_manifest_type_is_extension(self) -> None:
+        """The search_tsv manifest type is PluginType.EXTENSION."""
         from phiacta.plugin import PluginType
         from phiacta.extensions.search_tsv import manifest
 
-        assert manifest.type == PluginType.VIEW
+        assert manifest.type == PluginType.EXTENSION
 
     def test_manifest_is_plugin_manifest_instance(self) -> None:
         """The manifest is a PluginManifest instance."""

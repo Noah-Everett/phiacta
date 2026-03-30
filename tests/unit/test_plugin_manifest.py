@@ -27,39 +27,34 @@ class TestPluginType:
         assert hasattr(PluginType, "EXTENSION")
         assert PluginType.EXTENSION is not None
 
-    def test_has_view_member(self) -> None:
-        """PluginType.VIEW exists."""
-        assert hasattr(PluginType, "VIEW")
-        assert PluginType.VIEW is not None
-
     def test_has_tool_member(self) -> None:
         """PluginType.TOOL exists."""
         assert hasattr(PluginType, "TOOL")
         assert PluginType.TOOL is not None
 
-    def test_exactly_three_members(self) -> None:
-        """PluginType has exactly three members: EXTENSION, VIEW, TOOL."""
+    def test_no_view_member(self) -> None:
+        """PluginType.VIEW was removed in the platform overhaul."""
+        assert not hasattr(PluginType, "VIEW")
+
+    def test_exactly_two_members(self) -> None:
+        """PluginType has exactly two members: EXTENSION, TOOL."""
         members = list(PluginType)
-        assert len(members) == 3
+        assert len(members) == 2
         member_names = {m.name for m in members}
-        assert member_names == {"EXTENSION", "VIEW", "TOOL"}
+        assert member_names == {"EXTENSION", "TOOL"}
 
     def test_members_are_distinct(self) -> None:
         """Each PluginType member has a distinct value."""
         values = [m.value for m in PluginType]
         assert len(values) == len(set(values))
 
-    def test_extension_is_not_view(self) -> None:
-        """EXTENSION and VIEW are different enum members."""
-        assert PluginType.EXTENSION != PluginType.VIEW
-
     def test_extension_is_not_tool(self) -> None:
         """EXTENSION and TOOL are different enum members."""
         assert PluginType.EXTENSION != PluginType.TOOL
 
-    def test_view_is_not_tool(self) -> None:
-        """VIEW and TOOL are different enum members."""
-        assert PluginType.VIEW != PluginType.TOOL
+    def test_extension_is_not_tool(self) -> None:
+        """EXTENSION and TOOL are different enum members."""
+        assert PluginType.EXTENSION != PluginType.TOOL
 
 
 # ---------------------------------------------------------------------------
@@ -97,12 +92,12 @@ class TestPluginManifestConstruction:
         """PluginManifest with only required fields uses correct defaults."""
         manifest = PluginManifest(
             name="simple",
-            type=PluginType.VIEW,
+            type=PluginType.EXTENSION,
             version="0.1.0",
         )
 
         assert manifest.name == "simple"
-        assert manifest.type == PluginType.VIEW
+        assert manifest.type == PluginType.EXTENSION
         assert manifest.version == "0.1.0"
         # depends_on defaults to empty list
         assert manifest.depends_on == []
@@ -134,7 +129,7 @@ class TestPluginManifestConstruction:
         """depends_on accepts multiple dependency names."""
         manifest = PluginManifest(
             name="complex",
-            type=PluginType.VIEW,
+            type=PluginType.TOOL,
             version="2.0.0",
             depends_on=["tags", "categories", "interactions"],
         )
@@ -170,7 +165,7 @@ class TestPluginManifestImmutability:
             version="1.0.0",
         )
         with pytest.raises((AttributeError, TypeError, FrozenInstanceError)):
-            manifest.type = PluginType.VIEW  # type: ignore[misc]
+            manifest.type = PluginType.TOOL  # type: ignore[misc]
 
     def test_cannot_change_version(self) -> None:
         """Assigning to manifest.version raises an error."""

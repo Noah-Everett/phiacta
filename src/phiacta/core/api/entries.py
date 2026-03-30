@@ -48,7 +48,7 @@ def _get_providers(request: Request) -> list[EntryDataProvider]:
 @router.get("", response_model=PaginatedResponse[EntryListItem])
 async def list_entries(
     request: Request,
-    visibility: str = Query("public"),
+    visibility: str = Query("all"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     sort: str = Query("created_at", pattern=r"^(created_at|updated_at)$"),

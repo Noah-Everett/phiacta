@@ -66,16 +66,20 @@ class TestIngestNoRefs:
         await ingest_entry(entry, "a" * 40, db_session, fake)
 
 
-class TestIngestErrors:
-    async def test_raises_on_malformed_yaml(self, db_session: AsyncSession) -> None:
+class TestIngestWithoutEntryYaml:
+    """entry.yaml is no longer read during ingestion."""
+
+    async def test_succeeds_without_entry_yaml(self, db_session: AsyncSession) -> None:
+        """Ingestion works even when no entry.yaml exists in the repo."""
+        entry, _ = await _create(db_session)
+        fake = FakeGitService()
+        fake.files[(entry.id, ".phiacta/content.md")] = b"# Content"
+        await ingest_entry(entry, "a" * 40, db_session, fake)
+
+    async def test_ignores_malformed_entry_yaml(self, db_session: AsyncSession) -> None:
+        """Malformed entry.yaml is silently ignored (no longer parsed)."""
         entry, _ = await _create(db_session)
         fake = FakeGitService()
         fake.files[(entry.id, ".phiacta/entry.yaml")] = b": invalid: {{"
-        with pytest.raises((ValueError, Exception)):
-            await ingest_entry(entry, "a" * 40, db_session, fake)
-
-    async def test_raises_on_missing_yaml(self, db_session: AsyncSession) -> None:
-        entry, _ = await _create(db_session)
-        fake = FakeGitService()
-        with pytest.raises(Exception):
-            await ingest_entry(entry, "a" * 40, db_session, fake)
+        fake.files[(entry.id, ".phiacta/content.md")] = b"# Content"
+        await ingest_entry(entry, "a" * 40, db_session, fake)
