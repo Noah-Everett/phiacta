@@ -10,12 +10,16 @@ This guide covers how to write entry content — the part readers interact with 
 
 ## Entries and structure
 
-An entry can represent anything — a single theorem, a full paper, a dataset, a method, a comparison. There's no single right granularity. Two common approaches:
+An entry should be something worth citing — something where, if someone referenced it, the meaning would be clear. A single theorem, a full paper, a dataset, a method, a comparison — any granularity works if it's a meaningful unit to point to.
 
-- **Atomic entries** — one idea per entry. A definition, a theorem, a single experimental result. These are highly reusable and easy to reference from other entries.
+Two common approaches:
+
+- **Fine-grained entries** — one idea per entry. A definition, a theorem, a single experimental result. These are highly reusable and easy to reference from other entries.
 - **Composite entries** — a paper, a chapter, or an argument that ties together multiple ideas. These reference their component entries using `contains` or `uses` references.
 
-Both are valid. You can publish a paper as a single entry, or decompose it into atomic entries and create a composite entry that links them together. Mix and match however makes sense for the material.
+Both are valid. You can publish a paper as a single entry, or decompose it into fine-grained entries and create a composite entry that links them together. Mix and match however makes sense for the material.
+
+Think about how others will interact with your entry. If a specific idea within it is likely to be discussed, challenged, or built upon independently, consider giving it its own entry so it can be cited directly.
 
 ## Tips for readability
 
