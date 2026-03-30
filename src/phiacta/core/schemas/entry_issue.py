@@ -28,7 +28,7 @@ class IssueAuthor(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    handle: str
+    username: str
 
 
 class IssueListItem(BaseModel):

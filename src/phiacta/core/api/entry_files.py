@@ -199,7 +199,7 @@ async def put_entry_file(
     await _get_writable_entry(entry_id, user, db)
 
     commit_message = message or f"Update {path}"
-    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
 
     try:
         sha = await git_service.commit_files(
@@ -240,7 +240,7 @@ async def delete_entry_file(
     await _get_writable_entry(entry_id, user, db)
 
     message = (body.message if body else None) or f"Delete {path}"
-    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
 
     try:
         sha = await git_service.delete_file(

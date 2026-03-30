@@ -35,7 +35,7 @@ async def authed(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
     auth = await register_user(
-        client, handle=f"hist-{uid}"
+        client, username=f"hist-{uid}"
     )
     return client, auth["user"], auth["access_token"]
 

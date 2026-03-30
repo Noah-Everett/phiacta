@@ -41,7 +41,7 @@ async def _create_user(db: AsyncSession) -> User:
     """Create and flush a minimal User row."""
     user = User(
         id=uuid4(),
-        handle=f"test-{uuid4().hex[:8]}",
+        username=f"test-{uuid4().hex[:8]}",
         password_hash="$2b$12$fakehash",
     )
     db.add(user)

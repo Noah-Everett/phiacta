@@ -146,13 +146,13 @@ def _mount_routers(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, handle=f"svis-owner-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"svis-owner-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
 async def other_user(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, handle=f"svis-other-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"svis-other-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 

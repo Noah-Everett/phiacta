@@ -71,7 +71,7 @@ class EntryService:
                 "entry_id": str(entry.id),
                 "content_format": body.content_format,
                 "author_id": str(user.id),
-                "author_handle": user.handle,
+                "author_username": user.username,
                 "content": body.content,
                 "created_at": entry.created_at.isoformat(),
             },

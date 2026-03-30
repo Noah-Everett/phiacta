@@ -34,8 +34,8 @@ class TestOutboxDefaults:
 
 class TestUserDefaults:
     def test_user_defaults(self) -> None:
-        user = User(handle="researcher", password_hash="$2b$12$fakehash")
-        assert user.handle == "researcher"
+        user = User(username="researcher", password_hash="$2b$12$fakehash")
+        assert user.username == "researcher"
 
 
 class TestUUIDMixin:

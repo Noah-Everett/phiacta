@@ -45,7 +45,7 @@ async def owner(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user (the entry owner) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
     auth = await register_user(
-        client, handle=f"owner-{uid}"
+        client, username=f"owner-{uid}"
     )
     return client, auth["user"], auth["access_token"]
 
@@ -55,7 +55,7 @@ async def proposer(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a second user (a non-owner proposer) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
     auth = await register_user(
-        client, handle=f"proposer-{uid}"
+        client, username=f"proposer-{uid}"
     )
     return client, auth["user"], auth["access_token"]
 
@@ -109,7 +109,7 @@ class TestCreateEditProposal:
         assert data["body"] == "Corrected spelling of 'hypothesis'"
         assert data["state"] == "open"
         assert data["is_draft"] is False
-        assert data["author"]["handle"] == proposer_user["handle"]
+        assert data["author"]["username"] == proposer_user["username"]
         assert data["base_branch"] == "main"
         assert data["head_branch"]  # non-empty branch name
         assert data["created_at"] is not None
@@ -162,7 +162,7 @@ class TestCreateEditProposal:
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["author"]["handle"] == owner_user["handle"]
+        assert data["author"]["username"] == owner_user["username"]
         assert data["state"] == "open"
 
     async def test_create_proposal_multiple_files(
@@ -203,7 +203,7 @@ class TestCreateEditProposal:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """The head_branch follows the pattern edit/{user_handle}/{slugified_title}."""
+        """The head_branch follows the pattern edit/{username}/{slugified_title}."""
         client, _, owner_token = owner
         _, proposer_user, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
@@ -219,8 +219,8 @@ class TestCreateEditProposal:
         )
         assert resp.status_code == 201
         head_branch = resp.json()["head_branch"]
-        # Must start with edit/{proposer_handle}/
-        assert head_branch.startswith(f"edit/{proposer_user['handle']}/")
+        # Must start with edit/{proposer_username}/
+        assert head_branch.startswith(f"edit/{proposer_user['username']}/")
         # Must contain a slugified version of the title (lowercase, hyphens)
         slug_part = head_branch.split("/", 2)[2]
         assert slug_part  # non-empty
@@ -775,7 +775,7 @@ class TestListEditProposals:
             "created_at", "updated_at", "merged_at",
         }
         assert expected_keys.issubset(set(item.keys()))
-        assert set(item["author"].keys()) >= {"handle"}
+        assert set(item["author"].keys()) >= {"username"}
 
     async def test_list_proposals_pagination(
         self,

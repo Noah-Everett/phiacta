@@ -37,7 +37,7 @@ type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user (the entry owner) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"issue-owner-{uid}")
+    auth = await register_user(client, username=f"issue-owner-{uid}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -45,7 +45,7 @@ async def owner(client: httpx.AsyncClient) -> AuthedFixture:
 async def commenter(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a second user (a non-owner) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"issue-commenter-{uid}")
+    auth = await register_user(client, username=f"issue-commenter-{uid}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -99,7 +99,7 @@ class TestCreateIssue:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Issue response includes the author's handle."""
+        """Issue response includes the author's username."""
         client, user, token = owner
         entry = await _create_ready_entry(client, token, e2e_session_factory)
 
@@ -110,7 +110,7 @@ class TestCreateIssue:
         )
         assert resp.status_code == 201
         assert "author" in resp.json()
-        assert "handle" in resp.json()["author"]
+        assert "username" in resp.json()["author"]
 
     async def test_create_issue_without_body(
         self,
@@ -1055,4 +1055,4 @@ class TestIssueResponseShape:
         assert expected_fields.issubset(set(data.keys())), (
             f"Missing: {expected_fields - set(data.keys())}"
         )
-        assert "handle" in data["author"]
+        assert "username" in data["author"]

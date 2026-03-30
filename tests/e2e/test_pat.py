@@ -59,7 +59,7 @@ class TestCreateToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Create token returns 201 with id, name, key_prefix, token, created_at, expires_at."""
-        auth = await register_user(client, handle="pat-create")
+        auth = await register_user(client, username="pat-create")
         jwt = auth["access_token"]
 
         resp = await client.post(
@@ -99,7 +99,7 @@ class TestCreateToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Create token with expires_in_days sets expires_at approximately N days from now."""
-        auth = await register_user(client, handle="pat-expiry")
+        auth = await register_user(client, username="pat-expiry")
         jwt = auth["access_token"]
 
         data = await create_pat(client, jwt, name="expiring", expires_in_days=90)
@@ -116,7 +116,7 @@ class TestCreateToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Create token without expires_in_days sets expires_at to null."""
-        auth = await register_user(client, handle="pat-no-expiry")
+        auth = await register_user(client, username="pat-no-expiry")
         jwt = auth["access_token"]
 
         data = await create_pat(client, jwt, name="permanent")
@@ -137,7 +137,7 @@ class TestCreateToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Create token using a PAT (not JWT) returns 401 or 403 — PATs cannot manage tokens."""
-        auth = await register_user(client, handle="pat-reject")
+        auth = await register_user(client, username="pat-reject")
         jwt = auth["access_token"]
 
         # First create a PAT using JWT
@@ -156,7 +156,7 @@ class TestCreateToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Empty name is rejected with 422."""
-        auth = await register_user(client, handle="pat-empty-name")
+        auth = await register_user(client, username="pat-empty-name")
         jwt = auth["access_token"]
 
         resp = await client.post(
@@ -170,7 +170,7 @@ class TestCreateToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Name longer than 100 chars is rejected with 422."""
-        auth = await register_user(client, handle="pat-long-name")
+        auth = await register_user(client, username="pat-long-name")
         jwt = auth["access_token"]
 
         resp = await client.post(
@@ -184,7 +184,7 @@ class TestCreateToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Name exactly 100 chars is accepted."""
-        auth = await register_user(client, handle="pat-max-name")
+        auth = await register_user(client, username="pat-max-name")
         jwt = auth["access_token"]
 
         data = await create_pat(client, jwt, name="x" * 100)
@@ -194,7 +194,7 @@ class TestCreateToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Unicode characters in name are accepted."""
-        auth = await register_user(client, handle="pat-unicode")
+        auth = await register_user(client, username="pat-unicode")
         jwt = auth["access_token"]
 
         data = await create_pat(client, jwt, name="my-script-\u2603")
@@ -204,7 +204,7 @@ class TestCreateToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Multiple tokens can be created and all work independently."""
-        auth = await register_user(client, handle="pat-multi")
+        auth = await register_user(client, username="pat-multi")
         jwt = auth["access_token"]
 
         token1 = await create_pat(client, jwt, name="token-one")
@@ -233,7 +233,7 @@ class TestListTokens:
         self, client: httpx.AsyncClient,
     ) -> None:
         """List returns token metadata but never the raw token."""
-        auth = await register_user(client, handle="pat-list")
+        auth = await register_user(client, username="pat-list")
         jwt = auth["access_token"]
 
         created = await create_pat(client, jwt, name="listable", expires_in_days=30)
@@ -263,8 +263,8 @@ class TestListTokens:
         self, client: httpx.AsyncClient,
     ) -> None:
         """User A's tokens are not visible to User B."""
-        auth_a = await register_user(client, handle="pat-owner-a")
-        auth_b = await register_user(client, handle="pat-owner-b")
+        auth_a = await register_user(client, username="pat-owner-a")
+        auth_b = await register_user(client, username="pat-owner-b")
         jwt_a = auth_a["access_token"]
         jwt_b = auth_b["access_token"]
 
@@ -301,7 +301,7 @@ class TestListTokens:
         self, client: httpx.AsyncClient,
     ) -> None:
         """List tokens using PAT auth is rejected — token management requires JWT."""
-        auth = await register_user(client, handle="pat-list-reject")
+        auth = await register_user(client, username="pat-list-reject")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="self-list-attempt")
@@ -318,7 +318,7 @@ class TestRevokeToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Revoking a token returns 204 and sets revoked_at."""
-        auth = await register_user(client, handle="pat-revoke")
+        auth = await register_user(client, username="pat-revoke")
         jwt = auth["access_token"]
 
         created = await create_pat(client, jwt, name="to-revoke")
@@ -341,7 +341,7 @@ class TestRevokeToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Revoking a non-existent token ID returns 404."""
-        auth = await register_user(client, handle="pat-revoke-404")
+        auth = await register_user(client, username="pat-revoke-404")
         jwt = auth["access_token"]
 
         resp = await client.delete(
@@ -354,8 +354,8 @@ class TestRevokeToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Revoking another user's token returns 404 (not 403 — don't reveal existence)."""
-        auth_a = await register_user(client, handle="pat-rev-a")
-        auth_b = await register_user(client, handle="pat-rev-b")
+        auth_a = await register_user(client, username="pat-rev-a")
+        auth_b = await register_user(client, username="pat-rev-b")
         jwt_a = auth_a["access_token"]
         jwt_b = auth_b["access_token"]
 
@@ -383,7 +383,7 @@ class TestRevokeToken:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Revoking a token using PAT auth is rejected — requires JWT."""
-        auth = await register_user(client, handle="pat-rev-reject")
+        auth = await register_user(client, username="pat-rev-reject")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="self-revoke-attempt")
@@ -408,7 +408,7 @@ class TestPatAuthentication:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Using a PAT to access /v1/auth/me returns the user who created the token."""
-        auth = await register_user(client, handle="pat-me-user")
+        auth = await register_user(client, username="pat-me-user")
         jwt = auth["access_token"]
         user = auth["user"]
 
@@ -418,14 +418,14 @@ class TestPatAuthentication:
         resp = await client.get("/v1/auth/me", headers=auth_header(pat_token))
         assert resp.status_code == 200
         me = resp.json()
-        assert me["handle"] == "pat-me-user"
+        assert me["username"] == "pat-me-user"
         assert me["id"] == user["id"]
 
     async def test_pat_authenticates_for_entry_creation(
         self, client: httpx.AsyncClient,
     ) -> None:
         """Using a PAT to create an entry (POST /v1/entries) succeeds."""
-        auth = await register_user(client, handle="pat-entry-user")
+        auth = await register_user(client, username="pat-entry-user")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="entry-token")
@@ -443,7 +443,7 @@ class TestPatAuthentication:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Using a PAT on a public endpoint with optional auth identifies the user."""
-        auth = await register_user(client, handle="pat-public-user")
+        auth = await register_user(client, username="pat-public-user")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="public-token")
@@ -457,7 +457,7 @@ class TestPatAuthentication:
         self, client: httpx.AsyncClient,
     ) -> None:
         """After revocation, using the token gives 401."""
-        auth = await register_user(client, handle="pat-revoked-user")
+        auth = await register_user(client, username="pat-revoked-user")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="revokable")
@@ -488,7 +488,7 @@ class TestPatAuthentication:
         """
         from phiacta.core.models.personal_access_token import PersonalAccessToken as PATModel
 
-        auth = await register_user(client, handle="pat-expired-user")
+        auth = await register_user(client, username="pat-expired-user")
         jwt = auth["access_token"]
 
         # Create a token with 1-day expiry, then backdate it
@@ -512,7 +512,7 @@ class TestPatAuthentication:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Creating PATs does not break JWT authentication."""
-        auth = await register_user(client, handle="pat-jwt-still")
+        auth = await register_user(client, username="pat-jwt-still")
         jwt = auth["access_token"]
 
         # Create some PATs
@@ -522,7 +522,7 @@ class TestPatAuthentication:
         # JWT should still work
         resp = await client.get("/v1/auth/me", headers=auth_header(jwt))
         assert resp.status_code == 200
-        assert resp.json()["handle"] == "pat-jwt-still"
+        assert resp.json()["username"] == "pat-jwt-still"
 
     async def test_malformed_pat_prefix_only(
         self, client: httpx.AsyncClient,
@@ -563,7 +563,7 @@ class TestPatAuthentication:
         GET /v1/entries uses optional auth — a bad PAT should result in
         anonymous access (None user), not an error.
         """
-        auth = await register_user(client, handle="pat-opt-anon")
+        auth = await register_user(client, username="pat-opt-anon")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="opt-revoke")
@@ -583,7 +583,7 @@ class TestPatAuthentication:
         self, client: httpx.AsyncClient,
     ) -> None:
         """A PAT used to create another PAT is rejected — all token management requires JWT."""
-        auth = await register_user(client, handle="pat-no-create")
+        auth = await register_user(client, username="pat-no-create")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="base-pat")
@@ -600,7 +600,7 @@ class TestPatAuthentication:
         self, client: httpx.AsyncClient,
     ) -> None:
         """A PAT used to list tokens is rejected."""
-        auth = await register_user(client, handle="pat-no-list")
+        auth = await register_user(client, username="pat-no-list")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="no-list-pat")
@@ -613,7 +613,7 @@ class TestPatAuthentication:
         self, client: httpx.AsyncClient,
     ) -> None:
         """A PAT used to revoke a token is rejected."""
-        auth = await register_user(client, handle="pat-no-revoke")
+        auth = await register_user(client, username="pat-no-revoke")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="no-revoke-pat")
@@ -633,7 +633,7 @@ class TestPatLastUsedAt:
         self, client: httpx.AsyncClient,
     ) -> None:
         """A newly created token has last_used_at as null."""
-        auth = await register_user(client, handle="pat-lastused-null")
+        auth = await register_user(client, username="pat-lastused-null")
         jwt = auth["access_token"]
 
         await create_pat(client, jwt, name="unused")
@@ -647,7 +647,7 @@ class TestPatLastUsedAt:
         self, client: httpx.AsyncClient,
     ) -> None:
         """After using a PAT, last_used_at is set to a recent timestamp."""
-        auth = await register_user(client, handle="pat-lastused-set")
+        auth = await register_user(client, username="pat-lastused-set")
         jwt = auth["access_token"]
 
         pat_data = await create_pat(client, jwt, name="will-use")

@@ -28,8 +28,8 @@ class TestGetUserProfile:
     async def test_get_user_returns_public_profile(
         self, client: httpx.AsyncClient
     ) -> None:
-        """Returns id, handle, created_at."""
-        auth = await register_user(client, handle="profile-user")
+        """Returns id, username, created_at."""
+        auth = await register_user(client, username="profile-user")
         user_id = auth["user"]["id"]
 
         resp = await client.get(f"/v1/users/{user_id}")
@@ -37,14 +37,14 @@ class TestGetUserProfile:
         data = resp.json()
 
         assert data["id"] == user_id
-        assert data["handle"] == "profile-user"
+        assert data["username"] == "profile-user"
         assert data["created_at"] is not None
 
     async def test_get_user_does_not_require_authentication(
         self, client: httpx.AsyncClient
     ) -> None:
         """GET /v1/users/{id} is public, no auth header needed."""
-        auth = await register_user(client, handle="public-user")
+        auth = await register_user(client, username="public-user")
         user_id = auth["user"]["id"]
 
         # No Authorization header
@@ -55,7 +55,7 @@ class TestGetUserProfile:
         self, client: httpx.AsyncClient
     ) -> None:
         """password_hash must NOT be in the public response."""
-        auth = await register_user(client, handle="no-pw-user")
+        auth = await register_user(client, username="no-pw-user")
         user_id = auth["user"]["id"]
 
         resp = await client.get(f"/v1/users/{user_id}")
@@ -65,14 +65,14 @@ class TestGetUserProfile:
     async def test_response_has_exactly_expected_fields(
         self, client: httpx.AsyncClient
     ) -> None:
-        """Response has exactly {id, handle, created_at}."""
-        auth = await register_user(client, handle="exact-fields")
+        """Response has exactly {id, username, created_at}."""
+        auth = await register_user(client, username="exact-fields")
         user_id = auth["user"]["id"]
 
         resp = await client.get(f"/v1/users/{user_id}")
         assert resp.status_code == 200
         data = resp.json()
-        assert set(data.keys()) == {"id", "handle", "created_at"}
+        assert set(data.keys()) == {"id", "username", "created_at"}
 
 
 class TestGetUserProfileErrors:

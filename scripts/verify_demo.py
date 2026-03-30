@@ -19,7 +19,7 @@ import httpx
 # ---------------------------------------------------------------------------
 
 DEFAULT_BASE_URL = "https://api.phiacta.com"
-SEED_USER_HANDLE = "seed-user"
+SEED_USERNAME = "seed-user"
 SEED_USER_PASSWORD = os.environ.get("PHIACTA_SEED_PASSWORD", "SeedAgent!2026")
 TIMEOUT = 30.0
 
@@ -64,7 +64,7 @@ def login(client: httpx.Client, base: str) -> tuple[str, str]:
     """Log in as the seed user. Returns (token, user_id)."""
     r = client.post(
         f"{v1(base)}/auth/login",
-        json={"handle": SEED_USER_HANDLE, "password": SEED_USER_PASSWORD},
+        json={"username": SEED_USERNAME, "password": SEED_USER_PASSWORD},
     )
     r.raise_for_status()
     data = r.json()

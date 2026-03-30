@@ -12,7 +12,7 @@ Run with:
 
     pytest tests/integration/test_forgejo_remaining.py -m forgejo
 
-Each test registers its own user (uuid4-prefixed handles) and is
+Each test registers its own user (uuid4-prefixed usernames) and is
 fully self-contained. No imports from phiacta source.
 """
 
@@ -40,7 +40,7 @@ pytestmark = [pytest.mark.forgejo, pytest.mark.anyio]
 
 async def register_user(
     client: httpx.AsyncClient,
-    handle: str | None = None,
+    username: str | None = None,
     password: str = "Integration1!",
 ) -> dict:
     """Register a new user and return the full auth response dict.
@@ -51,7 +51,7 @@ async def register_user(
     resp = await client.post(
         "/v1/auth/register",
         json={
-            "handle": handle or f"user-{uid}",
+            "username": username or f"user-{uid}",
             "password": password,
         },
     )

@@ -35,7 +35,7 @@ def _mount_metadata_router(client: httpx.AsyncClient) -> None:
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"meta-{uid}")
+    auth = await register_user(client, username=f"meta-{uid}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -100,7 +100,7 @@ class TestPutMetadata:
 
     async def test_put_metadata_non_owner_rejected(self, ready_entry: tuple[AuthedFixture, dict], client: httpx.AsyncClient) -> None:
         (_, _, _), entry = ready_entry
-        other = await register_user(client, handle=f"other-{uuid4().hex[:8]}")
+        other = await register_user(client, username=f"other-{uuid4().hex[:8]}")
         resp = await client.put(f"/v1/extensions/metadata/{entry['id']}", json={"title": "Hijacked"}, headers=auth_header(other["access_token"]))
         assert resp.status_code == 403
 
@@ -125,7 +125,7 @@ class TestPatchMetadata:
 
     async def test_patch_metadata_non_owner_rejected(self, ready_entry: tuple[AuthedFixture, dict], client: httpx.AsyncClient) -> None:
         (_, _, _), entry = ready_entry
-        other = await register_user(client, handle=f"other-{uuid4().hex[:8]}")
+        other = await register_user(client, username=f"other-{uuid4().hex[:8]}")
         resp = await client.patch(f"/v1/extensions/metadata/{entry['id']}", json={"summary": "Nope"}, headers=auth_header(other["access_token"]))
         assert resp.status_code == 403
 
