@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 class PluginType(Enum):
-    """Type of plugin: extension, view, or tool.
+    """Type of plugin: extension or tool.
 
     This is a closed infrastructure set defined by the platform architecture,
     not open-ended domain data. The anti-pattern prohibition on Python enums
@@ -45,7 +45,6 @@ class PluginType(Enum):
     """
 
     EXTENSION = "extension"
-    VIEW = "view"
     TOOL = "tool"
 
 
@@ -78,21 +77,18 @@ class PluginRegistration:
 # Maps PluginType to the directory name under src/phiacta/
 _TYPE_TO_DIR: dict[PluginType, str] = {
     PluginType.EXTENSION: "extensions",
-    PluginType.VIEW: "views",
     PluginType.TOOL: "tools",
 }
 
 # Maps PluginType to the URL prefix for router mounting
 _TYPE_TO_PREFIX: dict[PluginType, str] = {
     PluginType.EXTENSION: "/v1/extensions",
-    PluginType.VIEW: "/v1/views",
     PluginType.TOOL: "/v1/tools",
 }
 
 # Maps plugin_dirs key to PluginType
 _DIR_KEY_TO_TYPE: dict[str, PluginType] = {
     "extension": PluginType.EXTENSION,
-    "view": PluginType.VIEW,
     "tool": PluginType.TOOL,
 }
 
@@ -129,7 +125,6 @@ class PluginRegistry:
             package_root = Path(__file__).parent
             self._plugin_dirs = {
                 "extension": package_root / "extensions",
-                "view": package_root / "views",
                 "tool": package_root / "tools",
             }
 
