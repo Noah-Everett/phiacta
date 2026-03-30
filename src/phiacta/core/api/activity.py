@@ -121,6 +121,7 @@ async def get_activity(
                 continue
         result_items.append(ActivityItem(
             id=a.id,
+            actor_id=a.actor_id,
             action=a.action,
             entity_type=ent.entity_type if ent else "unknown",
             entity_id=a.entity_id,

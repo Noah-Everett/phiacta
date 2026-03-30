@@ -1102,6 +1102,12 @@ class ForgejoGitService:
         sha = ""
         if resp.status_code != 204 and resp.content:
             sha = resp.json().get("sha", "")
+        # Fallback: re-fetch the PR detail for the authoritative merge_commit_sha.
+        if not sha:
+            pr_resp = await self._request(
+                "GET", f"/repos/{repo}/pulls/{number}",
+            )
+            sha = pr_resp.json().get("merge_commit_sha", "")
         logger.info("Merged PR #%d on %s (sha=%s)", number, repo, sha[:12] if sha else "?")
         return sha
 

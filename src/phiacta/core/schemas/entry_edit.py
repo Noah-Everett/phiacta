@@ -17,7 +17,7 @@ class EditProposalFileChange(BaseModel):
     """A single file change in an edit proposal."""
 
     path: str = Field(min_length=1, max_length=1000)
-    content: str  # base64-encoded
+    content: str
 
 
 class EditProposalCreate(BaseModel):

@@ -145,6 +145,7 @@ class EntityService:
         parent_id: UUID,
         issue_external_ref: str,
         created_by: UUID,
+        external_ref: str | None = None,
         metadata: dict | None = None,
     ) -> Entity | None:
         """Register a comment entity under an issue entity and log activity.
@@ -166,6 +167,7 @@ class EntityService:
         comment_entity = await self.register_entity(
             entity_type="comment",
             parent_id=issue_entity.id,
+            external_ref=external_ref,
             created_by=created_by,
         )
         await self.log_activity(

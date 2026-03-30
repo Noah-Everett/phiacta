@@ -11,8 +11,6 @@ Read endpoints (list, detail) are public.
 
 from __future__ import annotations
 
-import base64
-import binascii
 import logging
 import re
 import unicodedata
@@ -129,21 +127,16 @@ async def create_edit_proposal(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Invalid file path") from exc
 
-    # Decode file contents and check size.
-    decoded_files: list[FileContent] = []
+    # Validate file sizes (content is plain text, not base64).
+    validated_files: list[FileContent] = []
     for fc in body.files:
-        try:
-            raw = base64.b64decode(fc.content)
-        except (binascii.Error, ValueError) as exc:
-            raise HTTPException(
-                status_code=400, detail="Invalid base64 content",
-            ) from exc
-        if len(raw) > settings.max_file_size_bytes:
+        raw_size = len(fc.content.encode("utf-8"))
+        if raw_size > settings.max_file_size_bytes:
             raise HTTPException(
                 status_code=400,
                 detail=f"File content exceeds maximum size of {settings.max_file_size_bytes} bytes",
             )
-        decoded_files.append(FileContent(path=fc.path, content=raw))
+        validated_files.append(FileContent(path=fc.path, content=fc.content))
 
     # Step 1: Create branch from main.
     branch_name = _make_branch_name(user.username, body.title)
@@ -168,7 +161,7 @@ async def create_edit_proposal(
     message = body.title
     try:
         await git_service.commit_files(
-            entry_id, decoded_files, author, message, branch=branch_name,
+            entry_id, validated_files, author, message, branch=branch_name,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
         raise HTTPException(
