@@ -64,15 +64,21 @@ def discovery_condition(user: User | UUID | None = None):
 
 
 def check_entry_access(entry: Entry, user: User | None) -> None:
-    """Raise 403 if the entry is private and the user is not the owner.
+    """Raise 403 if the entry is not accessible to the caller.
+
+    Fail-closed: only ``"public"`` entries are visible to everyone.
+    For any other visibility value (``"private"`` or unknown), the caller
+    must be the entry owner.
 
     Used for direct-access endpoints (GET /entries/{id}, sub-resources,
     entity resolve).  For listings/search/graph, use ``discovery_condition``
     instead — those silently exclude private entries.
     """
-    if entry.visibility == "private":
-        if user is None or entry.created_by != user.id:
-            raise HTTPException(
-                status_code=403,
-                detail="You do not have access to this entry",
-            )
+    if entry.visibility == "public":
+        return  # public entries always accessible
+    # For private or any unknown value, require owner
+    if user is None or entry.created_by != user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this entry",
+        )

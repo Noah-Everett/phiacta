@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.repositories.entry_repository import EntryRepository
-from phiacta.core.visibility import check_entry_access  # noqa: F401 — re-export
+from phiacta.core.visibility import check_entry_access
 
 
 async def get_writable_entry(
@@ -49,16 +49,19 @@ async def get_writable_entry(
 async def get_proposable_entry(
     entry_id: UUID,
     db: AsyncSession,
+    user: User | None = None,
 ) -> Entry:
     """Load an entry and verify it can receive edit proposals.
 
-    Checks that the entry exists (404) and repo is ready (409).
+    Checks that the entry exists (404), visibility allows access (403),
+    and repo is ready (409).
     Does NOT check ownership — any authenticated user can create a proposal.
     """
     repo = EntryRepository(db)
     entry = await repo.get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
+    check_entry_access(entry, user)
     if entry.repo_status != "ready":
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",

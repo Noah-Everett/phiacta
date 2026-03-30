@@ -28,6 +28,7 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
+    set_entry_visibility,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -38,29 +39,6 @@ needs_pg = pytest.mark.skipif(
 )
 
 pytestmark = needs_pg
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-async def set_entry_visibility(
-    session_factory: async_sessionmaker[AsyncSession],
-    entry_id: str,
-    visibility: str,
-) -> None:
-    """Set an entry's visibility directly in the DB."""
-    from phiacta.core.models.entry import Entry
-    from sqlalchemy import select
-
-    async with session_factory() as session:
-        result = await session.execute(
-            select(Entry).where(Entry.id == UUID(entry_id))
-        )
-        entry = result.scalar_one()
-        entry.visibility = visibility
-        await session.commit()
 
 
 async def _ensure_search_version(

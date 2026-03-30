@@ -16,9 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.auth.dependencies import get_optional_user
-from phiacta.core.compose import EntryDataProvider
-from phiacta.core.tool_deps import get_db
+from phiacta.core.tool_deps import get_db, get_optional_user, EntryDataProvider
 from phiacta.extensions.search_tsv.repository import get_active_version
 from phiacta.extensions.search_tsv.search_service import search_text
 from phiacta.tools.search.schemas import SearchResponse, SearchResultItem

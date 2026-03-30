@@ -14,7 +14,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from phiacta.main import app
@@ -24,26 +23,10 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
+    set_entry_visibility,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
-
-
-async def set_entry_visibility(
-    session_factory: async_sessionmaker[AsyncSession],
-    entry_id: str,
-    visibility: str,
-) -> None:
-    """Set an entry's visibility directly in the DB."""
-    from phiacta.core.models.entry import Entry
-
-    async with session_factory() as session:
-        result = await session.execute(
-            select(Entry).where(Entry.id == UUID(entry_id))
-        )
-        entry = result.scalar_one()
-        entry.visibility = visibility
-        await session.commit()
 
 
 def _get_entry_id_get_routes() -> list[str]:

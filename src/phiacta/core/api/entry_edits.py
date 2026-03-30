@@ -120,7 +120,7 @@ async def create_edit_proposal(
     settings: Settings = Depends(get_settings),
 ) -> EditProposalListItem:
     """Create an edit proposal (branch + PR) for an entry."""
-    entry = await get_proposable_entry(entry_id, db)
+    entry = await get_proposable_entry(entry_id, db, user=user)
 
     # Validate all file paths before touching Forgejo.
     for fc in body.files:

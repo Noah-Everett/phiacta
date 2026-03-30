@@ -13,9 +13,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_user
+from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
+from phiacta.core.repositories.entry_repository import EntryRepository
+from phiacta.core.visibility import check_entry_access
 from phiacta.extensions.metadata.repository import MetadataRepository
 from phiacta.extensions.metadata.schemas import (
     MetadataResponse, MetadataSetRequest, MetadataUpdateRequest,
@@ -35,8 +37,14 @@ def _to_response(meta) -> MetadataResponse:
 
 @router.get("/", response_model=MetadataResponse)
 async def get_metadata(
-    entry_id: UUID = Query(...), db: AsyncSession = Depends(get_db),
+    entry_id: UUID = Query(...),
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
 ) -> MetadataResponse:
+    entry = await EntryRepository(db).get_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    check_entry_access(entry, user)
     repo = MetadataRepository(db)
     meta = await repo.get_by_entry_id(entry_id)
     if meta is None:

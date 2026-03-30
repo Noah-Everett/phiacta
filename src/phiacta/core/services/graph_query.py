@@ -48,7 +48,7 @@ async def traverse_references(
     """Traverse the reference graph from seeds via iterative BFS.
 
     Returns (node_id -> min_depth mapping, raw edge rows).
-    Archived entries are only visible to their owner (``viewer_id``).
+    Private entries are only visible to their owner (``viewer_id``).
     """
     if not seed_ids:
         return {}, []

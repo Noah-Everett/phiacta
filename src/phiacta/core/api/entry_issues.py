@@ -101,7 +101,7 @@ async def create_issue(
     git_service: GitService = Depends(get_git_service),
 ) -> IssueListItem:
     """Create an issue on an entry's repository."""
-    entry = await get_proposable_entry(entry_id, db)
+    entry = await get_proposable_entry(entry_id, db, user=user)
 
     try:
         issue = await git_service.create_issue(

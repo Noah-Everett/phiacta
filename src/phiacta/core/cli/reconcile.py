@@ -39,7 +39,7 @@ def _print_report(report: ReconciliationReport) -> None:
     print(f"Entries drifted:  {report.entries_drifted}")
     print(f"Entries repaired: {report.entries_repaired}")
     print(f"Entries errored:  {report.entries_errored}")
-    print(f"Entries skipped:  {report.entries_skipped} (archived/retracted)")
+    print(f"Entries skipped:  {report.entries_skipped}")
 
     if report.stuck_provisioning:
         print(f"\nStuck provisioning (repaired): {len(report.stuck_provisioning)}")

@@ -883,15 +883,13 @@ class TestTagsIdempotencyAndIsolation:
         self,
         client: httpx.AsyncClient,
     ) -> None:
-        """GET /?entry_id={nonexistent} returns empty tags, not an error."""
+        """GET /?entry_id={nonexistent} returns 404."""
         fake_id = str(uuid4())
         resp = await client.get(
             "/v1/extensions/tags/",
             params={"entry_id": fake_id},
         )
-        assert resp.status_code == 200
-        assert resp.json()["entry_id"] == fake_id
-        assert resp.json()["tags"] == []
+        assert resp.status_code == 404
 
     async def test_search_missing_tags_param_returns_422(
         self,

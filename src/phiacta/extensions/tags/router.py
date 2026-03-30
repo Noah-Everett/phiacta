@@ -52,8 +52,9 @@ async def list_tags_for_entry(
 ) -> TagListResponse:
     """List all tags for a given entry. Checks visibility."""
     entry = await EntryRepository(db).get_by_id(entry_id)
-    if entry is not None:
-        check_entry_access(entry, user)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    check_entry_access(entry, user)
     repo = TagRepository(db)
     tags = await repo.list_by_entry(entry_id)
     return TagListResponse(

@@ -14,11 +14,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.db.session import get_db
+from phiacta.core.models.user import User
 from phiacta.core.repositories.activity_repository import ActivityRepository
+from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.repositories.entity_repository import EntityRepository
 from phiacta.core.repositories.user_repository import UserRepository
 from phiacta.core.schemas.activity import ActivityFeedResponse, ActivityItem
+from phiacta.core.visibility import check_entry_access
 
 router = APIRouter(prefix="/activity", tags=["activity"])
 
@@ -29,6 +33,7 @@ async def get_activity(
     entity: UUID | None = Query(None, description="Filter by entity ID"),
     limit: int = Query(50, ge=1, le=100),
     before: UUID | None = Query(None, description="Cursor for pagination"),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> ActivityFeedResponse:
     """Query the activity feed. At least one filter (actor or entity) is required.
@@ -79,9 +84,41 @@ async def get_activity(
     entity_ids = list({a.entity_id for a in items})
     entities_by_id = await entity_repo.get_by_ids(entity_ids)
 
+    # Collect entry IDs referenced by activity items (directly or via parent)
+    # to filter out items referencing private entries the caller can't see.
+    candidate_entry_ids: set[UUID] = set()
+    for a in items:
+        ent = entities_by_id.get(a.entity_id)
+        if ent is not None:
+            if ent.entity_type == "entry":
+                candidate_entry_ids.add(a.entity_id)
+            elif ent.parent_id is not None:
+                candidate_entry_ids.add(ent.parent_id)
+
+    # Batch-load entries for visibility checks
+    visible_entries: dict[UUID, bool] = {}
+    if candidate_entry_ids:
+        entry_repo = EntryRepository(db)
+        for eid in candidate_entry_ids:
+            entry_obj = await entry_repo.get_by_id(eid)
+            if entry_obj is None:
+                visible_entries[eid] = True  # entry deleted, allow activity
+            else:
+                try:
+                    check_entry_access(entry_obj, user)
+                    visible_entries[eid] = True
+                except HTTPException:
+                    visible_entries[eid] = False
+
     result_items: list[ActivityItem] = []
     for a in items:
         ent = entities_by_id.get(a.entity_id)
+        # Check visibility: skip items referencing private entries
+        if ent is not None:
+            if ent.entity_type == "entry" and not visible_entries.get(a.entity_id, True):
+                continue
+            if ent.parent_id is not None and not visible_entries.get(ent.parent_id, True):
+                continue
         result_items.append(ActivityItem(
             id=a.id,
             action=a.action,
