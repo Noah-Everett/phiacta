@@ -31,7 +31,7 @@ from tests.e2e.conftest import (
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 
-def _b64(text: str) -> str:
+def text: str -> str:
     return base64.b64encode(text.encode()).decode()
 
 
@@ -694,7 +694,7 @@ class TestActivityActionVocabulary:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Improve data",
-                "files": [{"path": "data.csv", "content": _b64("x,y")}],
+                "files": [{"path": "data.csv", "content": "x,y"}],
             },
             headers=auth_header(token_b),
         )

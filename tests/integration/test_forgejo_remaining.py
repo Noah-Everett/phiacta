@@ -734,8 +734,6 @@ class TestProposalDetailDiff:
         whose items each have ``path``, ``patch``, ``additions``,
         ``deletions``.
         """
-        content_b64 = base64.b64encode(b"proposal file content").decode()
-
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
             token, entry_id, _ = await _setup_ready_entry(
                 client, title="Proposal Diff Detail Test",
@@ -749,7 +747,7 @@ class TestProposalDetailDiff:
                     "title": proposal_title,
                     "body": "Testing proposal diff content",
                     "files": [
-                        {"path": "proposal_file.txt", "content": content_b64},
+                        {"path": "proposal_file.txt", "content": "proposal file content"},
                     ],
                 },
                 headers=_auth_header(token),
