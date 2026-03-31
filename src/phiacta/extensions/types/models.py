@@ -22,7 +22,7 @@ class ExtensionType(UUIDMixin, Base):
     )
     entry_type: Mapped[str] = mapped_column(String(100), nullable=False)
     created_by: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default=func.now(),

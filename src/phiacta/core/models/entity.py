@@ -22,11 +22,11 @@ class Entity(Base, UUIDMixin):
 
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
     parent_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("entities.id"), nullable=True,
+        ForeignKey("entities.id", ondelete="SET NULL"), nullable=True,
     )
     external_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[UUID | None] = mapped_column(
-        ForeignKey("entities.id"), nullable=True,
+        ForeignKey("entities.id", ondelete="SET NULL"), nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
