@@ -13,6 +13,7 @@ from phiacta.config import get_settings
 from phiacta.core.api.rate_limit import limiter
 from phiacta.core.api.router import v1_router
 from phiacta.core.db.session import get_engine
+from phiacta.core.services.git_service_dep import close_git_service
 from phiacta.core.services.outbox_worker import start_outbox_worker
 from phiacta.core.webhooks.forgejo import router as webhook_router
 from phiacta.plugin import PluginRegistry
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Shutdown: cleanup
     await outbox_worker.stop()
+    await close_git_service()
     await engine.dispose()
 
 

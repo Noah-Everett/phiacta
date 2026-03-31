@@ -27,3 +27,14 @@ def get_git_service() -> GitService:
     if _instance is None:
         _instance = ForgejoGitService()
     return _instance
+
+
+async def close_git_service() -> None:
+    """Close the singleton GitService's httpx client.
+
+    Called during application shutdown to release connections.
+    """
+    global _instance
+    if _instance is not None:
+        await _instance.close()
+        _instance = None

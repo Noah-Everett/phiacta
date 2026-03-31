@@ -35,4 +35,5 @@ class ExtensionType(UUIDMixin, Base):
     __table_args__ = (
         UniqueConstraint("entity_id", name="uq_extension_types_entity"),
         Index("ix_extension_types_entity_id", "entity_id"),
+        Index("ix_extension_types_entry_type", "entry_type"),
     )

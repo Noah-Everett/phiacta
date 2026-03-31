@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from phiacta.core.compose import EntryDataProvider
 from phiacta.extensions.tags.models import ExtensionTag
 from phiacta.extensions.tags.repository import TagRepository
+from phiacta.extensions.tags.service import normalize_tags
 
 
 class TagProvider(EntryDataProvider):
@@ -75,7 +76,8 @@ class TagProvider(EntryDataProvider):
         self, entity_id: UUID, data: dict, user_id: UUID, db: AsyncSession,
     ) -> None:
         repo = TagRepository(db)
-        await repo.replace_tags(entity_id, data["tags"], user_id)
+        normalized = normalize_tags(data["tags"])
+        await repo.replace_tags(entity_id, normalized, user_id)
 
 
 entry_data_provider = TagProvider()

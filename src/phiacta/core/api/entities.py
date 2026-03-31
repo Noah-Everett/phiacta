@@ -60,8 +60,8 @@ async def resolve_entity(
         base.update(composed)
 
     elif entity.entity_type == "user":
-        user = await UserRepository(db).get_by_id(entity_id)
-        if user is not None:
-            base.update(UserResponse.model_validate(user).model_dump(mode="json"))
+        resolved_user = await UserRepository(db).get_by_id(entity_id)
+        if resolved_user is not None:
+            base.update(UserResponse.model_validate(resolved_user).model_dump(mode="json"))
 
     return base

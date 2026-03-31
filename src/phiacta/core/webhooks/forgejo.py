@@ -82,7 +82,10 @@ async def handle_forgejo_webhook(
     event_type = request.headers.get("X-Forgejo-Event", "")
 
     if event_type == "push":
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except (ValueError, KeyError):
+            raise HTTPException(status_code=400, detail="Malformed JSON payload")
         hooks = _get_on_ingest_hooks(request)
         await _handle_push(payload, db, git_service, hooks)
     else:

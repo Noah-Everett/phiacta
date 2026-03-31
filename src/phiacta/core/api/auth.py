@@ -164,7 +164,14 @@ async def create_token(
         expires_at=expires_at,
     )
     await repo.create(pat)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Token name already exists",
+        )
     await db.refresh(pat)
 
     return TokenCreateResponse(

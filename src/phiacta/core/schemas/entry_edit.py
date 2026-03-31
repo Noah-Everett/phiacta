@@ -17,13 +17,13 @@ class EditProposalFileChange(BaseModel):
     """A single file change in an edit proposal."""
 
     path: str = Field(min_length=1, max_length=1000)
-    content: str
+    content: str = Field(max_length=10_000_000)
 
 
 class EditProposalCreate(BaseModel):
     """Request body for POST /entries/{entry_id}/edits."""
 
-    title: str = Field(max_length=500)
+    title: str = Field(min_length=1, max_length=500)
     body: str | None = Field(default=None, max_length=10000)
     files: list[EditProposalFileChange] = Field(min_length=1)
 
