@@ -14,6 +14,7 @@ from phiacta.core.visibility import check_entry_access
 from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.compose import compose_entry_response
 from phiacta.core.db.session import get_db
+from phiacta.core.shared_deps import get_providers
 from phiacta.core.models.user import User
 from phiacta.core.repositories.entity_repository import EntityRepository
 from phiacta.core.repositories.entry_repository import EntryRepository
@@ -21,14 +22,6 @@ from phiacta.core.repositories.user_repository import UserRepository
 from phiacta.core.schemas.auth import UserResponse
 
 router = APIRouter(prefix="/entities", tags=["entities"])
-
-
-def _get_providers(request: Request):  # noqa: ANN202
-    """Reuse the same provider lookup as the entries router."""
-    registry = getattr(request.app.state, "plugin_registry", None)
-    if registry is not None:
-        return registry.get_entry_data_providers()
-    return getattr(request.app.state, "entry_data_providers", [])
 
 
 @router.get("/{entity_id}")
@@ -55,7 +48,7 @@ async def resolve_entity(
         if entry is None:
             return base
         check_entry_access(entry, user)
-        providers = _get_providers(request)
+        providers = get_providers(request)
         composed = await compose_entry_response(entry, providers, db)
         base.update(composed)
 

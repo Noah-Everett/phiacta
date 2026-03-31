@@ -14,12 +14,12 @@ from phiacta.core.api.entry_guards import (
 from phiacta.core.api.rate_limit import limiter
 from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.compose import (
-    EntryDataProvider,
     compose_entry_list_responses,
     compose_entry_response,
     parse_field_filter,
 )
 from phiacta.core.db.session import get_db
+from phiacta.core.shared_deps import get_providers
 from phiacta.core.models.user import User
 from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.schemas.common import PaginatedResponse
@@ -36,14 +36,6 @@ from phiacta.core.services.entry_service import EntryService
 from phiacta.core.visibility import check_entry_access
 
 router = APIRouter(prefix="/entries", tags=["entries"])
-
-
-def _get_providers(request: Request) -> list[EntryDataProvider]:
-    """Read registered entry data providers from the plugin registry."""
-    registry = getattr(request.app.state, "plugin_registry", None)
-    if registry is not None:
-        return registry.get_entry_data_providers()
-    return getattr(request.app.state, "entry_data_providers", [])
 
 
 @router.get("", response_model=PaginatedResponse[EntryListItem])
@@ -72,7 +64,7 @@ async def list_entries(
     total = await repo.count_entries(
         visibility=None if visibility == "all" else visibility, user=user,
     )
-    providers = _get_providers(request)
+    providers = get_providers(request)
     inc = parse_field_filter(include)
     exc = parse_field_filter(exclude)
     composed = await compose_entry_list_responses(
@@ -99,7 +91,7 @@ async def get_entry(
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     check_entry_access(entry, user)
-    providers = _get_providers(request)
+    providers = get_providers(request)
     inc = parse_field_filter(include)
     exc = parse_field_filter(exclude)
     composed = await compose_entry_response(
@@ -114,7 +106,7 @@ async def create_entry(
     request: Request, body: EntryCreate,
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
 ) -> EntryResponse:
-    providers = _get_providers(request)
+    providers = get_providers(request)
     all_fields = body.model_dump(exclude_unset=True)
     core_fields = set(EntryCreate.model_fields)
     provider_fields = {k: v for k, v in all_fields.items() if k not in core_fields}
@@ -150,7 +142,7 @@ async def update_entry(
             raise HTTPException(status_code=422, detail="visibility must be 'public' or 'private'")
         entry.visibility = vis
 
-    providers = _get_providers(request)
+    providers = get_providers(request)
     for provider in providers:
         if not provider.writable_fields:
             continue

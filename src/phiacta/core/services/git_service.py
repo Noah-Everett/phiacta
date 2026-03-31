@@ -234,6 +234,10 @@ class GitService(Protocol):
         """Rename a branch (used for archiving merged proposal branches)."""
         ...
 
+    async def delete_branch(self, entry_id: UUID, name: str) -> None:
+        """Delete a branch by name."""
+        ...
+
     async def list_branches(
         self, entry_id: UUID, exclude_archived: bool = True
     ) -> list[str]:
@@ -925,6 +929,12 @@ class ForgejoGitService:
             },
         )
         logger.info("Created branch %s on %s from %s", name, repo, from_ref)
+
+    async def delete_branch(self, entry_id: UUID, name: str) -> None:
+        """Delete a branch by name."""
+        repo = self._repo_path(entry_id)
+        await self._request("DELETE", f"/repos/{repo}/branches/{name}")
+        logger.info("Deleted branch %s on %s", name, repo)
 
     async def rename_branch(
         self, entry_id: UUID, old_name: str, new_name: str

@@ -164,5 +164,7 @@ async def _handle_push(
         entry.current_head_sha = after_sha
     except Exception:
         logger.exception("Ingestion failed for entry %s at SHA %s", entry_id, after_sha[:12])
+        await db.rollback()
+        return
 
     await db.commit()

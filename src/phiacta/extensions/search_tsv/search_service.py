@@ -21,6 +21,9 @@ from phiacta.core.models.entry import Entry
 from phiacta.core.models.user import User
 from phiacta.core.visibility import discovery_condition
 from phiacta.extensions.search_tsv.models import ViewSearchTsv
+from phiacta.extensions.search_tsv.repository import (
+    get_active_version as get_active_version,  # noqa: F401 — re-exported for tool isolation
+)
 
 try:
     from phiacta.extensions.metadata.models import ExtensionMetadata

@@ -121,6 +121,7 @@ async def get_activity(
             created_at=a.created_at,
         ))
 
-    # Compute next_cursor AFTER filtering
-    filtered_cursor = result_items[-1].id if result_items and len(result_items) == limit else None
-    return ActivityFeedResponse(items=result_items, next_cursor=filtered_cursor)
+    # Use the repository's cursor: if the DB had more rows, there may be
+    # more visible items on subsequent pages even if visibility filtering
+    # reduced this batch below the limit.
+    return ActivityFeedResponse(items=result_items, next_cursor=next_cursor)

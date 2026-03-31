@@ -80,10 +80,7 @@ def _raise_for_invalid_path(path: str) -> None:
     try:
         validate_file_path(path)
     except ValueError as exc:
-        msg = str(exc)
-        if "not found" in msg.lower():
-            raise HTTPException(status_code=404, detail="File not found") from exc
-        raise HTTPException(status_code=400, detail="Invalid file path") from exc
+        raise HTTPException(status_code=422, detail="Invalid file path") from exc
 
 
 async def _get_writable_entry(
@@ -136,7 +133,7 @@ async def get_entry_file_content(
     try:
         validate_file_path_read(path)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid file path") from exc
+        raise HTTPException(status_code=422, detail="Invalid file path") from exc
 
     await get_readable_entry(entry_id, db, user=user)
 

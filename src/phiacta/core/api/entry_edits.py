@@ -76,6 +76,18 @@ def _make_branch_name(username: str, title: str) -> str:
     return f"edit/{username}/{_slugify(title)}"
 
 
+async def _cleanup_branch(
+    git_service: GitService, entry_id: UUID, branch_name: str,
+) -> None:
+    """Best-effort cleanup of a proposal branch after a failed step."""
+    try:
+        await git_service.delete_branch(entry_id, branch_name)
+    except Exception:
+        logger.warning(
+            "Failed to clean up branch %s on entry %s", branch_name, entry_id,
+        )
+
+
 def _pr_to_list_item(
     pr: PullRequestInfo,
     user_username: str | None = None,
@@ -125,7 +137,7 @@ async def create_edit_proposal(
         try:
             validate_file_path(fc.path)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Invalid file path") from exc
+            raise HTTPException(status_code=422, detail="Invalid file path") from exc
 
     # Validate file sizes (content is plain text, not base64).
     validated_files: list[FileContent] = []
@@ -164,6 +176,7 @@ async def create_edit_proposal(
             entry_id, validated_files, author, message, branch=branch_name,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
+        await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
@@ -180,6 +193,7 @@ async def create_edit_proposal(
             author_name=user.username,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
+        await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
