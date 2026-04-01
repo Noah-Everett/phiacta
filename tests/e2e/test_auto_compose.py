@@ -167,56 +167,46 @@ class TestListComposition:
 
 
 class TestFieldFiltering:
-    async def test_exclude_tags(
+    async def test_include_whitelist_on_detail(
         self, ready_entry: tuple[AuthedFixture, dict],
     ) -> None:
-        (client, _, token), entry = ready_entry
-        entry_id = entry["id"]
-
-        await client.put(
-            f"/v1/extensions/tags/{entry_id}",
-            json={"tags": ["excluded"]},
-            headers=auth_header(token),
-        )
-
-        data = (await client.get(
-            f"/v1/entries/{entry_id}", params={"exclude": "tags"},
-        )).json()
-        assert data["title"] == "Compose Test"
-        assert data.get("tags") is None
-
-    async def test_include_only_title(
-        self, ready_entry: tuple[AuthedFixture, dict],
-    ) -> None:
+        """include on detail returns only the requested fields."""
         (client, _, _), entry = ready_entry
         data = (await client.get(
             f"/v1/entries/{entry['id']}", params={"include": "title"},
         )).json()
         assert data["title"] == "Compose Test"
-        # Other extension fields should be null (providers skipped)
+        # Other extension fields should be absent (whitelist)
         assert data.get("entry_type") is None
         assert data.get("tags") is None
 
-    async def test_include_and_exclude_returns_422(
+    async def test_include_references_on_list(
         self, ready_entry: tuple[AuthedFixture, dict],
     ) -> None:
-        (client, _, _), entry = ready_entry
-        resp = await client.get(
-            f"/v1/entries/{entry['id']}",
-            params={"include": "title", "exclude": "tags"},
-        )
-        assert resp.status_code == 422
-
-    async def test_list_exclude_entry_type(
-        self, ready_entry: tuple[AuthedFixture, dict],
-    ) -> None:
+        """include=references on list returns only references."""
         (client, _, _), entry = ready_entry
         items = (await client.get(
-            "/v1/entries", params={"exclude": "entry_type"},
+            "/v1/entries", params={"include": "references"},
         )).json()["items"]
         item = next(i for i in items if i["id"] == entry["id"])
-        assert item["title"] == "Compose Test"
+        assert "references" in item
+        # Default list fields not requested, so absent
+        assert item.get("title") is None
         assert item.get("entry_type") is None
+
+    async def test_include_multiple_fields(
+        self, ready_entry: tuple[AuthedFixture, dict],
+    ) -> None:
+        """include with multiple fields returns exactly those fields."""
+        (client, _, _), entry = ready_entry
+        data = (await client.get(
+            f"/v1/entries/{entry['id']}",
+            params={"include": "title,entry_type"},
+        )).json()
+        assert data["title"] == "Compose Test"
+        assert data["entry_type"] == "claim"
+        assert data.get("tags") is None
+        assert data.get("references") is None
 
 
 # ---------------------------------------------------------------------------

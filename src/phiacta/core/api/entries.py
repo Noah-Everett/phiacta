@@ -47,14 +47,9 @@ async def list_entries(
     sort: str = Query("created_at", pattern=r"^(created_at|updated_at)$"),
     order: str = Query("desc", pattern=r"^(asc|desc)$"),
     include: str | None = Query(None),
-    exclude: str | None = Query(None),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedResponse[EntryListItem]:
-    if include is not None and exclude is not None:
-        raise HTTPException(
-            status_code=422, detail="Cannot specify both include and exclude",
-        )
     repo = EntryRepository(db)
     entries = await repo.list_entries(
         limit=limit, offset=offset,
@@ -66,9 +61,8 @@ async def list_entries(
     )
     providers = get_providers(request)
     inc = parse_field_filter(include)
-    exc = parse_field_filter(exclude)
     composed = await compose_entry_list_responses(
-        entries, providers, db, include=inc, exclude=exc,
+        entries, providers, db, include=inc,
     )
     items = [EntryListItem(**row) for row in composed]
     return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
@@ -79,23 +73,17 @@ async def get_entry(
     request: Request,
     entry_id: UUID,
     include: str | None = Query(None),
-    exclude: str | None = Query(None),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> EntryDetailResponse:
-    if include is not None and exclude is not None:
-        raise HTTPException(
-            status_code=422, detail="Cannot specify both include and exclude",
-        )
     entry = await EntryRepository(db).get_by_id(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     check_entry_access(entry, user)
     providers = get_providers(request)
     inc = parse_field_filter(include)
-    exc = parse_field_filter(exclude)
     composed = await compose_entry_response(
-        entry, providers, db, include=inc, exclude=exc,
+        entry, providers, db, include=inc,
     )
     return EntryDetailResponse(**composed)
 
