@@ -258,7 +258,8 @@ class TestEntryHistory:
                 f"GET history failed: {history_resp.text}"
             )
 
-            commits = history_resp.json()
+            history_data = history_resp.json()
+            commits = history_data["items"]
             assert isinstance(commits, list), (
                 f"Expected list of commits, got: {type(commits)}"
             )
@@ -286,7 +287,8 @@ class TestEntryHistory:
                 f"GET history without auth failed: {history_resp.text}"
             )
 
-            commits = history_resp.json()
+            history_data = history_resp.json()
+            commits = history_data["items"]
             assert isinstance(commits, list), (
                 f"Expected list of commits, got: {type(commits)}"
             )
@@ -376,7 +378,7 @@ class TestContentFormat:
 
             files_resp = await client.get(f"/v1/entries/{entry_id}/files")
             assert files_resp.status_code == 200, files_resp.text
-            file_names = [f["name"] for f in files_resp.json()]
+            file_names = [f["name"] for f in files_resp.json()["items"]]
 
             # Content is at .phiacta/content.tex for latex format.
             # Check recursively — the listing may show the .phiacta
@@ -487,7 +489,7 @@ class TestCommitDiffDetail:
             assert history_resp.status_code == 200, (
                 f"GET history failed: {history_resp.text}"
             )
-            commits = history_resp.json()
+            commits = history_resp.json()["items"]
             assert isinstance(commits, list) and len(commits) >= 1, (
                 f"Expected at least 1 commit in history, got: {commits}"
             )

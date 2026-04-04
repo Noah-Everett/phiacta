@@ -74,14 +74,14 @@ def _slugify(text: str, max_length: int = 60) -> str:
     return text[:max_length] or "proposal"
 
 
-def _make_branch_name(handle: str, title: str) -> str:
-    """Generate a branch name for a proposal: ``edit/{handle}/{slug}``."""
-    return f"edit/{handle}/{_slugify(title)}"
+def _make_branch_name(username: str, title: str) -> str:
+    """Generate a branch name for a proposal: ``edit/{username}/{slug}``."""
+    return f"edit/{username}/{_slugify(title)}"
 
 
 def _pr_to_list_item(
     pr: PullRequestInfo,
-    user_handle: str | None = None,
+    user_username: str | None = None,
 ) -> EditProposalListItem:
     return EditProposalListItem(
         number=pr.number,
@@ -90,7 +90,7 @@ def _pr_to_list_item(
         state=pr.state,
         is_draft=pr.is_draft,
         author={
-            "username": user_handle or pr.author_name,
+            "username": user_username or pr.author_name,
         },
         head_branch=pr.head_branch,
         base_branch=pr.base_branch,

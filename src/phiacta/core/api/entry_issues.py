@@ -61,14 +61,14 @@ router = APIRouter(prefix="/entries", tags=["entries"])
 
 
 def _issue_to_list_item(
-    issue: IssueInfo, user_handle: str | None = None,
+    issue: IssueInfo, user_username: str | None = None,
 ) -> IssueListItem:
     return IssueListItem(
         number=issue.number,
         title=issue.title,
         body=issue.body or None,
         state=issue.state,
-        author=IssueAuthor(username=user_handle or issue.author_name),
+        author=IssueAuthor(username=user_username or issue.author_name),
         comments_count=issue.comments_count,
         created_at=issue.created_at,
         updated_at=issue.updated_at,
@@ -77,12 +77,12 @@ def _issue_to_list_item(
 
 
 def _comment_to_response(
-    comment: IssueCommentInfo, user_handle: str | None = None,
+    comment: IssueCommentInfo, user_username: str | None = None,
 ) -> IssueCommentResponse:
     return IssueCommentResponse(
         id=comment.id,
         body=comment.body,
-        author=IssueAuthor(username=user_handle or comment.author_name),
+        author=IssueAuthor(username=user_username or comment.author_name),
         created_at=comment.created_at,
         updated_at=comment.updated_at,
     )
