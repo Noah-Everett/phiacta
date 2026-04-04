@@ -480,14 +480,14 @@ class TestCreateEditProposalErrors:
         proposer: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """POST /edits with a file exceeding max_file_size_bytes returns 400."""
+        """POST /edits with a file exceeding schema max_length returns 422."""
         client, _, owner_token = owner
         _, _, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
         entry_id = entry["id"]
 
-        # Default max is 25 MB; create content slightly over that
-        oversized = "x" * (25 * 1024 * 1024 + 1)
+        # Schema max_length is 10MB; Pydantic rejects before our size check
+        oversized = "x" * (10_000_001)
 
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits",
@@ -499,8 +499,7 @@ class TestCreateEditProposalErrors:
             },
             headers=auth_header(proposer_token),
         )
-        assert resp.status_code == 400
-        assert "exceeds maximum size" in resp.json()["detail"].lower()
+        assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------
