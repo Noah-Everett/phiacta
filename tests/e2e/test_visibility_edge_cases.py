@@ -73,14 +73,14 @@ def _mount_routers(client: httpx.AsyncClient) -> None:
 @pytest.fixture
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
     """Register the entry owner and return (client, user_data, token)."""
-    auth = await register_user(client, handle=f"edge-owner-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"edge-owner-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
 async def other_user(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a non-owner user and return (client, user_data, token)."""
-    auth = await register_user(client, handle=f"edge-other-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"edge-other-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 

@@ -16,7 +16,6 @@ Only the entry owner can merge or close proposals.
 
 from __future__ import annotations
 
-import base64
 from uuid import UUID, uuid4
 
 import httpx
@@ -35,17 +34,12 @@ from tests.e2e.conftest import (
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 
-def _b64(text: str) -> str:
-    """Encode text as base64 string for file content."""
-    return base64.b64encode(text.encode()).decode()
-
-
 @pytest.fixture
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user (the entry owner) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
     auth = await register_user(
-        client, handle=f"owner-{uid}"
+        client, username=f"owner-{uid}"
     )
     return client, auth["user"], auth["access_token"]
 
@@ -55,7 +49,7 @@ async def proposer(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a second user (a non-owner proposer) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
     auth = await register_user(
-        client, handle=f"proposer-{uid}"
+        client, username=f"proposer-{uid}"
     )
     return client, auth["user"], auth["access_token"]
 
@@ -98,7 +92,7 @@ class TestCreateEditProposal:
             json={
                 "title": "Fix typo in README",
                 "body": "Corrected spelling of 'hypothesis'",
-                "files": [{"path": "README.md", "content": _b64("# Fixed README")}],
+                "files": [{"path": "README.md", "content": "# Fixed README"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -133,7 +127,7 @@ class TestCreateEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Non-owner proposal",
-                "files": [{"path": "data.csv", "content": _b64("a,b,c")}],
+                "files": [{"path": "data.csv", "content": "a,b,c"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -156,7 +150,7 @@ class TestCreateEditProposal:
             json={
                 "title": "Self-edit proposal",
                 "body": "Owner proposes changes to own entry",
-                "files": [{"path": "notes.txt", "content": _b64("self-edit")}],
+                "files": [{"path": "notes.txt", "content": "self-edit"}],
             },
             headers=auth_header(owner_token),
         )
@@ -184,9 +178,9 @@ class TestCreateEditProposal:
                 "title": "Multi-file proposal",
                 "body": "Updating several files",
                 "files": [
-                    {"path": "README.md", "content": _b64("# Updated")},
-                    {"path": "data/results.csv", "content": _b64("x,y\n1,2")},
-                    {"path": "analysis.py", "content": _b64("print('hello')")},
+                    {"path": "README.md", "content": "# Updated"},
+                    {"path": "data/results.csv", "content": "x,y\n1,2"},
+                    {"path": "analysis.py", "content": "print('hello')"},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -203,7 +197,7 @@ class TestCreateEditProposal:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """The head_branch follows the pattern edit/{user_handle}/{slugified_title}."""
+        """The head_branch follows the pattern edit/{username}/{slugified_title}."""
         client, _, owner_token = owner
         _, proposer_user, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
@@ -213,14 +207,14 @@ class TestCreateEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Fix Typo In README",
-                "files": [{"path": "README.md", "content": _b64("fixed")}],
+                "files": [{"path": "README.md", "content": "fixed"}],
             },
             headers=auth_header(proposer_token),
         )
         assert resp.status_code == 201
         head_branch = resp.json()["head_branch"]
-        # Must start with edit/{proposer_handle}/
-        assert head_branch.startswith(f"edit/{proposer_user['handle']}/")
+        # Must start with edit/{proposer_username}/
+        assert head_branch.startswith(f"edit/{proposer_user['username']}/")
         # Must contain a slugified version of the title (lowercase, hyphens)
         slug_part = head_branch.split("/", 2)[2]
         assert slug_part  # non-empty
@@ -244,7 +238,7 @@ class TestCreateEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "No body proposal",
-                "files": [{"path": "data.txt", "content": _b64("data")}],
+                "files": [{"path": "data.txt", "content": "data"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -271,7 +265,7 @@ class TestCreateEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Unauthorized",
-                "files": [{"path": "README.md", "content": _b64("x")}],
+                "files": [{"path": "README.md", "content": "x"}],
             },
             # No auth header
         )
@@ -289,7 +283,7 @@ class TestCreateEditProposalErrors:
             f"/v1/entries/{fake_id}/edits",
             json={
                 "title": "Ghost entry",
-                "files": [{"path": "README.md", "content": _b64("x")}],
+                "files": [{"path": "README.md", "content": "x"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -312,7 +306,7 @@ class TestCreateEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Too early",
-                "files": [{"path": "README.md", "content": _b64("x")}],
+                "files": [{"path": "README.md", "content": "x"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -336,7 +330,7 @@ class TestCreateEditProposalErrors:
             json={
                 "title": "Phiacta entry.yaml edit",
                 "files": [
-                    {"path": ".phiacta/entry.yaml", "content": _b64("updated: true")},
+                    {"path": ".phiacta/entry.yaml", "content": "updated: true"},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -381,7 +375,7 @@ class TestCreateEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "X" * 501,
-                "files": [{"path": "README.md", "content": _b64("x")}],
+                "files": [{"path": "README.md", "content": "x"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -402,7 +396,7 @@ class TestCreateEditProposalErrors:
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits",
             json={
-                "files": [{"path": "README.md", "content": _b64("x")}],
+                "files": [{"path": "README.md", "content": "x"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -425,7 +419,7 @@ class TestCreateEditProposalErrors:
             json={
                 "title": "Traversal attack",
                 "files": [
-                    {"path": "../etc/passwd", "content": _b64("hacked")},
+                    {"path": "../etc/passwd", "content": "hacked"},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -449,7 +443,7 @@ class TestCreateEditProposalErrors:
             json={
                 "title": "Absolute path attack",
                 "files": [
-                    {"path": "/etc/passwd", "content": _b64("hacked")},
+                    {"path": "/etc/passwd", "content": "hacked"},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -493,15 +487,14 @@ class TestCreateEditProposalErrors:
         entry_id = entry["id"]
 
         # Default max is 25 MB; create content slightly over that
-        oversized = b"x" * (25 * 1024 * 1024 + 1)
-        content_b64 = base64.b64encode(oversized).decode()
+        oversized = "x" * (25 * 1024 * 1024 + 1)
 
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Oversized file",
                 "files": [
-                    {"path": "big.bin", "content": content_b64},
+                    {"path": "big.bin", "content": oversized},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -553,7 +546,7 @@ class TestListEditProposals:
                 f"/v1/entries/{entry_id}/edits",
                 json={
                     "title": f"Proposal {i}",
-                    "files": [{"path": f"file{i}.txt", "content": _b64(f"content {i}")}],
+                    "files": [{"path": f"file{i}.txt", "content": f"content {i}"}],
                 },
                 headers=auth_header(proposer_token),
             )
@@ -586,7 +579,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To be closed",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -605,7 +598,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Stays open",
-                "files": [{"path": "b.txt", "content": _b64("b")}],
+                "files": [{"path": "b.txt", "content": "b"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -639,7 +632,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To close",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -650,7 +643,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Stays open",
-                "files": [{"path": "b.txt", "content": _b64("b")}],
+                "files": [{"path": "b.txt", "content": "b"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -690,7 +683,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To merge",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -708,7 +701,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Stays open",
-                "files": [{"path": "b.txt", "content": _b64("b")}],
+                "files": [{"path": "b.txt", "content": "b"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -756,7 +749,7 @@ class TestListEditProposals:
             json={
                 "title": "Field check",
                 "body": "Checking fields",
-                "files": [{"path": "README.md", "content": _b64("x")}],
+                "files": [{"path": "README.md", "content": "x"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -773,7 +766,7 @@ class TestListEditProposals:
             "created_at", "updated_at", "merged_at",
         }
         assert expected_keys.issubset(set(item.keys()))
-        assert set(item["author"].keys()) >= {"handle"}
+        assert set(item["author"].keys()) >= {"username"}
 
     async def test_list_proposals_pagination(
         self,
@@ -794,7 +787,7 @@ class TestListEditProposals:
                 f"/v1/entries/{entry_id}/edits",
                 json={
                     "title": f"Pagination {i}",
-                    "files": [{"path": f"f{i}.txt", "content": _b64(f"c{i}")}],
+                    "files": [{"path": f"f{i}.txt", "content": f"c{i}"}],
                 },
                 headers=auth_header(proposer_token),
             )
@@ -868,7 +861,7 @@ class TestGetEditProposalDetail:
             json={
                 "title": "Detail test",
                 "body": "Testing detail endpoint",
-                "files": [{"path": "README.md", "content": _b64("# Detail")}],
+                "files": [{"path": "README.md", "content": "# Detail"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -912,7 +905,7 @@ class TestGetEditProposalDetail:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Public detail",
-                "files": [{"path": "README.md", "content": _b64("public")}],
+                "files": [{"path": "README.md", "content": "public"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -990,7 +983,7 @@ class TestMergeEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Merge me",
-                "files": [{"path": "README.md", "content": _b64("# Merged")}],
+                "files": [{"path": "README.md", "content": "# Merged"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1023,7 +1016,7 @@ class TestMergeEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "State check merge",
-                "files": [{"path": "data.txt", "content": _b64("merged data")}],
+                "files": [{"path": "data.txt", "content": "merged data"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1063,7 +1056,7 @@ class TestMergeEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "No auth merge",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1093,7 +1086,7 @@ class TestMergeEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Non-owner merge",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1183,7 +1176,7 @@ class TestMergeEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Normal proposal",
-                "files": [{"path": "README.md", "content": _b64("normal")}],
+                "files": [{"path": "README.md", "content": "normal"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1221,7 +1214,7 @@ class TestMergeEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Double merge",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1268,7 +1261,7 @@ class TestCloseEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Close me",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1298,7 +1291,7 @@ class TestCloseEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "State check close",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1334,7 +1327,7 @@ class TestCloseEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Idempotent close",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1377,7 +1370,7 @@ class TestCloseEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Close on private",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1415,7 +1408,7 @@ class TestCloseEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "No auth close",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1445,7 +1438,7 @@ class TestCloseEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Non-owner close",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1524,7 +1517,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Lifecycle merge",
-                "files": [{"path": "README.md", "content": _b64("# Lifecycle")}],
+                "files": [{"path": "README.md", "content": "# Lifecycle"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1579,7 +1572,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Lifecycle close",
-                "files": [{"path": "README.md", "content": _b64("# Close")}],
+                "files": [{"path": "README.md", "content": "# Close"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1626,7 +1619,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To merge",
-                "files": [{"path": "a.txt", "content": _b64("merge me")}],
+                "files": [{"path": "a.txt", "content": "merge me"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1638,7 +1631,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To close",
-                "files": [{"path": "b.txt", "content": _b64("close me")}],
+                "files": [{"path": "b.txt", "content": "close me"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1714,7 +1707,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_a['id']}/edits",
             json={
                 "title": "Proposal for A",
-                "files": [{"path": "a.txt", "content": _b64("a")}],
+                "files": [{"path": "a.txt", "content": "a"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1725,7 +1718,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_b['id']}/edits",
             json={
                 "title": "Proposal for B",
-                "files": [{"path": "b.txt", "content": _b64("b")}],
+                "files": [{"path": "b.txt", "content": "b"}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1768,7 +1761,7 @@ class TestEditProposalLifecycle:
                 f"/v1/entries/{entry_a['id']}/edits",
                 json={
                     "title": f"A-{i}",
-                    "files": [{"path": f"a{i}.txt", "content": _b64(f"a{i}")}],
+                    "files": [{"path": f"a{i}.txt", "content": f"a{i}"}],
                 },
                 headers=auth_header(proposer_token),
             )
@@ -1780,7 +1773,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_b['id']}/edits",
             json={
                 "title": "B-0",
-                "files": [{"path": "b0.txt", "content": _b64("b0")}],
+                "files": [{"path": "b0.txt", "content": "b0"}],
             },
             headers=auth_header(proposer_token),
         )

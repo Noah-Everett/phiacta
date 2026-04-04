@@ -111,7 +111,7 @@ def _mount_extension_routers(client: httpx.AsyncClient) -> None:
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"page-user-{uid}")
+    auth = await register_user(client, username=f"page-user-{uid}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -119,7 +119,7 @@ async def authed(client: httpx.AsyncClient) -> AuthedFixture:
 async def other_user(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a second user for visibility tests."""
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"page-other-{uid}")
+    auth = await register_user(client, username=f"page-other-{uid}")
     return client, auth["user"], auth["access_token"]
 
 

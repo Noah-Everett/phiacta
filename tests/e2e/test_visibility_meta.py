@@ -67,14 +67,14 @@ class TestVisibilityMeta:
         e2e_session_factory: async_sessionmaker[AsyncSession],
         fake_git: FakeGitService,
     ) -> None:
-        owner = await register_user(client, handle="vmeta-owner")
+        owner = await register_user(client, username="vmeta-owner")
         owner_token = owner["access_token"]
         entry = await create_entry(client, owner_token, title="Visibility Meta Test")
         entry_id = entry["id"]
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
         await set_entry_visibility(e2e_session_factory, entry_id, "private")
 
-        other = await register_user(client, handle="vmeta-other")
+        other = await register_user(client, username="vmeta-other")
         other_token = other["access_token"]
 
         routes = _get_entry_id_get_routes()
@@ -113,7 +113,7 @@ class TestVisibilityMeta:
         fake_git: FakeGitService,
     ) -> None:
         """Owner should be able to access all GET {entry_id} routes for their private entry."""
-        owner = await register_user(client, handle="vmeta-own-ok")
+        owner = await register_user(client, username="vmeta-own-ok")
         owner_token = owner["access_token"]
         entry = await create_entry(client, owner_token, title="Visibility Meta Owner")
         entry_id = entry["id"]
