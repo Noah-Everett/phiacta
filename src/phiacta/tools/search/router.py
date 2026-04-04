@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.tool_deps import get_db, get_optional_user, EntryDataProvider
+from phiacta.core.tool_deps import get_db, get_optional_user, get_providers, EntryDataProvider
 from phiacta.core.pagination import decode_offset_cursor, encode_offset_cursor
 from phiacta.extensions.search_tsv.repository import get_active_version
 from phiacta.extensions.search_tsv.search_service import search_text
@@ -30,13 +30,6 @@ _DEFAULT_LANGUAGE = "english"
 
 _RESERVED_PARAMS = frozenset({"q", "visibility", "limit", "cursor"})
 
-
-def _get_providers(request: Request) -> list[EntryDataProvider]:
-    """Read registered entry data providers from the plugin registry."""
-    registry = getattr(request.app.state, "plugin_registry", None)
-    if registry is not None:
-        return registry.get_entry_data_providers()
-    return getattr(request.app.state, "entry_data_providers", [])
 
 
 @router.get("/", response_model=SearchResponse)
@@ -66,7 +59,7 @@ async def search_entries(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    providers = _get_providers(request)
+    providers = get_providers(request)
     filterable = {
         field: provider
         for provider in providers
