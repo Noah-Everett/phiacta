@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from phiacta.core.schemas.common import PaginatedResponse
+from phiacta.core.pagination import CursorPage
 
 
 class SearchResultItem(BaseModel):
@@ -20,5 +20,5 @@ class SearchResultItem(BaseModel):
     entry_type: str | None = None
 
 
-class SearchResponse(PaginatedResponse[SearchResultItem]):
+class SearchResponse(CursorPage[SearchResultItem]):
     version_id: UUID | None

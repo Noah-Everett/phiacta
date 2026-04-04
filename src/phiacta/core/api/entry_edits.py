@@ -50,9 +50,12 @@ from phiacta.core.services.git_service import (
     PullRequestInfo,
     RepoNotFoundError,
 )
+from phiacta.core.pagination import CursorPage, decode_page_cursor, encode_page_cursor
 from phiacta.core.services.git_service_dep import get_git_service
 
 logger = logging.getLogger(__name__)
+
+_FORGEJO_MAX_LIMIT = 50
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
@@ -71,26 +74,14 @@ def _slugify(text: str, max_length: int = 60) -> str:
     return text[:max_length] or "proposal"
 
 
-def _make_branch_name(username: str, title: str) -> str:
-    """Generate a branch name for a proposal: ``edit/{username}/{slug}``."""
-    return f"edit/{username}/{_slugify(title)}"
-
-
-async def _cleanup_branch(
-    git_service: GitService, entry_id: UUID, branch_name: str,
-) -> None:
-    """Best-effort cleanup of a proposal branch after a failed step."""
-    try:
-        await git_service.delete_branch(entry_id, branch_name)
-    except Exception:
-        logger.warning(
-            "Failed to clean up branch %s on entry %s", branch_name, entry_id,
-        )
+def _make_branch_name(handle: str, title: str) -> str:
+    """Generate a branch name for a proposal: ``edit/{handle}/{slug}``."""
+    return f"edit/{handle}/{_slugify(title)}"
 
 
 def _pr_to_list_item(
     pr: PullRequestInfo,
-    user_username: str | None = None,
+    user_handle: str | None = None,
 ) -> EditProposalListItem:
     return EditProposalListItem(
         number=pr.number,
@@ -99,7 +90,7 @@ def _pr_to_list_item(
         state=pr.state,
         is_draft=pr.is_draft,
         author={
-            "username": user_username or pr.author_name,
+            "handle": user_handle or pr.author_name,
         },
         head_branch=pr.head_branch,
         base_branch=pr.base_branch,
@@ -137,7 +128,7 @@ async def create_edit_proposal(
         try:
             validate_file_path(fc.path)
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail="Invalid file path") from exc
+            raise HTTPException(status_code=400, detail="Invalid file path") from exc
 
     # Validate file sizes (content is plain text, not base64).
     validated_files: list[FileContent] = []
@@ -151,7 +142,7 @@ async def create_edit_proposal(
         validated_files.append(FileContent(path=fc.path, content=fc.content))
 
     # Step 1: Create branch from main.
-    branch_name = _make_branch_name(user.username, body.title)
+    branch_name = _make_branch_name(user.handle, body.title)
     try:
         await git_service.create_branch(entry_id, branch_name)
     except ForgejoUnavailableError as exc:
@@ -169,14 +160,13 @@ async def create_edit_proposal(
             ) from exc
 
     # Step 2: Commit files to the proposal branch.
-    author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
     message = body.title
     try:
         await git_service.commit_files(
             entry_id, validated_files, author, message, branch=branch_name,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
-        await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
@@ -190,10 +180,9 @@ async def create_edit_proposal(
             body=pr_body,
             head_branch=branch_name,
             base_branch="main",
-            author_name=user.username,
+            author_name=user.handle,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
-        await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
@@ -217,7 +206,7 @@ async def create_edit_proposal(
             pr_info.number, entry_id,
         )
 
-    return _pr_to_list_item(pr_info, user.username)
+    return _pr_to_list_item(pr_info, user.handle)
 
 
 # ---------------------------------------------------------------------------
@@ -225,22 +214,32 @@ async def create_edit_proposal(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{entry_id}/edits", response_model=list[EditProposalListItem])
+@router.get("/{entry_id}/edits", response_model=CursorPage[EditProposalListItem])
 async def list_edit_proposals(
     entry_id: UUID,
     state: str | None = Query(None, pattern="^(open|closed|merged)$"),
     limit: int = Query(50, ge=1, le=200),
-    page: int = Query(1, ge=1),
+    cursor: str | None = Query(None),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
-) -> list[EditProposalListItem]:
+) -> CursorPage[EditProposalListItem]:
     """List edit proposals for an entry, optionally filtered by state."""
     await get_readable_entry(entry_id, db, user=user)
 
+    # Decode cursor to page number (Forgejo uses page-based pagination)
+    page = 1
+    if cursor is not None:
+        try:
+            page = decode_page_cursor(cursor)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    effective_limit = min(limit, _FORGEJO_MAX_LIMIT)
+
     try:
         prs = await git_service.list_pull_requests(
-            entry_id, state=state, limit=limit, page=page,
+            entry_id, state=state, limit=effective_limit, page=page,
         )
     except RepoNotFoundError as exc:
         raise HTTPException(
@@ -251,7 +250,11 @@ async def list_edit_proposals(
             status_code=502, detail="Git service unavailable",
         ) from exc
 
-    return [_pr_to_list_item(pr) for pr in prs]
+    items = [_pr_to_list_item(pr) for pr in prs]
+    has_more = len(prs) == effective_limit
+    next_cursor = encode_page_cursor(page + 1) if has_more else None
+
+    return CursorPage(items=items, limit=effective_limit, has_more=has_more, next_cursor=next_cursor)
 
 
 # ---------------------------------------------------------------------------

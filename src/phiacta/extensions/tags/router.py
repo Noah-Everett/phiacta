@@ -26,7 +26,7 @@ from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
 from phiacta.core.repositories.entry_repository import EntryRepository
-from phiacta.core.schemas.common import PaginatedResponse
+from phiacta.core.pagination import CursorPage, build_keyset_cursor, decode_keyset_cursor
 from phiacta.core.visibility import check_entry_access
 from phiacta.extensions.tags.repository import TagRepository
 from phiacta.extensions.tags.schemas import (
@@ -80,7 +80,7 @@ async def set_tags(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError:
@@ -97,15 +97,15 @@ async def set_tags(
     )
 
 
-@router.get("/entries", response_model=PaginatedResponse[EntryTagItem])
+@router.get("/entries", response_model=CursorPage[EntryTagItem])
 async def find_entries_by_tags(
     tags: str = Query(..., description="Comma-separated tag names"),
     mode: str = Query("or", pattern="^(and|or)$"),
     limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    cursor: str | None = Query(None),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
-) -> PaginatedResponse[EntryTagItem]:
+) -> CursorPage[EntryTagItem]:
     """Find entries matching tags. Public read — no auth required.
 
     OR mode returns entries with ANY matching tag.
@@ -127,16 +127,34 @@ async def find_entries_by_tags(
             detail=f"Maximum {_MAX_SEARCH_TAGS} tags allowed in search query",
         )
 
+    # Decode keyset cursor
+    from datetime import datetime
+    from uuid import UUID
+    cursor_created_at: datetime | None = None
+    cursor_id: UUID | None = None
+    if cursor is not None:
+        try:
+            sort_value, cursor_id = decode_keyset_cursor(cursor, "created_at", "desc")
+            cursor_created_at = datetime.fromisoformat(sort_value)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     viewer_id = user.id if user else None
 
     repo = TagRepository(db)
-    entries, total = await repo.find_entries_by_tags(
+    entries = await repo.find_entries_by_tags(
         tags=tag_list,
         mode=mode,
         limit=limit,
-        offset=offset,
         viewer_id=viewer_id,
+        cursor_created_at=cursor_created_at,
+        cursor_id=cursor_id,
     )
+
+    # Detect has_more from limit+1 fetch
+    has_more = len(entries) > limit
+    if has_more:
+        entries = entries[:limit]
 
     # Optionally enrich with metadata/types if those extensions are loaded
     entry_ids = [e.id for e in entries]
@@ -163,9 +181,9 @@ async def find_entries_by_tags(
         for e in entries
     ]
 
-    return PaginatedResponse(
-        items=items,
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
+    next_cursor: str | None = None
+    if has_more and entries:
+        last = entries[-1]
+        next_cursor = build_keyset_cursor("created_at", "desc", last.created_at, last.id)
+
+    return CursorPage(items=items, limit=limit, has_more=has_more, next_cursor=next_cursor)

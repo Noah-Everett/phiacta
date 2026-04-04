@@ -20,8 +20,3 @@ class ActivityItem(BaseModel):
     parent_id: UUID | None
     metadata: dict | None
     created_at: datetime
-
-
-class ActivityFeedResponse(BaseModel):
-    items: list[ActivityItem]
-    next_cursor: UUID | None

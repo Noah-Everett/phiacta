@@ -21,9 +21,6 @@ from phiacta.core.models.entry import Entry
 from phiacta.core.models.user import User
 from phiacta.core.visibility import discovery_condition
 from phiacta.extensions.search_tsv.models import ViewSearchTsv
-from phiacta.extensions.search_tsv.repository import (
-    get_active_version as get_active_version,  # noqa: F401 — re-exported for tool isolation
-)
 
 try:
     from phiacta.extensions.metadata.models import ExtensionMetadata
@@ -63,25 +60,21 @@ async def search_text(
     user: User | None = None,
     filters: dict[str, str] | None = None,
     providers: list[EntryDataProvider] | None = None,
-) -> tuple[list[Row], int]:
+) -> tuple[list[Row], bool]:
     """Full-text search with optional filtering.
 
-    *visibility*: core Entry visibility filter. ``None`` means all.
-    *user*: private entries are only visible to their owner.
-    *filters*: mapping of field name to raw value string, routed to
-        extension providers via ``apply_search_filter``.
-    *providers*: registered entry data providers (needed for filter routing).
+    Returns (rows, has_more) instead of (rows, total).
+    Uses offset-based pagination internally (rank is unstable for keyset).
+    Fetches limit+1 to detect has_more.
     """
     tsquery = _build_prefix_tsquery(q, language)
     rank = func.ts_rank(ViewSearchTsv.tsv, tsquery)
-    total_window = func.count().over()
 
     columns = [Entry.id.label("entry_id"), rank.label("rank")]
     if ExtensionMetadata is not None:
         columns.extend([ExtensionMetadata.title, ExtensionMetadata.summary])
     if ExtensionType is not None:
         columns.append(ExtensionType.entry_type)
-    columns.append(total_window.label("total"))
 
     stmt = (
         select(*columns)
@@ -111,27 +104,14 @@ async def search_text(
                     )
                     break
 
-    stmt = stmt.order_by(rank.desc()).limit(limit).offset(offset)
+    # Fetch limit+1 to detect has_more
+    stmt = stmt.order_by(rank.desc()).limit(limit + 1).offset(offset)
 
     result = await db.execute(stmt)
-    rows = result.all()
-    if rows:
-        return rows, rows[0].total
+    rows = list(result.all())
 
-    count_stmt = (
-        select(func.count())
-        .select_from(ViewSearchTsv)
-        .join(Entry, Entry.id == ViewSearchTsv.entry_id)
-        .where(*where_clauses)
-    )
-    if filters and providers:
-        for field, value in filters.items():
-            for provider in providers:
-                if field in provider.filterable_fields:
-                    count_stmt = provider.apply_search_filter(
-                        count_stmt, Entry.id, field, value,
-                    )
-                    break
+    has_more = len(rows) > limit
+    if has_more:
+        rows = rows[:limit]
 
-    count_result = await db.execute(count_stmt)
-    return [], count_result.scalar_one()
+    return rows, has_more

@@ -21,8 +21,12 @@ from phiacta.core.compose import (
 from phiacta.core.db.session import get_db
 from phiacta.core.shared_deps import get_providers
 from phiacta.core.models.user import User
+from phiacta.core.pagination import (
+    CursorPage,
+    build_keyset_cursor,
+    decode_keyset_cursor,
+)
 from phiacta.core.repositories.entry_repository import EntryRepository
-from phiacta.core.schemas.common import PaginatedResponse
 from phiacta.core.models.outbox import Outbox
 from phiacta.core.schemas.entry import (
     VALID_VISIBILITY,
@@ -38,34 +42,57 @@ from phiacta.core.visibility import check_entry_access
 router = APIRouter(prefix="/entries", tags=["entries"])
 
 
-@router.get("", response_model=PaginatedResponse[EntryListItem])
+@router.get("", response_model=CursorPage[EntryListItem])
 async def list_entries(
     request: Request,
     visibility: str = Query("all", pattern=r"^(all|public|private)$"),
     limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    cursor: str | None = Query(None),
     sort: str = Query("created_at", pattern=r"^(created_at|updated_at)$"),
     order: str = Query("desc", pattern=r"^(asc|desc)$"),
     include: str | None = Query(None),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
-) -> PaginatedResponse[EntryListItem]:
+) -> CursorPage[EntryListItem]:
+
+    # Decode cursor if provided
+    cursor_sort_value: str | None = None
+    cursor_id: UUID | None = None
+    if cursor is not None:
+        try:
+            cursor_sort_value, cursor_id = decode_keyset_cursor(cursor, sort, order)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     repo = EntryRepository(db)
     entries = await repo.list_entries(
-        limit=limit, offset=offset,
+        limit=limit,
         visibility=None if visibility == "all" else visibility,
         sort_by=sort, sort_order=order, user=user,
+        cursor_sort_value=cursor_sort_value,
+        cursor_id=cursor_id,
     )
-    total = await repo.count_entries(
-        visibility=None if visibility == "all" else visibility, user=user,
-    )
+
+    # Detect has_more from limit+1 fetch
+    has_more = len(entries) > limit
+    if has_more:
+        entries = entries[:limit]
+
     providers = get_providers(request)
     inc = parse_field_filter(include)
     composed = await compose_entry_list_responses(
         entries, providers, db, include=inc,
     )
     items = [EntryListItem(**row) for row in composed]
-    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
+
+    next_cursor: str | None = None
+    if has_more and entries:
+        last = entries[-1]
+        next_cursor = build_keyset_cursor(
+            sort, order, getattr(last, sort), last.id,
+        )
+
+    return CursorPage(items=items, limit=limit, has_more=has_more, next_cursor=next_cursor)
 
 
 @router.get("/{entry_id}", response_model=EntryDetailResponse)

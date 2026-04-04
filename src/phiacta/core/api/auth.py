@@ -17,6 +17,7 @@ from phiacta.core.auth.passwords import hash_password_async, verify_password_asy
 from phiacta.core.auth.pat import extract_pat_prefix, generate_pat, hash_pat
 from phiacta.core.auth.tokens import create_access_token
 from phiacta.core.db.session import get_db
+from phiacta.core.pagination import CursorPage
 from phiacta.core.models.personal_access_token import PersonalAccessToken
 from phiacta.core.models.user import User
 from phiacta.core.repositories.pat_repository import PersonalAccessTokenRepository
@@ -47,12 +48,12 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
-    # Check username uniqueness
-    result = await db.execute(select(User).where(User.username == body.username))
+    # Check handle uniqueness
+    result = await db.execute(select(User).where(User.handle == body.handle))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username already taken",
+            detail="Handle already taken",
         )
 
     # 1. Create Entity row first (shared-PK, created_by=NULL for users)
@@ -65,7 +66,7 @@ async def register(
     # 2. Create User with the same ID as the entity
     user = User(
         id=entity.id,
-        username=body.username,
+        handle=body.handle,
         password_hash=await hash_password_async(body.password),
     )
     db.add(user)
@@ -75,7 +76,7 @@ async def register(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username already taken",
+            detail="Handle already taken",
         )
     await db.refresh(user)
 
@@ -93,7 +94,7 @@ async def login(
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
-    result = await db.execute(select(User).where(User.username == body.username))
+    result = await db.execute(select(User).where(User.handle == body.handle))
     user = result.scalar_one_or_none()
 
     if user is None:
@@ -101,13 +102,13 @@ async def login(
         await verify_password_async(body.password, _DUMMY_HASH)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password",
+            detail="Invalid handle or password",
         )
 
     if not await verify_password_async(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password",
+            detail="Invalid handle or password",
         )
 
     token = create_access_token(user.id)
@@ -164,14 +165,7 @@ async def create_token(
         expires_at=expires_at,
     )
     await repo.create(pat)
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Token name already exists",
-        )
+    await db.commit()
     await db.refresh(pat)
 
     return TokenCreateResponse(
@@ -184,15 +178,16 @@ async def create_token(
     )
 
 
-@router.get("/tokens", response_model=list[TokenListItem])
+@router.get("/tokens", response_model=CursorPage[TokenListItem])
 async def list_tokens(
     user: User = Depends(get_current_user_jwt_only),
     db: AsyncSession = Depends(get_db),
-) -> list[TokenListItem]:
-    """List the current user's personal access tokens."""
+) -> CursorPage[TokenListItem]:
+    """List the current user's personal access tokens. Bounded — always returns all."""
     repo = PersonalAccessTokenRepository(db)
     tokens = await repo.list_by_user(user.id)
-    return [TokenListItem.model_validate(t) for t in tokens]
+    items = [TokenListItem.model_validate(t) for t in tokens]
+    return CursorPage(items=items, limit=len(items), has_more=False, next_cursor=None)
 
 
 @router.delete("/tokens/{token_id}", status_code=204)

@@ -21,6 +21,8 @@ import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from phiacta.core.pagination import CursorPage
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/docs", tags=["docs"])
@@ -93,10 +95,10 @@ _CACHED_DOCS = _load_docs()
 _CACHED_DOCS_BY_SLUG = {d.slug: d for d in _CACHED_DOCS}
 
 
-@router.get("", response_model=list[DocResponse])
-def list_docs() -> list[DocResponse]:
-    """List all available documentation resources."""
-    return _CACHED_DOCS
+@router.get("", response_model=CursorPage[DocResponse])
+def list_docs() -> CursorPage[DocResponse]:
+    """List all available documentation resources. Bounded — always returns all."""
+    return CursorPage(items=_CACHED_DOCS, limit=len(_CACHED_DOCS), has_more=False, next_cursor=None)
 
 
 @router.get("/{slug}", response_model=DocResponse)

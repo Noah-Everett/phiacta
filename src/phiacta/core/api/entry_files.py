@@ -21,6 +21,7 @@ from phiacta.core.api.rate_limit import limiter
 from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.config import Settings, get_settings
 from phiacta.core.db.session import get_db
+from phiacta.core.pagination import CursorPage
 from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.repositories.entry_repository import EntryRepository
@@ -80,7 +81,10 @@ def _raise_for_invalid_path(path: str) -> None:
     try:
         validate_file_path(path)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid file path") from exc
+        msg = str(exc)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=404, detail="File not found") from exc
+        raise HTTPException(status_code=400, detail="Invalid file path") from exc
 
 
 async def _get_writable_entry(
@@ -97,18 +101,18 @@ async def _get_writable_entry(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{entry_id}/files", response_model=list[FileListItem])
+@router.get("/{entry_id}/files", response_model=CursorPage[FileListItem])
 async def list_entry_files(
     entry_id: UUID,
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
-) -> list[FileListItem]:
-    """List files at the root of an entry's repository."""
+) -> CursorPage[FileListItem]:
+    """List files at the root of an entry's repository. Bounded — always returns all files."""
     await get_readable_entry(entry_id, db, user=user)
 
     try:
-        items = await git_service.list_files(entry_id)
+        raw_items = await git_service.list_files(entry_id)
     except RepoNotFoundError as exc:
         raise HTTPException(
             status_code=404, detail="Entry repository not found",
@@ -118,7 +122,8 @@ async def list_entry_files(
             status_code=502, detail="Git service unavailable",
         ) from exc
 
-    return [FileListItem.model_validate(i) for i in items]
+    items = [FileListItem.model_validate(i) for i in raw_items]
+    return CursorPage(items=items, limit=len(items), has_more=False, next_cursor=None)
 
 
 @router.get("/{entry_id}/files/{path:path}")
@@ -133,7 +138,7 @@ async def get_entry_file_content(
     try:
         validate_file_path_read(path)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid file path") from exc
+        raise HTTPException(status_code=400, detail="Invalid file path") from exc
 
     await get_readable_entry(entry_id, db, user=user)
 
@@ -194,7 +199,7 @@ async def put_entry_file(
     await _get_writable_entry(entry_id, user, db)
 
     commit_message = message or f"Update {path}"
-    author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
 
     try:
         sha = await git_service.commit_files(
@@ -235,7 +240,7 @@ async def delete_entry_file(
     await _get_writable_entry(entry_id, user, db)
 
     message = (body.message if body else None) or f"Delete {path}"
-    author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
 
     try:
         sha = await git_service.delete_file(

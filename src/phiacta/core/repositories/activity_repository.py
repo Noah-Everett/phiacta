@@ -9,9 +9,10 @@ different semantics (append-only, cursor-based pagination, no update/delete).
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.models.activity import Activity
@@ -44,56 +45,44 @@ class ActivityRepository:
         self,
         actor_id: UUID,
         limit: int = 50,
-        before: UUID | None = None,
-    ) -> tuple[list[Activity], UUID | None]:
-        """List activity for an actor, newest first, with cursor pagination.
+        cursor_created_at: datetime | None = None,
+        cursor_id: UUID | None = None,
+    ) -> list[Activity]:
+        """List activity for an actor, newest first, with keyset pagination.
 
-        ``before`` is the ID of the last item from the previous page.
-        Returns (items, next_cursor) where next_cursor is the ID to pass
-        as ``before`` for the next page, or None if no more items.
+        Returns limit+1 items so the caller can detect has_more.
         """
         stmt = (
             select(Activity)
             .where(Activity.actor_id == actor_id)
             .order_by(Activity.created_at.desc(), Activity.id.desc())
-            .limit(limit + 1)  # fetch one extra to detect next page
+            .limit(limit + 1)
         )
 
-        if before is not None:
-            # Get the cursor row to find its created_at
-            cursor_row = await self._session.get(Activity, before)
-            if cursor_row is not None:
-                stmt = stmt.where(
-                    (Activity.created_at < cursor_row.created_at)
-                    | (
-                        (Activity.created_at == cursor_row.created_at)
-                        & (Activity.id < cursor_row.id)
-                    )
+        if cursor_created_at is not None and cursor_id is not None:
+            stmt = stmt.where(
+                or_(
+                    Activity.created_at < cursor_created_at,
+                    and_(
+                        Activity.created_at == cursor_created_at,
+                        Activity.id < cursor_id,
+                    ),
                 )
+            )
 
         result = await self._session.execute(stmt)
-        items = list(result.scalars().all())
-
-        if len(items) > limit:
-            # There are more items — return cursor for next page
-            items = items[:limit]
-            next_cursor = items[-1].id
-        else:
-            next_cursor = None
-
-        return items, next_cursor
+        return list(result.scalars().all())
 
     async def list_by_entity(
         self,
         entity_id: UUID,
         limit: int = 50,
-        before: UUID | None = None,
-    ) -> tuple[list[Activity], UUID | None]:
-        """List activity for an entity, newest first, with cursor pagination.
+        cursor_created_at: datetime | None = None,
+        cursor_id: UUID | None = None,
+    ) -> list[Activity]:
+        """List activity for an entity, newest first, with keyset pagination.
 
-        ``before`` is the ID of the last item from the previous page.
-        Returns (items, next_cursor) where next_cursor is the ID to pass
-        as ``before`` for the next page, or None if no more items.
+        Returns limit+1 items so the caller can detect has_more.
         """
         stmt = (
             select(Activity)
@@ -102,33 +91,16 @@ class ActivityRepository:
             .limit(limit + 1)
         )
 
-        if before is not None:
-            cursor_row = await self._session.get(Activity, before)
-            if cursor_row is not None:
-                stmt = stmt.where(
-                    (Activity.created_at < cursor_row.created_at)
-                    | (
-                        (Activity.created_at == cursor_row.created_at)
-                        & (Activity.id < cursor_row.id)
-                    )
+        if cursor_created_at is not None and cursor_id is not None:
+            stmt = stmt.where(
+                or_(
+                    Activity.created_at < cursor_created_at,
+                    and_(
+                        Activity.created_at == cursor_created_at,
+                        Activity.id < cursor_id,
+                    ),
                 )
+            )
 
         result = await self._session.execute(stmt)
-        items = list(result.scalars().all())
-
-        if len(items) > limit:
-            items = items[:limit]
-            next_cursor = items[-1].id
-        else:
-            next_cursor = None
-
-        return items, next_cursor
-
-    async def count_by_actor(self, actor_id: UUID) -> int:
-        stmt = (
-            select(func.count())
-            .select_from(Activity)
-            .where(Activity.actor_id == actor_id)
-        )
-        result = await self._session.execute(stmt)
-        return result.scalar_one()
+        return list(result.scalars().all())

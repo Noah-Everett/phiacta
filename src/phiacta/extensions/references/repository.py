@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.pagination import keyset_condition
 from phiacta.extensions.references.models import ExtensionReference
 
 
@@ -23,8 +25,14 @@ class ReferenceRepository:
         return result.scalar_one_or_none()
 
     async def list_by_entry(
-        self, entry_id: UUID, direction: str = "both", limit: int = 500, offset: int = 0,
+        self, entry_id: UUID, direction: str = "both",
+        limit: int = 500,
+        cursor_created_at: datetime | None = None,
+        cursor_id: UUID | None = None,
+        # Legacy offset — unused when cursor is provided
+        offset: int = 0,
     ) -> list[ExtensionReference]:
+        """List references with keyset pagination. Returns limit+1 for has_more detection."""
         stmt = select(ExtensionReference)
         if direction == "outgoing":
             stmt = stmt.where(ExtensionReference.from_entity_id == entry_id)
@@ -35,23 +43,21 @@ class ReferenceRepository:
                 ExtensionReference.from_entity_id == entry_id,
                 ExtensionReference.to_entity_id == entry_id,
             ))
-        stmt = stmt.order_by(ExtensionReference.created_at.desc()).limit(limit).offset(offset)
+
+        if cursor_created_at is not None and cursor_id is not None:
+            stmt = stmt.where(
+                keyset_condition(
+                    ExtensionReference.created_at, ExtensionReference.id,
+                    cursor_created_at, cursor_id, descending=True,
+                )
+            )
+
+        stmt = stmt.order_by(
+            ExtensionReference.created_at.desc(),
+            ExtensionReference.id.desc(),
+        ).limit(limit + 1)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
-
-    async def count_by_entry(self, entry_id: UUID, direction: str = "both") -> int:
-        stmt = select(func.count()).select_from(ExtensionReference)
-        if direction == "outgoing":
-            stmt = stmt.where(ExtensionReference.from_entity_id == entry_id)
-        elif direction == "incoming":
-            stmt = stmt.where(ExtensionReference.to_entity_id == entry_id)
-        else:
-            stmt = stmt.where(or_(
-                ExtensionReference.from_entity_id == entry_id,
-                ExtensionReference.to_entity_id == entry_id,
-            ))
-        result = await self.session.execute(stmt)
-        return result.scalar_one()
 
     async def bulk_get_by_entry_ids(
         self, entry_ids: list[UUID], direction: str = "both",
@@ -73,7 +79,6 @@ class ReferenceRepository:
         result = await self.session.execute(stmt)
         grouped: dict[UUID, list[ExtensionReference]] = {}
         for ref in result.scalars().all():
-            # Group by whichever side(s) matched.
             if ref.from_entity_id in entry_ids:
                 grouped.setdefault(ref.from_entity_id, []).append(ref)
             if ref.to_entity_id in entry_ids and ref.to_entity_id != ref.from_entity_id:
