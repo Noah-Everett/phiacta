@@ -109,7 +109,7 @@ class TestCreateEditProposal:
         assert data["body"] == "Corrected spelling of 'hypothesis'"
         assert data["state"] == "open"
         assert data["is_draft"] is False
-        assert data["author"]["handle"] == proposer_user["handle"]
+        assert data["author"]["username"] == proposer_user["username"]
         assert data["base_branch"] == "main"
         assert data["head_branch"]  # non-empty branch name
         assert data["created_at"] is not None
@@ -162,7 +162,7 @@ class TestCreateEditProposal:
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["author"]["handle"] == owner_user["handle"]
+        assert data["author"]["username"] == owner_user["username"]
         assert data["state"] == "open"
 
     async def test_create_proposal_multiple_files(

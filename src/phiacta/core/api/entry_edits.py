@@ -90,7 +90,7 @@ def _pr_to_list_item(
         state=pr.state,
         is_draft=pr.is_draft,
         author={
-            "handle": user_handle or pr.author_name,
+            "username": user_handle or pr.author_name,
         },
         head_branch=pr.head_branch,
         base_branch=pr.base_branch,
@@ -98,6 +98,18 @@ def _pr_to_list_item(
         updated_at=pr.updated_at,
         merged_at=pr.merged_at,
     )
+
+
+async def _cleanup_branch(
+    git_service: GitService, entry_id: UUID, branch_name: str,
+) -> None:
+    """Best-effort cleanup of a proposal branch after a failed step."""
+    try:
+        await git_service.delete_branch(entry_id, branch_name)
+    except Exception:
+        logger.warning(
+            "Failed to clean up branch %s on entry %s", branch_name, entry_id,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +154,7 @@ async def create_edit_proposal(
         validated_files.append(FileContent(path=fc.path, content=fc.content))
 
     # Step 1: Create branch from main.
-    branch_name = _make_branch_name(user.handle, body.title)
+    branch_name = _make_branch_name(user.username, body.title)
     try:
         await git_service.create_branch(entry_id, branch_name)
     except ForgejoUnavailableError as exc:
@@ -160,13 +172,14 @@ async def create_edit_proposal(
             ) from exc
 
     # Step 2: Commit files to the proposal branch.
-    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
     message = body.title
     try:
         await git_service.commit_files(
             entry_id, validated_files, author, message, branch=branch_name,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
+        await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
@@ -180,9 +193,10 @@ async def create_edit_proposal(
             body=pr_body,
             head_branch=branch_name,
             base_branch="main",
-            author_name=user.handle,
+            author_name=user.username,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
+        await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
@@ -206,7 +220,7 @@ async def create_edit_proposal(
             pr_info.number, entry_id,
         )
 
-    return _pr_to_list_item(pr_info, user.handle)
+    return _pr_to_list_item(pr_info, user.username)
 
 
 # ---------------------------------------------------------------------------

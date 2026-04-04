@@ -48,12 +48,12 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
-    # Check handle uniqueness
-    result = await db.execute(select(User).where(User.handle == body.handle))
+    # Check username uniqueness
+    result = await db.execute(select(User).where(User.username == body.username))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Handle already taken",
+            detail="Username already taken",
         )
 
     # 1. Create Entity row first (shared-PK, created_by=NULL for users)
@@ -66,7 +66,7 @@ async def register(
     # 2. Create User with the same ID as the entity
     user = User(
         id=entity.id,
-        handle=body.handle,
+        username=body.username,
         password_hash=await hash_password_async(body.password),
     )
     db.add(user)
@@ -76,7 +76,7 @@ async def register(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Handle already taken",
+            detail="Username already taken",
         )
     await db.refresh(user)
 
@@ -94,7 +94,7 @@ async def login(
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
-    result = await db.execute(select(User).where(User.handle == body.handle))
+    result = await db.execute(select(User).where(User.username == body.username))
     user = result.scalar_one_or_none()
 
     if user is None:
@@ -102,13 +102,13 @@ async def login(
         await verify_password_async(body.password, _DUMMY_HASH)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid handle or password",
+            detail="Invalid username or password",
         )
 
     if not await verify_password_async(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid handle or password",
+            detail="Invalid username or password",
         )
 
     token = create_access_token(user.id)
@@ -165,7 +165,14 @@ async def create_token(
         expires_at=expires_at,
     )
     await repo.create(pat)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Token name already exists",
+        )
     await db.refresh(pat)
 
     return TokenCreateResponse(

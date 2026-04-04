@@ -68,7 +68,7 @@ def _issue_to_list_item(
         title=issue.title,
         body=issue.body or None,
         state=issue.state,
-        author=IssueAuthor(handle=user_handle or issue.author_name),
+        author=IssueAuthor(username=user_handle or issue.author_name),
         comments_count=issue.comments_count,
         created_at=issue.created_at,
         updated_at=issue.updated_at,
@@ -82,7 +82,7 @@ def _comment_to_response(
     return IssueCommentResponse(
         id=comment.id,
         body=comment.body,
-        author=IssueAuthor(handle=user_handle or comment.author_name),
+        author=IssueAuthor(username=user_handle or comment.author_name),
         created_at=comment.created_at,
         updated_at=comment.updated_at,
     )
@@ -115,7 +115,7 @@ async def create_issue(
             entry_id,
             title=body.title,
             body=body.body or "",
-            author_name=user.handle,
+            author_name=user.username,
         )
     except ForgejoUnavailableError as exc:
         raise HTTPException(
@@ -145,7 +145,7 @@ async def create_issue(
             issue.number, entry_id,
         )
 
-    return _issue_to_list_item(issue, user.handle)
+    return _issue_to_list_item(issue, user.username)
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +285,7 @@ async def add_issue_comment(
             number, entry_id,
         )
 
-    return _comment_to_response(comment, user.handle)
+    return _comment_to_response(comment, user.username)
 
 
 # ---------------------------------------------------------------------------
