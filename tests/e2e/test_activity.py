@@ -12,7 +12,6 @@ It returns actions performed by a user in reverse chronological order.
 
 from __future__ import annotations
 
-import base64
 from uuid import UUID, uuid4
 
 import httpx
@@ -30,9 +29,6 @@ from tests.e2e.conftest import (
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
-
-def text: str -> str:
-    return base64.b64encode(text.encode()).decode()
 
 
 @pytest.fixture

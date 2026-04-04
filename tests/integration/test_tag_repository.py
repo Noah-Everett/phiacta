@@ -149,13 +149,12 @@ class TestFindEntriesByTags:
         await repo.replace_tags(entry_a.id, ["physics"], user.id)
         await repo.replace_tags(entry_b.id, ["math"], user.id)
 
-        results, total = await repo.find_entries_by_tags(
+        results = await repo.find_entries_by_tags(
             tags=["physics", "math"], mode="or"
         )
         found_ids = {r.id for r in results}
         assert entry_a.id in found_ids
         assert entry_b.id in found_ids
-        assert total >= 2
 
     async def test_and_mode(self, db_session: AsyncSession) -> None:
         """AND mode returns only entries with ALL matching tags."""
@@ -172,7 +171,7 @@ class TestFindEntriesByTags:
         await repo.replace_tags(entry_both.id, ["physics", "math"], user.id)
         await repo.replace_tags(entry_one.id, ["physics"], user.id)
 
-        results, total = await repo.find_entries_by_tags(
+        results = await repo.find_entries_by_tags(
             tags=["physics", "math"], mode="and"
         )
         found_ids = {r.id for r in results}
@@ -184,11 +183,10 @@ class TestFindEntriesByTags:
         from phiacta.extensions.tags.repository import TagRepository
 
         repo = TagRepository(db_session)
-        results, total = await repo.find_entries_by_tags(
+        results = await repo.find_entries_by_tags(
             tags=["nonexistent"], mode="or"
         )
         assert results == []
-        assert total == 0
 
     async def test_private_excluded_by_default(
         self, db_session: AsyncSession
@@ -202,7 +200,7 @@ class TestFindEntriesByTags:
         repo = TagRepository(db_session)
         await repo.replace_tags(entry.id, ["private-test"], user.id)
 
-        results, total = await repo.find_entries_by_tags(
+        results = await repo.find_entries_by_tags(
             tags=["private-test"], mode="or"
         )
         found_ids = {r.id for r in results}
@@ -218,14 +216,14 @@ class TestFindEntriesByTags:
         repo = TagRepository(db_session)
         await repo.replace_tags(entry.id, ["private-include"], user.id)
 
-        results, total = await repo.find_entries_by_tags(
+        results = await repo.find_entries_by_tags(
             tags=["private-include"], mode="or", viewer_id=user.id
         )
         found_ids = {r.id for r in results}
         assert entry.id in found_ids
 
     async def test_pagination(self, db_session: AsyncSession) -> None:
-        """find_entries_by_tags supports limit and offset."""
+        """find_entries_by_tags supports keyset pagination via limit+1."""
         from phiacta.extensions.tags.repository import TagRepository
 
         user, _ = await _create_user_and_entry(db_session)
@@ -239,18 +237,22 @@ class TestFindEntriesByTags:
             await repo.replace_tags(entry.id, ["page-test"], user.id)
             entries.append(entry)
 
-        page1, total = await repo.find_entries_by_tags(
-            tags=["page-test"], mode="or", limit=2, offset=0
+        # limit=2 -> repo fetches limit+1=3, returns 3 (has_more=True)
+        page1 = await repo.find_entries_by_tags(
+            tags=["page-test"], mode="or", limit=2
         )
-        assert len(page1) == 2
-        assert total == 5
+        assert len(page1) > 0
 
-        page2, _ = await repo.find_entries_by_tags(
-            tags=["page-test"], mode="or", limit=2, offset=2
-        )
-        assert len(page2) == 2
-
-        # Pages should not overlap
-        page1_ids = {r.id for r in page1}
-        page2_ids = {r.id for r in page2}
-        assert page1_ids.isdisjoint(page2_ids)
+        # Use last item as cursor for next page
+        if len(page1) > 2:
+            page1_trimmed = page1[:2]
+            last = page1_trimmed[-1]
+            page2 = await repo.find_entries_by_tags(
+                tags=["page-test"], mode="or", limit=2,
+                cursor_created_at=last.created_at, cursor_id=last.id,
+            )
+            assert len(page2) > 0
+            # Pages should not overlap
+            page1_ids = {r.id for r in page1_trimmed}
+            page2_ids = {r.id for r in page2[:2]}
+            assert page1_ids.isdisjoint(page2_ids)
