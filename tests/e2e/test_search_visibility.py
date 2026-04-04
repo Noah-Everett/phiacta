@@ -124,13 +124,13 @@ def _mount_routers(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, username=f"svis-owner-{uuid4().hex[:8]}")
+    auth = await register_user(client, handle=f"svis-owner-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
 async def other_user(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, username=f"svis-other-{uuid4().hex[:8]}")
+    auth = await register_user(client, handle=f"svis-other-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -248,7 +248,7 @@ class TestSearchVisibilityExclusion:
             params={"q": "quantum"},
             headers=auth_header(search_env["owner_token"]),
         )
-        assert resp_other.json()["total"] < resp_owner.json()["total"]
+        assert len(resp_other.json()["items"]) < len(resp_owner.json()["items"])
 
     async def test_search_with_only_private_results_returns_empty(
         self, search_env: dict, other_user: AuthedFixture,
@@ -261,8 +261,8 @@ class TestSearchVisibilityExclusion:
             headers=auth_header(other_token),
         )
         assert resp.status_code == 200
-        assert resp.json()["total"] == 0
         assert resp.json()["items"] == []
+        assert resp.json()["has_more"] is False
 
 
 class TestSearchTsvVisibility:

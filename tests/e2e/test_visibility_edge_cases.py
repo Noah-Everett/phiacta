@@ -15,6 +15,7 @@ or graph visibility suites:
 
 from __future__ import annotations
 
+import base64
 from uuid import UUID, uuid4
 
 import httpx
@@ -72,14 +73,14 @@ def _mount_routers(client: httpx.AsyncClient) -> None:
 @pytest.fixture
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
     """Register the entry owner and return (client, user_data, token)."""
-    auth = await register_user(client, username=f"edge-owner-{uuid4().hex[:8]}")
+    auth = await register_user(client, handle=f"edge-owner-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
 async def other_user(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a non-owner user and return (client, user_data, token)."""
-    auth = await register_user(client, username=f"edge-other-{uuid4().hex[:8]}")
+    auth = await register_user(client, handle=f"edge-other-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -310,7 +311,7 @@ class TestWriteOperationsOnPrivateEntries:
         )
         await set_entry_visibility(e2e_session_factory, entry["id"], "private")
 
-        file_content = "proposed change"
+        file_content = base64.b64encode(b"proposed change").decode()
         resp = await client.post(
             f"/v1/entries/{entry['id']}/edits",
             json={
@@ -386,7 +387,7 @@ class TestWriteOperationsOnPrivateEntries:
         assert resp.status_code == 200
 
         # Create edit proposal
-        file_content = "owner proposal"
+        file_content = base64.b64encode(b"owner proposal").decode()
         resp = await client.post(
             f"/v1/entries/{entry['id']}/edits",
             json={

@@ -36,10 +36,13 @@ class TestSearchResponseSchema:
     def test_construction(self) -> None:
         from phiacta.tools.search.schemas import SearchResponse, SearchResultItem
         items = [SearchResultItem(entry_id=uuid4(), rank=0.9)]
-        resp = SearchResponse(items=items, total=1, limit=50, offset=0, version_id=uuid4())
+        resp = SearchResponse(items=items, limit=50, has_more=False, next_cursor=None, version_id=uuid4())
         assert len(resp.items) == 1
+        assert resp.has_more is False
+        assert resp.next_cursor is None
 
     def test_has_more(self) -> None:
         from phiacta.tools.search.schemas import SearchResponse
-        resp = SearchResponse(items=[], total=100, limit=10, offset=0, version_id=uuid4())
+        resp = SearchResponse(items=[], limit=10, has_more=True, next_cursor="abc", version_id=uuid4())
         assert resp.has_more is True
+        assert resp.next_cursor == "abc"

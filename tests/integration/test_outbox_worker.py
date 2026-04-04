@@ -67,7 +67,7 @@ async def worker(async_engine: AsyncEngine) -> OutboxWorker:
 
 async def _create_user(session: AsyncSession) -> User:
     """Insert a test user and return it."""
-    user = User(**make_user(username=f"worker-test-{uuid4().hex[:8]}"))
+    user = User(**make_user(handle=f"worker-test-{uuid4().hex[:8]}"))
     session.add(user)
     await session.flush()
     return user
@@ -151,7 +151,7 @@ class TestHandleCreateRepoHappyPath:
         payload = {
             "entry_id": str(entry_id),
             "content_format": "markdown",
-            "author_username": "test-author",
+            "author_handle": "test-author",
             "author_id": str(user_id),
         }
 

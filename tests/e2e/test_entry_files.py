@@ -68,7 +68,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert isinstance(data, list)
         assert len(data) == 2
         names = {item["name"] for item in data}
@@ -95,7 +95,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         names = [item["name"] for item in data]
         assert ".phiacta" in names
         assert "README.md" in names
@@ -120,7 +120,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         item = data[0]
         assert set(item.keys()) == {"name", "path", "type", "size"}
@@ -148,7 +148,7 @@ class TestListEntryFiles:
         # Request without any auth header
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        assert len(resp.json()["items"]) == 1
 
     async def test_list_files_only_phiacta_returns_phiacta(
         self,
@@ -168,7 +168,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         assert data[0]["name"] == ".phiacta"
 
@@ -193,7 +193,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 4
         types = {item["name"]: item["type"] for item in data}
         assert types["README.md"] == "file"

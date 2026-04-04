@@ -218,13 +218,13 @@ class TestActivityFeedErrors:
         self,
         owner: AuthedFixture,
     ) -> None:
-        """Providing a non-UUID 'before' cursor returns 422."""
+        """Providing an invalid cursor returns 400."""
         client, user, _ = owner
         resp = await client.get(
             "/v1/activity",
-            params={"actor": user["id"], "before": "not-a-uuid"},
+            params={"actor": user["id"], "cursor": "not-a-valid-cursor"},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +371,7 @@ class TestActivityFeedPagination:
         # Page 2
         resp = await client.get(
             "/v1/activity",
-            params={"actor": user["id"], "limit": 2, "before": cursor},
+            params={"actor": user["id"], "limit": 2, "cursor": cursor},
         )
         assert resp.status_code == 200
         page2 = resp.json()
@@ -401,7 +401,7 @@ class TestActivityFeedPagination:
         for _ in range(10):  # Safety limit
             params: dict = {"actor": user["id"], "limit": 2}
             if cursor:
-                params["before"] = cursor
+                params["cursor"] = cursor
             resp = await client.get(
                 "/v1/activity",
                 params=params,

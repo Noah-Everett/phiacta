@@ -276,7 +276,7 @@ class TestListIssues:
 
         resp = await client.get(f"/v1/entries/{entry['id']}/issues")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json()["items"] == []
 
     async def test_list_issues_returns_created_issues(
         self,
@@ -302,9 +302,9 @@ class TestListIssues:
 
         resp = await client.get(f"/v1/entries/{entry_id}/issues")
         assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 2
-        titles = {i["title"] for i in data}
+        items = resp.json()["items"]
+        assert len(items) == 2
+        titles = {i["title"] for i in items}
         assert "Issue A" in titles
         assert "Issue B" in titles
 
@@ -343,10 +343,10 @@ class TestListIssues:
             f"/v1/entries/{entry_id}/issues", params={"state": "open"},
         )
         assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 1
-        assert data[0]["title"] == "Still open"
-        assert data[0]["state"] == "open"
+        items = resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["title"] == "Still open"
+        assert items[0]["state"] == "open"
 
     async def test_list_issues_filter_by_state_closed(
         self,
@@ -379,9 +379,9 @@ class TestListIssues:
             f"/v1/entries/{entry_id}/issues", params={"state": "closed"},
         )
         assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 1
-        assert data[0]["state"] == "closed"
+        items = resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["state"] == "closed"
 
     async def test_list_issues_is_public(
         self,
@@ -992,8 +992,8 @@ class TestIssueLifecycle:
         resp = await client.get(
             f"/v1/entries/{entry_id}/issues", params={"state": "closed"},
         )
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["number"] == number
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["number"] == number
 
 
 class TestIssueResponseShape:

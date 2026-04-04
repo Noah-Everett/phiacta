@@ -73,11 +73,12 @@ class TestListCommits:
         resp = await client.get(f"/v1/entries/{entry_id}/history")
         assert resp.status_code == 200
         data = resp.json()
-        assert isinstance(data, list)
-        assert len(data) == 1
-        assert data[0]["sha"] == "abc123def456"
-        assert data[0]["message"] == "Initial commit"
-        assert data[0]["author"]["name"] == "test-user"
+        assert "items" in data
+        items = data["items"]
+        assert len(items) == 1
+        assert items[0]["sha"] == "abc123def456"
+        assert items[0]["message"] == "Initial commit"
+        assert items[0]["author"]["name"] == "test-user"
 
     async def test_list_commits_multiple_commits(
         self,
@@ -110,10 +111,10 @@ class TestListCommits:
 
         resp = await client.get(f"/v1/entries/{entry_id}/history")
         assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 2
-        assert data[0]["sha"] == "sha_second"
-        assert data[1]["sha"] == "sha_first"
+        items = resp.json()["items"]
+        assert len(items) == 2
+        assert items[0]["sha"] == "sha_second"
+        assert items[1]["sha"] == "sha_first"
 
     async def test_list_commits_is_public(
         self,
@@ -149,7 +150,7 @@ class TestListCommits:
 
         resp = await client.get(f"/v1/entries/{entry_id}/history")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json()["items"] == []
 
     async def test_list_commits_pagination(
         self,
@@ -175,24 +176,28 @@ class TestListCommits:
         ]
         fake_git.commit_history[UUID(entry_id)] = commits
 
-        # Page 1, limit 2
+        # First page, limit 2
         resp = await client.get(
-            f"/v1/entries/{entry_id}/history", params={"limit": 2, "page": 1}
+            f"/v1/entries/{entry_id}/history", params={"limit": 2}
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 2
-        assert data[0]["sha"] == "sha_0000"
-        assert data[1]["sha"] == "sha_0001"
+        items = data["items"]
+        assert len(items) == 2
+        assert items[0]["sha"] == "sha_0000"
+        assert items[1]["sha"] == "sha_0001"
+        assert data["has_more"] is True
+        assert data["next_cursor"] is not None
 
-        # Page 2, limit 2
+        # Second page via cursor
         resp = await client.get(
-            f"/v1/entries/{entry_id}/history", params={"limit": 2, "page": 2}
+            f"/v1/entries/{entry_id}/history", params={"limit": 2, "cursor": data["next_cursor"]}
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 2
-        assert data[0]["sha"] == "sha_0002"
+        items = data["items"]
+        assert len(items) == 2
+        assert items[0]["sha"] == "sha_0002"
 
     async def test_list_commits_response_has_expected_fields(
         self,
@@ -218,7 +223,7 @@ class TestListCommits:
 
         resp = await client.get(f"/v1/entries/{entry_id}/history")
         assert resp.status_code == 200
-        item = resp.json()[0]
+        item = resp.json()["items"][0]
         assert set(item.keys()) == {"sha", "message", "author", "timestamp"}
         assert set(item["author"].keys()) == {"name", "email"}
         assert item["author"]["name"] == "alice"

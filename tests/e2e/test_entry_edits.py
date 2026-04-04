@@ -16,6 +16,7 @@ Only the entry owner can merge or close proposals.
 
 from __future__ import annotations
 
+import base64
 from uuid import UUID, uuid4
 
 import httpx
@@ -34,13 +35,17 @@ from tests.e2e.conftest import (
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 
+def _b64(text: str) -> str:
+    """Encode text as base64 string for file content."""
+    return base64.b64encode(text.encode()).decode()
+
 
 @pytest.fixture
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user (the entry owner) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
     auth = await register_user(
-        client, username=f"owner-{uid}"
+        client, handle=f"owner-{uid}"
     )
     return client, auth["user"], auth["access_token"]
 
@@ -50,7 +55,7 @@ async def proposer(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a second user (a non-owner proposer) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
     auth = await register_user(
-        client, username=f"proposer-{uid}"
+        client, handle=f"proposer-{uid}"
     )
     return client, auth["user"], auth["access_token"]
 
@@ -93,7 +98,7 @@ class TestCreateEditProposal:
             json={
                 "title": "Fix typo in README",
                 "body": "Corrected spelling of 'hypothesis'",
-                "files": [{"path": "README.md", "content": "# Fixed README"}],
+                "files": [{"path": "README.md", "content": _b64("# Fixed README")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -104,7 +109,7 @@ class TestCreateEditProposal:
         assert data["body"] == "Corrected spelling of 'hypothesis'"
         assert data["state"] == "open"
         assert data["is_draft"] is False
-        assert data["author"]["username"] == proposer_user["username"]
+        assert data["author"]["handle"] == proposer_user["handle"]
         assert data["base_branch"] == "main"
         assert data["head_branch"]  # non-empty branch name
         assert data["created_at"] is not None
@@ -128,7 +133,7 @@ class TestCreateEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Non-owner proposal",
-                "files": [{"path": "data.csv", "content": "a,b,c"}],
+                "files": [{"path": "data.csv", "content": _b64("a,b,c")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -151,13 +156,13 @@ class TestCreateEditProposal:
             json={
                 "title": "Self-edit proposal",
                 "body": "Owner proposes changes to own entry",
-                "files": [{"path": "notes.txt", "content": "self-edit"}],
+                "files": [{"path": "notes.txt", "content": _b64("self-edit")}],
             },
             headers=auth_header(owner_token),
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["author"]["username"] == owner_user["username"]
+        assert data["author"]["handle"] == owner_user["handle"]
         assert data["state"] == "open"
 
     async def test_create_proposal_multiple_files(
@@ -179,9 +184,9 @@ class TestCreateEditProposal:
                 "title": "Multi-file proposal",
                 "body": "Updating several files",
                 "files": [
-                    {"path": "README.md", "content": "# Updated"},
-                    {"path": "data/results.csv", "content": "x,y\n1,2"},
-                    {"path": "analysis.py", "content": "print('hello')"},
+                    {"path": "README.md", "content": _b64("# Updated")},
+                    {"path": "data/results.csv", "content": _b64("x,y\n1,2")},
+                    {"path": "analysis.py", "content": _b64("print('hello')")},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -198,7 +203,7 @@ class TestCreateEditProposal:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """The head_branch follows the pattern edit/{username}/{slugified_title}."""
+        """The head_branch follows the pattern edit/{user_handle}/{slugified_title}."""
         client, _, owner_token = owner
         _, proposer_user, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
@@ -208,14 +213,14 @@ class TestCreateEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Fix Typo In README",
-                "files": [{"path": "README.md", "content": "fixed"}],
+                "files": [{"path": "README.md", "content": _b64("fixed")}],
             },
             headers=auth_header(proposer_token),
         )
         assert resp.status_code == 201
         head_branch = resp.json()["head_branch"]
-        # Must start with edit/{proposer_username}/
-        assert head_branch.startswith(f"edit/{proposer_user['username']}/")
+        # Must start with edit/{proposer_handle}/
+        assert head_branch.startswith(f"edit/{proposer_user['handle']}/")
         # Must contain a slugified version of the title (lowercase, hyphens)
         slug_part = head_branch.split("/", 2)[2]
         assert slug_part  # non-empty
@@ -239,7 +244,7 @@ class TestCreateEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "No body proposal",
-                "files": [{"path": "data.txt", "content": "data"}],
+                "files": [{"path": "data.txt", "content": _b64("data")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -266,7 +271,7 @@ class TestCreateEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Unauthorized",
-                "files": [{"path": "README.md", "content": "x"}],
+                "files": [{"path": "README.md", "content": _b64("x")}],
             },
             # No auth header
         )
@@ -284,7 +289,7 @@ class TestCreateEditProposalErrors:
             f"/v1/entries/{fake_id}/edits",
             json={
                 "title": "Ghost entry",
-                "files": [{"path": "README.md", "content": "x"}],
+                "files": [{"path": "README.md", "content": _b64("x")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -307,7 +312,7 @@ class TestCreateEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Too early",
-                "files": [{"path": "README.md", "content": "x"}],
+                "files": [{"path": "README.md", "content": _b64("x")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -331,7 +336,7 @@ class TestCreateEditProposalErrors:
             json={
                 "title": "Phiacta entry.yaml edit",
                 "files": [
-                    {"path": ".phiacta/entry.yaml", "content": "updated: true"},
+                    {"path": ".phiacta/entry.yaml", "content": _b64("updated: true")},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -376,7 +381,7 @@ class TestCreateEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "X" * 501,
-                "files": [{"path": "README.md", "content": "x"}],
+                "files": [{"path": "README.md", "content": _b64("x")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -397,7 +402,7 @@ class TestCreateEditProposalErrors:
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits",
             json={
-                "files": [{"path": "README.md", "content": "x"}],
+                "files": [{"path": "README.md", "content": _b64("x")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -420,7 +425,7 @@ class TestCreateEditProposalErrors:
             json={
                 "title": "Traversal attack",
                 "files": [
-                    {"path": "../etc/passwd", "content": "hacked"},
+                    {"path": "../etc/passwd", "content": _b64("hacked")},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -444,7 +449,7 @@ class TestCreateEditProposalErrors:
             json={
                 "title": "Absolute path attack",
                 "files": [
-                    {"path": "/etc/passwd", "content": "hacked"},
+                    {"path": "/etc/passwd", "content": _b64("hacked")},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -488,14 +493,15 @@ class TestCreateEditProposalErrors:
         entry_id = entry["id"]
 
         # Default max is 25 MB; create content slightly over that
-        oversized = "x" * (25 * 1024 * 1024 + 1)
+        oversized = b"x" * (25 * 1024 * 1024 + 1)
+        content_b64 = base64.b64encode(oversized).decode()
 
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Oversized file",
                 "files": [
-                    {"path": "big.bin", "content": oversized},
+                    {"path": "big.bin", "content": content_b64},
                 ],
             },
             headers=auth_header(proposer_token),
@@ -524,7 +530,7 @@ class TestListEditProposals:
 
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert isinstance(data, list)
         assert len(data) == 0
 
@@ -547,7 +553,7 @@ class TestListEditProposals:
                 f"/v1/entries/{entry_id}/edits",
                 json={
                     "title": f"Proposal {i}",
-                    "files": [{"path": f"file{i}.txt", "content": f"content {i}"}],
+                    "files": [{"path": f"file{i}.txt", "content": _b64(f"content {i}")}],
                 },
                 headers=auth_header(proposer_token),
             )
@@ -555,7 +561,7 @@ class TestListEditProposals:
 
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert isinstance(data, list)
         assert len(data) == 2
         titles = {item["title"] for item in data}
@@ -580,7 +586,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To be closed",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -599,7 +605,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Stays open",
-                "files": [{"path": "b.txt", "content": "b"}],
+                "files": [{"path": "b.txt", "content": _b64("b")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -610,7 +616,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         assert data[0]["title"] == "Stays open"
         assert data[0]["state"] == "open"
@@ -633,7 +639,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To close",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -644,7 +650,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Stays open",
-                "files": [{"path": "b.txt", "content": "b"}],
+                "files": [{"path": "b.txt", "content": _b64("b")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -662,7 +668,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits", params={"state": "closed"}
         )
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         assert data[0]["state"] == "closed"
 
@@ -684,7 +690,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To merge",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -702,7 +708,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Stays open",
-                "files": [{"path": "b.txt", "content": "b"}],
+                "files": [{"path": "b.txt", "content": _b64("b")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -713,7 +719,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits", params={"state": "merged"}
         )
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         assert data[0]["state"] == "merged"
 
@@ -730,7 +736,7 @@ class TestListEditProposals:
         # No auth header
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        assert isinstance(resp.json(), list)
+        assert isinstance(resp.json()["items"], list)
 
     async def test_list_proposals_response_fields(
         self,
@@ -750,7 +756,7 @@ class TestListEditProposals:
             json={
                 "title": "Field check",
                 "body": "Checking fields",
-                "files": [{"path": "README.md", "content": "x"}],
+                "files": [{"path": "README.md", "content": _b64("x")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -758,7 +764,7 @@ class TestListEditProposals:
 
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         item = data[0]
         expected_keys = {
@@ -767,7 +773,7 @@ class TestListEditProposals:
             "created_at", "updated_at", "merged_at",
         }
         assert expected_keys.issubset(set(item.keys()))
-        assert set(item["author"].keys()) >= {"username"}
+        assert set(item["author"].keys()) >= {"handle"}
 
     async def test_list_proposals_pagination(
         self,
@@ -788,25 +794,30 @@ class TestListEditProposals:
                 f"/v1/entries/{entry_id}/edits",
                 json={
                     "title": f"Pagination {i}",
-                    "files": [{"path": f"f{i}.txt", "content": f"c{i}"}],
+                    "files": [{"path": f"f{i}.txt", "content": _b64(f"c{i}")}],
                 },
                 headers=auth_header(proposer_token),
             )
             assert resp.status_code == 201
 
-        # Page 1, limit 2
+        # First page, limit 2
         resp = await client.get(
-            f"/v1/entries/{entry_id}/edits", params={"limit": 2, "page": 1}
+            f"/v1/entries/{entry_id}/edits", params={"limit": 2}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 2
+        data = resp.json()
+        assert len(data["items"]) == 2
+        assert data["has_more"] is True
+        assert data["next_cursor"] is not None
 
-        # Page 2, limit 2
+        # Second page via cursor
         resp = await client.get(
-            f"/v1/entries/{entry_id}/edits", params={"limit": 2, "page": 2}
+            f"/v1/entries/{entry_id}/edits", params={"limit": 2, "cursor": data["next_cursor"]}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        data2 = resp.json()
+        assert len(data2["items"]) == 1
+        assert data2["has_more"] is False
 
     async def test_list_proposals_nonexistent_entry_404(
         self,
@@ -857,7 +868,7 @@ class TestGetEditProposalDetail:
             json={
                 "title": "Detail test",
                 "body": "Testing detail endpoint",
-                "files": [{"path": "README.md", "content": "# Detail"}],
+                "files": [{"path": "README.md", "content": _b64("# Detail")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -901,7 +912,7 @@ class TestGetEditProposalDetail:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Public detail",
-                "files": [{"path": "README.md", "content": "public"}],
+                "files": [{"path": "README.md", "content": _b64("public")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -979,7 +990,7 @@ class TestMergeEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Merge me",
-                "files": [{"path": "README.md", "content": "# Merged"}],
+                "files": [{"path": "README.md", "content": _b64("# Merged")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1012,7 +1023,7 @@ class TestMergeEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "State check merge",
-                "files": [{"path": "data.txt", "content": "merged data"}],
+                "files": [{"path": "data.txt", "content": _b64("merged data")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1052,7 +1063,7 @@ class TestMergeEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "No auth merge",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1082,7 +1093,7 @@ class TestMergeEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Non-owner merge",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1172,7 +1183,7 @@ class TestMergeEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Normal proposal",
-                "files": [{"path": "README.md", "content": "normal"}],
+                "files": [{"path": "README.md", "content": _b64("normal")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1210,7 +1221,7 @@ class TestMergeEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Double merge",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1257,7 +1268,7 @@ class TestCloseEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Close me",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1287,7 +1298,7 @@ class TestCloseEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "State check close",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1323,7 +1334,7 @@ class TestCloseEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Idempotent close",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1366,7 +1377,7 @@ class TestCloseEditProposal:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Close on private",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1404,7 +1415,7 @@ class TestCloseEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "No auth close",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1434,7 +1445,7 @@ class TestCloseEditProposalErrors:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Non-owner close",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1513,7 +1524,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Lifecycle merge",
-                "files": [{"path": "README.md", "content": "# Lifecycle"}],
+                "files": [{"path": "README.md", "content": _b64("# Lifecycle")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1525,7 +1536,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        assert len(resp.json()["items"]) == 1
 
         # Merge
         resp = await client.post(
@@ -1540,15 +1551,15 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 0
+        assert len(resp.json()["items"]) == 0
 
         # List -- 1 merged
         resp = await client.get(
             f"/v1/entries/{entry_id}/edits", params={"state": "merged"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["state"] == "merged"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["state"] == "merged"
 
     async def test_create_close_lifecycle(
         self,
@@ -1568,7 +1579,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Lifecycle close",
-                "files": [{"path": "README.md", "content": "# Close"}],
+                "files": [{"path": "README.md", "content": _b64("# Close")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1587,15 +1598,15 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 0
+        assert len(resp.json()["items"]) == 0
 
         # List -- 1 closed
         resp = await client.get(
             f"/v1/entries/{entry_id}/edits", params={"state": "closed"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["state"] == "closed"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["state"] == "closed"
 
     async def test_multiple_proposals_lifecycle(
         self,
@@ -1615,7 +1626,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To merge",
-                "files": [{"path": "a.txt", "content": "merge me"}],
+                "files": [{"path": "a.txt", "content": _b64("merge me")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1627,7 +1638,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "To close",
-                "files": [{"path": "b.txt", "content": "close me"}],
+                "files": [{"path": "b.txt", "content": _b64("close me")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1653,7 +1664,7 @@ class TestEditProposalLifecycle:
         # List all -- should be 2
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        all_proposals = resp.json()
+        all_proposals = resp.json()["items"]
         assert len(all_proposals) == 2
 
         # List open -- should be 0
@@ -1661,14 +1672,14 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 0
+        assert len(resp.json()["items"]) == 0
 
         # List merged -- should be 1
         resp = await client.get(
             f"/v1/entries/{entry_id}/edits", params={"state": "merged"}
         )
         assert resp.status_code == 200
-        merged = resp.json()
+        merged = resp.json()["items"]
         assert len(merged) == 1
         assert merged[0]["title"] == "To merge"
 
@@ -1677,7 +1688,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "closed"}
         )
         assert resp.status_code == 200
-        closed = resp.json()
+        closed = resp.json()["items"]
         assert len(closed) == 1
         assert closed[0]["title"] == "To close"
 
@@ -1703,7 +1714,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_a['id']}/edits",
             json={
                 "title": "Proposal for A",
-                "files": [{"path": "a.txt", "content": "a"}],
+                "files": [{"path": "a.txt", "content": _b64("a")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1714,7 +1725,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_b['id']}/edits",
             json={
                 "title": "Proposal for B",
-                "files": [{"path": "b.txt", "content": "b"}],
+                "files": [{"path": "b.txt", "content": _b64("b")}],
             },
             headers=auth_header(proposer_token),
         )
@@ -1723,14 +1734,14 @@ class TestEditProposalLifecycle:
         # List A -- should only have 1 proposal for A
         resp = await client.get(f"/v1/entries/{entry_a['id']}/edits")
         assert resp.status_code == 200
-        data_a = resp.json()
+        data_a = resp.json()["items"]
         assert len(data_a) == 1
         assert data_a[0]["title"] == "Proposal for A"
 
         # List B -- should only have 1 proposal for B
         resp = await client.get(f"/v1/entries/{entry_b['id']}/edits")
         assert resp.status_code == 200
-        data_b = resp.json()
+        data_b = resp.json()["items"]
         assert len(data_b) == 1
         assert data_b[0]["title"] == "Proposal for B"
 
@@ -1757,7 +1768,7 @@ class TestEditProposalLifecycle:
                 f"/v1/entries/{entry_a['id']}/edits",
                 json={
                     "title": f"A-{i}",
-                    "files": [{"path": f"a{i}.txt", "content": f"a{i}"}],
+                    "files": [{"path": f"a{i}.txt", "content": _b64(f"a{i}")}],
                 },
                 headers=auth_header(proposer_token),
             )
@@ -1769,7 +1780,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_b['id']}/edits",
             json={
                 "title": "B-0",
-                "files": [{"path": "b0.txt", "content": "b0"}],
+                "files": [{"path": "b0.txt", "content": _b64("b0")}],
             },
             headers=auth_header(proposer_token),
         )
