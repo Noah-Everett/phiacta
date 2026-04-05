@@ -140,7 +140,7 @@ async def create_edit_proposal(
         try:
             validate_file_path(fc.path)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Invalid file path") from exc
+            raise HTTPException(status_code=422, detail="Invalid file path") from exc
 
     # Validate file sizes (content is plain text, not base64).
     validated_files: list[FileContent] = []

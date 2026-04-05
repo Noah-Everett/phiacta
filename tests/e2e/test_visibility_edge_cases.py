@@ -15,7 +15,6 @@ or graph visibility suites:
 
 from __future__ import annotations
 
-import base64
 from uuid import UUID, uuid4
 
 import httpx
@@ -311,7 +310,7 @@ class TestWriteOperationsOnPrivateEntries:
         )
         await set_entry_visibility(e2e_session_factory, entry["id"], "private")
 
-        file_content = base64.b64encode(b"proposed change").decode()
+        file_content = "proposed change"
         resp = await client.post(
             f"/v1/entries/{entry['id']}/edits",
             json={
@@ -387,7 +386,7 @@ class TestWriteOperationsOnPrivateEntries:
         assert resp.status_code == 200
 
         # Create edit proposal
-        file_content = base64.b64encode(b"owner proposal").decode()
+        file_content = "owner proposal"
         resp = await client.post(
             f"/v1/entries/{entry['id']}/edits",
             json={
