@@ -31,7 +31,7 @@ _DEFAULT_LANGUAGE = "english"
 
 async def compute_search_tsv(
     *,
-    entry_id: UUID,
+    entity_id: UUID,
     content_cache: str | None,
     version_id: UUID | None,
     db: AsyncSession,
@@ -45,7 +45,7 @@ async def compute_search_tsv(
     - Valid content + version → upsert via repository (uses to_tsvector in SQL).
 
     Catches IntegrityError for entries deleted between task creation and
-    processing (FK violation on entry_id).
+    processing (FK violation on entity_id).
     """
     if version_id is None:
         version = await get_active_version(db=db)
@@ -53,7 +53,7 @@ async def compute_search_tsv(
             logger.warning(
                 "No active ViewVersion for search_tsv — skipping computation "
                 "for entry %s",
-                entry_id,
+                entity_id,
             )
             return
         version_id = version.id
@@ -64,13 +64,13 @@ async def compute_search_tsv(
     has_content = content_cache is not None and content_cache.strip()
 
     if not has_content:
-        await delete_by_entry(entry_id=entry_id, version_id=version_id, db=db)
-        logger.debug("Deleted search_tsv row for entry %s", entry_id)
+        await delete_by_entry(entity_id=entity_id, version_id=version_id, db=db)
+        logger.debug("Deleted search_tsv row for entry %s", entity_id)
         return
 
     try:
         await upsert(
-            entry_id=entry_id,
+            entity_id=entity_id,
             version_id=version_id,
             content=content_cache,
             language=language,
@@ -78,12 +78,12 @@ async def compute_search_tsv(
         )
         logger.debug(
             "Upserted search_tsv row for entry %s (version %s)",
-            entry_id,
+            entity_id,
             version_id,
         )
     except IntegrityError:
         logger.warning(
             "IntegrityError computing search_tsv for entry %s — "
             "entry was likely deleted",
-            entry_id,
+            entity_id,
         )

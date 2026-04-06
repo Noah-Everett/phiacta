@@ -90,7 +90,7 @@ async def get_tsvector(
         version_id = active.id
 
     row = await get_by_entry(
-        entry_id=entry_id,
+        entity_id=entry_id,
         version_id=version_id,
         db=db,
     )
@@ -101,7 +101,7 @@ async def get_tsvector(
         )
 
     return SearchTsvResponse(
-        entry_id=row.entry_id,
+        entry_id=row.entity_id,
         version_id=row.version_id,
         tsv=str(row.tsv),
         computed_at=row.computed_at,

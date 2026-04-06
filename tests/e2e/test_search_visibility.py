@@ -82,7 +82,7 @@ async def _insert_tsv(
     async with session_factory() as session:
         await session.execute(
             text(
-                "INSERT INTO view_search_tsv (entry_id, version_id, tsv) "
+                "INSERT INTO view_search_tsv (entity_id, version_id, tsv) "
                 "VALUES (:eid, :vid, to_tsvector('english', :content))"
             ),
             {"eid": entry_id, "vid": str(version_id), "content": content},

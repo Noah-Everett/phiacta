@@ -29,7 +29,7 @@ manifest = PluginManifest(
 
 
 async def on_ingest(
-    entry_id: UUID, content: str | None, metadata: dict, db: AsyncSession,
+    entity_id: UUID, content: str | None, metadata: dict, db: AsyncSession,
 ) -> None:
     """Recompute search tsvector when entry content or metadata changes."""
     parts: list[str] = []
@@ -39,7 +39,7 @@ async def on_ingest(
     if content:
         parts.append(content)
     searchable = "\n\n".join(parts) if parts else None
-    await compute_search_tsv(entry_id=entry_id, content_cache=searchable, version_id=None, db=db)
+    await compute_search_tsv(entity_id=entity_id, content_cache=searchable, version_id=None, db=db)
 
 
 __all__ = ["manifest", "router", "on_ingest"]

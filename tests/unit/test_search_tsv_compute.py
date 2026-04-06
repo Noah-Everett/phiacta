@@ -34,7 +34,7 @@ class TestComputeSearchTsvBranching:
         """compute_search_tsv with valid content calls repository.upsert()."""
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         version_id = uuid4()
         db = AsyncMock()
         content = "Valid content for tsvector computation."
@@ -49,16 +49,16 @@ class TestComputeSearchTsvBranching:
             ) as mock_delete,
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache=content,
                 version_id=version_id,
                 db=db,
             )
             mock_upsert.assert_called_once()
             call_kwargs = mock_upsert.call_args
-            # Verify entry_id and version_id are passed correctly
-            assert call_kwargs.kwargs.get("entry_id") == entry_id or (
-                call_kwargs.args and call_kwargs.args[0] == entry_id
+            # Verify entity_id and version_id are passed correctly
+            assert call_kwargs.kwargs.get("entity_id") == entity_id or (
+                call_kwargs.args and call_kwargs.args[0] == entity_id
             )
             mock_delete.assert_not_called()
 
@@ -66,7 +66,7 @@ class TestComputeSearchTsvBranching:
         """compute_search_tsv with content_cache=None calls repository.delete_by_entry()."""
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         version_id = uuid4()
         db = AsyncMock()
 
@@ -80,7 +80,7 @@ class TestComputeSearchTsvBranching:
             ) as mock_delete,
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache=None,
                 version_id=version_id,
                 db=db,
@@ -95,7 +95,7 @@ class TestComputeSearchTsvBranching:
         """
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         version_id = uuid4()
         db = AsyncMock()
 
@@ -109,7 +109,7 @@ class TestComputeSearchTsvBranching:
             ) as mock_delete,
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache="",
                 version_id=version_id,
                 db=db,
@@ -124,7 +124,7 @@ class TestComputeSearchTsvBranching:
         """
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         version_id = uuid4()
         db = AsyncMock()
 
@@ -138,7 +138,7 @@ class TestComputeSearchTsvBranching:
             ) as mock_delete,
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache="   \t\n  ",
                 version_id=version_id,
                 db=db,
@@ -154,7 +154,7 @@ class TestComputeSearchTsvBranching:
         """
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         active_version_id = uuid4()
         db = AsyncMock()
 
@@ -176,7 +176,7 @@ class TestComputeSearchTsvBranching:
             ),
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache="Content with version lookup.",
                 version_id=None,
                 db=db,
@@ -191,7 +191,7 @@ class TestComputeSearchTsvBranching:
         """
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         db = AsyncMock()
 
         with (
@@ -209,7 +209,7 @@ class TestComputeSearchTsvBranching:
             ) as mock_delete,
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache="Content that will not be computed.",
                 version_id=None,
                 db=db,
@@ -227,11 +227,11 @@ class TestComputeSearchTsvBranching:
 class TestComputeSearchTsvArguments:
     """Tests that compute_search_tsv passes correct arguments to repository."""
 
-    async def test_upsert_receives_correct_entry_id(self) -> None:
-        """repository.upsert() receives the exact entry_id passed to compute."""
+    async def test_upsert_receives_correct_entity_id(self) -> None:
+        """repository.upsert() receives the exact entity_id passed to compute."""
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         version_id = uuid4()
         db = AsyncMock()
 
@@ -245,20 +245,20 @@ class TestComputeSearchTsvArguments:
             ),
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache="Test content.",
                 version_id=version_id,
                 db=db,
             )
-            # Verify entry_id was passed
+            # Verify entity_id was passed
             call_kwargs = mock_upsert.call_args.kwargs
-            assert call_kwargs["entry_id"] == entry_id
+            assert call_kwargs["entity_id"] == entity_id
 
     async def test_upsert_receives_correct_version_id(self) -> None:
         """repository.upsert() receives the exact version_id passed to compute."""
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         version_id = uuid4()
         db = AsyncMock()
 
@@ -272,7 +272,7 @@ class TestComputeSearchTsvArguments:
             ),
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache="Test content.",
                 version_id=version_id,
                 db=db,
@@ -284,7 +284,7 @@ class TestComputeSearchTsvArguments:
         """repository.upsert() receives the content string for to_tsvector."""
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         version_id = uuid4()
         db = AsyncMock()
         content = "Specific content to be vectorized."
@@ -299,7 +299,7 @@ class TestComputeSearchTsvArguments:
             ),
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache=content,
                 version_id=version_id,
                 db=db,
@@ -311,7 +311,7 @@ class TestComputeSearchTsvArguments:
         """repository.upsert() receives the db session."""
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         version_id = uuid4()
         db = AsyncMock()
 
@@ -325,7 +325,7 @@ class TestComputeSearchTsvArguments:
             ),
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache="Test.",
                 version_id=version_id,
                 db=db,
@@ -334,10 +334,10 @@ class TestComputeSearchTsvArguments:
             assert call_kwargs["db"] is db
 
     async def test_delete_receives_correct_entry_and_version(self) -> None:
-        """repository.delete_by_entry() receives correct entry_id and version_id."""
+        """repository.delete_by_entry() receives correct entity_id and version_id."""
         from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
-        entry_id = uuid4()
+        entity_id = uuid4()
         version_id = uuid4()
         db = AsyncMock()
 
@@ -351,13 +351,13 @@ class TestComputeSearchTsvArguments:
             ) as mock_delete,
         ):
             await compute_search_tsv(
-                entry_id=entry_id,
+                entity_id=entity_id,
                 content_cache=None,
                 version_id=version_id,
                 db=db,
             )
             call_kwargs = mock_delete.call_args.kwargs
-            assert call_kwargs["entry_id"] == entry_id
+            assert call_kwargs["entity_id"] == entity_id
             assert call_kwargs["version_id"] == version_id
             assert call_kwargs["db"] is db
 

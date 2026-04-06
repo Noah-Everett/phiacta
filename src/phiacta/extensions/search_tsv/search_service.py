@@ -78,7 +78,7 @@ async def search_text(
 
     stmt = (
         select(*columns)
-        .join(Entry, Entry.id == ViewSearchTsv.entry_id)
+        .join(Entry, Entry.id == ViewSearchTsv.entity_id)
     )
     if ExtensionMetadata is not None:
         stmt = stmt.outerjoin(ExtensionMetadata, ExtensionMetadata.entity_id == Entry.id)

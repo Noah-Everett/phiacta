@@ -26,14 +26,14 @@ logger = logging.getLogger(__name__)
 
 async def get_by_entry(
     *,
-    entry_id: UUID,
+    entity_id: UUID,
     version_id: UUID,
     db: AsyncSession,
 ) -> ViewSearchTsv | None:
     """Get the tsvector row for an entry+version. Returns None if not found."""
     result = await db.execute(
         select(ViewSearchTsv).where(
-            ViewSearchTsv.entry_id == entry_id,
+            ViewSearchTsv.entity_id == entity_id,
             ViewSearchTsv.version_id == version_id,
         )
     )
@@ -42,7 +42,7 @@ async def get_by_entry(
 
 async def upsert(
     *,
-    entry_id: UUID,
+    entity_id: UUID,
     version_id: UUID,
     content: str,
     language: str = "english",
@@ -50,13 +50,13 @@ async def upsert(
 ) -> None:
     """Upsert a tsvector row using INSERT ... ON CONFLICT DO UPDATE."""
     stmt = pg_insert(ViewSearchTsv).values(
-        entry_id=entry_id,
+        entity_id=entity_id,
         version_id=version_id,
         tsv=func.to_tsvector(language, content),
         computed_at=func.now(),
     )
     stmt = stmt.on_conflict_do_update(
-        index_elements=["entry_id", "version_id"],
+        index_elements=["entity_id", "version_id"],
         set_={
             "tsv": func.to_tsvector(language, content),
             "computed_at": func.now(),
@@ -67,14 +67,14 @@ async def upsert(
 
 async def delete_by_entry(
     *,
-    entry_id: UUID,
+    entity_id: UUID,
     version_id: UUID,
     db: AsyncSession,
 ) -> None:
     """Delete the tsvector row for an entry+version. No-op if not found."""
     await db.execute(
         delete(ViewSearchTsv).where(
-            ViewSearchTsv.entry_id == entry_id,
+            ViewSearchTsv.entity_id == entity_id,
             ViewSearchTsv.version_id == version_id,
         )
     )
