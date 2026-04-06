@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.models.view_version import ViewVersion
-from phiacta.views.search_tsv.models import ViewSearchTsv
+from phiacta.extensions.search_tsv.models import ViewSearchTsv
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +48,7 @@ async def upsert(
     language: str = "english",
     db: AsyncSession,
 ) -> None:
-    """Upsert a tsvector row using INSERT ... ON CONFLICT DO UPDATE.
-
-    Uses PostgreSQL's to_tsvector(language, content) for the computation.
-    The language parameter should come from ViewVersion.parameters["language"].
-    The computed_at timestamp is updated on every upsert.
-    """
+    """Upsert a tsvector row using INSERT ... ON CONFLICT DO UPDATE."""
     stmt = pg_insert(ViewSearchTsv).values(
         entry_id=entry_id,
         version_id=version_id,
@@ -89,13 +84,7 @@ async def get_active_version(
     *,
     db: AsyncSession,
 ) -> ViewVersion | None:
-    """Get the active ViewVersion for search_tsv.
-
-    Queries by view_type='search_tsv' and status='active'.
-    Uses order_by + limit(1) to handle the blue-green swap case where
-    multiple active versions may coexist temporarily.
-    Returns None if no active version exists.
-    """
+    """Get the active ViewVersion for search_tsv."""
     result = await db.execute(
         select(ViewVersion)
         .where(
@@ -113,11 +102,7 @@ async def get_version_by_string(
     version: str,
     db: AsyncSession,
 ) -> ViewVersion | None:
-    """Get a ViewVersion by its version string (e.g., 'v1').
-
-    Returns None if no matching version exists.
-    Protected by the unique constraint on (view_type, version).
-    """
+    """Get a ViewVersion by its version string (e.g., 'v1')."""
     result = await db.execute(
         select(ViewVersion).where(
             ViewVersion.view_type == "search_tsv",

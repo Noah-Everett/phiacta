@@ -18,7 +18,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.views.search_tsv.repository import (
+from phiacta.extensions.search_tsv.repository import (
     delete_by_entry,
     get_active_version,
     upsert,
@@ -47,7 +47,6 @@ async def compute_search_tsv(
     Catches IntegrityError for entries deleted between task creation and
     processing (FK violation on entry_id).
     """
-    # Resolve version_id if not provided
     if version_id is None:
         version = await get_active_version(db=db)
         if version is None:
@@ -60,11 +59,8 @@ async def compute_search_tsv(
         version_id = version.id
         language = version.parameters.get("language", _DEFAULT_LANGUAGE)
     else:
-        # When version_id is provided directly, use default language
-        # (caller is responsible for passing the correct version)
         language = _DEFAULT_LANGUAGE
 
-    # Determine if content is effectively empty
     has_content = content_cache is not None and content_cache.strip()
 
     if not has_content:
