@@ -1,7 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Graph tool router — GET /v1/tools/graph/ endpoint."""
+"""Graph tool router — GET /v1/tools/graph/ endpoint.
+
+Tool isolation: this router does NOT import Entry models, DB sessions
+from core.db, or extension models directly. DB access goes through
+core.tool_deps; query logic lives in core.services.graph_query.
+"""
 
 from __future__ import annotations
 
@@ -14,14 +19,12 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.auth.dependencies import get_optional_user
-from phiacta.core.db.session import get_db
-from phiacta.core.models.user import User
-from phiacta.tools.graph.repository import (
+from phiacta.core.tool_deps import get_db
+from phiacta.core.services.graph_query import (
     enrich_nodes,
-    group_edges,
-    prune_disconnected,
     traverse_references,
 )
+from phiacta.tools.graph.utils import group_edges, prune_disconnected
 from phiacta.tools.graph.schemas import (
     GraphEdge,
     GraphNode,
@@ -76,23 +79,21 @@ async def get_graph(
     rel: str | None = Query(None, description="Comma-separated relationship type filter"),
     entry_type: str | None = Query(None, description="Comma-separated entry type filter"),
     limit: int = Query(50, ge=1, le=500),
-    user: User | None = Depends(get_optional_user),
+    user=Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> GraphResponse:
     """Traverse the reference graph from seed entries.
 
     Returns nodes and grouped edges for the subgraph reachable within
-    ``depth`` hops from the seeds. Archived entries are only visible
+    ``depth`` hops from the seeds. Private entries are only visible
     to their owner.
     """
-    # Validate mode
     if mode not in _VALID_MODES:
         raise HTTPException(
             status_code=422,
             detail=f"Unknown mode: {mode!r}. Valid modes: {sorted(_VALID_MODES)}",
         )
 
-    # Validate direction
     if direction not in _VALID_DIRECTIONS:
         raise HTTPException(
             status_code=422,
@@ -104,11 +105,10 @@ async def get_graph(
     entry_type_filter = _parse_csv(entry_type)
     viewer_id = user.id if user else None
 
-    # Set statement timeout as safety net (PostgreSQL only)
     try:
         await db.execute(text("SET LOCAL statement_timeout = '10s'"))
     except OperationalError:
-        pass  # SQLite or other backends — skip timeout
+        pass
 
     try:
         node_depths, edge_rows = await traverse_references(
@@ -129,19 +129,14 @@ async def get_graph(
 
     truncated = len(node_depths) >= limit
 
-    # Group edges by unordered node pair
     edges = group_edges(edge_rows)
 
-    # Apply entry_type filter on non-seed nodes
     if entry_type_filter:
-        # Need enrichment first to know entry types
         enrichment = await enrich_nodes(node_ids=list(node_depths.keys()), db=db)
 
-        # Remove non-matching non-seed nodes
         filtered_nodes: dict[UUID, int] = {}
         for nid, d in node_depths.items():
             if nid in seed_ids:
-                # Seeds always included
                 filtered_nodes[nid] = d
             elif nid in enrichment:
                 et = enrichment[nid].get("entry_type")
@@ -149,25 +144,21 @@ async def get_graph(
                     filtered_nodes[nid] = d
         node_depths = filtered_nodes
 
-        # Remove edges referencing pruned nodes
         remaining = set(node_depths.keys())
         edges = [
             e for e in edges
             if e["source"] in remaining and e["target"] in remaining
         ]
 
-        # Prune disconnected from seeds
         node_depths, edges = prune_disconnected(
             node_depths=node_depths, edges=edges, seed_ids=seed_ids,
         )
     else:
         enrichment = None
 
-    # Enrich nodes (skip if already done for entry_type filtering)
     if enrichment is None:
         enrichment = await enrich_nodes(node_ids=list(node_depths.keys()), db=db)
 
-    # Build response
     nodes = []
     for nid, d in node_depths.items():
         info = enrichment.get(nid, {})
@@ -177,11 +168,10 @@ async def get_graph(
             summary=info.get("summary"),
             entry_type=info.get("entry_type"),
             tags=info.get("tags", []),
-            status=info.get("status", "active"),
+            visibility=info.get("visibility", "public"),
             depth=d,
         ))
 
-    # Sort nodes by depth for consistent output
     nodes.sort(key=lambda n: (n.depth, str(n.id)))
 
     graph_edges = [
@@ -193,7 +183,6 @@ async def get_graph(
         for e in edges
     ]
 
-    # Filter seed_ids to only those that ended up in the graph
     actual_seeds = [sid for sid in seed_ids if sid in node_depths]
 
     return GraphResponse(
