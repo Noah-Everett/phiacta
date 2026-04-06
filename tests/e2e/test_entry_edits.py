@@ -424,7 +424,7 @@ class TestCreateEditProposalErrors:
             },
             headers=auth_header(proposer_token),
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     async def test_create_absolute_path_blocked_400(
         self,
@@ -448,7 +448,7 @@ class TestCreateEditProposalErrors:
             },
             headers=auth_header(proposer_token),
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     async def test_create_invalid_base64_400(
         self,
