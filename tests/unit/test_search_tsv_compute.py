@@ -32,7 +32,7 @@ class TestComputeSearchTsvBranching:
 
     async def test_valid_content_calls_upsert(self) -> None:
         """compute_search_tsv with valid content calls repository.upsert()."""
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -41,10 +41,10 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -64,7 +64,7 @@ class TestComputeSearchTsvBranching:
 
     async def test_none_content_calls_delete(self) -> None:
         """compute_search_tsv with content_cache=None calls repository.delete_by_entry()."""
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -72,10 +72,10 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -93,7 +93,7 @@ class TestComputeSearchTsvBranching:
 
         Critical scenario #10: empty string treated same as None.
         """
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -101,10 +101,10 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -122,7 +122,7 @@ class TestComputeSearchTsvBranching:
 
         Whitespace-only content has no searchable tokens — treat as empty.
         """
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -130,10 +130,10 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -152,7 +152,7 @@ class TestComputeSearchTsvBranching:
         Critical scenario #8 path: when no version_id is explicitly passed,
         the function should query for the active version.
         """
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         active_version_id = uuid4()
@@ -163,15 +163,15 @@ class TestComputeSearchTsvBranching:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.get_active_version",
+                "phiacta.extensions.search_tsv.compute.get_active_version",
                 new_callable=AsyncMock,
                 return_value=mock_version,
             ) as mock_get_version,
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -189,22 +189,22 @@ class TestComputeSearchTsvBranching:
 
         Critical scenario #8: no active ViewVersion -> log warning, no-op.
         """
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         db = AsyncMock()
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.get_active_version",
+                "phiacta.extensions.search_tsv.compute.get_active_version",
                 new_callable=AsyncMock,
                 return_value=None,
             ) as mock_get_version,
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -229,7 +229,7 @@ class TestComputeSearchTsvArguments:
 
     async def test_upsert_receives_correct_entry_id(self) -> None:
         """repository.upsert() receives the exact entry_id passed to compute."""
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -237,10 +237,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -256,7 +256,7 @@ class TestComputeSearchTsvArguments:
 
     async def test_upsert_receives_correct_version_id(self) -> None:
         """repository.upsert() receives the exact version_id passed to compute."""
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -264,10 +264,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -282,7 +282,7 @@ class TestComputeSearchTsvArguments:
 
     async def test_upsert_receives_content_string(self) -> None:
         """repository.upsert() receives the content string for to_tsvector."""
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -291,10 +291,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -309,7 +309,7 @@ class TestComputeSearchTsvArguments:
 
     async def test_upsert_receives_db_session(self) -> None:
         """repository.upsert() receives the db session."""
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -317,10 +317,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ) as mock_upsert,
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ),
         ):
@@ -335,7 +335,7 @@ class TestComputeSearchTsvArguments:
 
     async def test_delete_receives_correct_entry_and_version(self) -> None:
         """repository.delete_by_entry() receives correct entry_id and version_id."""
-        from phiacta.views.search_tsv.compute import compute_search_tsv
+        from phiacta.extensions.search_tsv.compute import compute_search_tsv
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -343,10 +343,10 @@ class TestComputeSearchTsvArguments:
 
         with (
             patch(
-                "phiacta.views.search_tsv.compute.upsert", new_callable=AsyncMock
+                "phiacta.extensions.search_tsv.compute.upsert", new_callable=AsyncMock
             ),
             patch(
-                "phiacta.views.search_tsv.compute.delete_by_entry",
+                "phiacta.extensions.search_tsv.compute.delete_by_entry",
                 new_callable=AsyncMock,
             ) as mock_delete,
         ):
@@ -372,20 +372,20 @@ class TestSearchTsvManifest:
 
     def test_manifest_exists_and_has_correct_name(self) -> None:
         """The search_tsv plugin exposes a manifest with name='search_tsv'."""
-        from phiacta.views.search_tsv import manifest
+        from phiacta.extensions.search_tsv import manifest
 
         assert manifest.name == "search_tsv"
 
-    def test_manifest_type_is_view(self) -> None:
-        """The search_tsv manifest type is PluginType.VIEW."""
+    def test_manifest_type_is_extension(self) -> None:
+        """The search_tsv manifest type is PluginType.EXTENSION."""
         from phiacta.plugin import PluginType
-        from phiacta.views.search_tsv import manifest
+        from phiacta.extensions.search_tsv import manifest
 
-        assert manifest.type == PluginType.VIEW
+        assert manifest.type == PluginType.EXTENSION
 
     def test_manifest_is_plugin_manifest_instance(self) -> None:
         """The manifest is a PluginManifest instance."""
         from phiacta.plugin import PluginManifest
-        from phiacta.views.search_tsv import manifest
+        from phiacta.extensions.search_tsv import manifest
 
         assert isinstance(manifest, PluginManifest)

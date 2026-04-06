@@ -11,8 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.compose import EntryDataProvider
 from phiacta.core.db.session import get_db
+from phiacta.core.models.user import User
 from phiacta.tools.search.repository import search_text
 from phiacta.tools.search.schemas import SearchResponse, SearchResultItem
 from phiacta.views.search_tsv.repository import get_active_version
@@ -43,6 +45,7 @@ async def search_entries(
     status: str = Query("active"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> SearchResponse:
     """Full-text search over entries. Public read — no auth required.
@@ -90,6 +93,7 @@ async def search_entries(
     )
 
     repo_status = None if status == "all" else status
+    viewer_id = user.id if user else None
 
     # Execute search with language fallback on invalid regconfig
     try:
@@ -101,6 +105,7 @@ async def search_entries(
             limit=limit,
             offset=offset,
             status=repo_status,
+            viewer_id=viewer_id,
             filters=ext_filters if ext_filters else None,
             providers=providers if ext_filters else None,
         )
@@ -119,6 +124,7 @@ async def search_entries(
                 limit=limit,
                 offset=offset,
                 status=repo_status,
+                viewer_id=viewer_id,
                 filters=ext_filters if ext_filters else None,
                 providers=providers if ext_filters else None,
             )

@@ -25,7 +25,7 @@ class TestSearchTsvResponseSchema:
 
     def test_construction_with_all_fields(self) -> None:
         """SearchTsvResponse can be constructed with entry_id, version_id, tsv, computed_at."""
-        from phiacta.views.search_tsv.schemas import SearchTsvResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvResponse
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -44,7 +44,7 @@ class TestSearchTsvResponseSchema:
 
     def test_entry_id_is_uuid(self) -> None:
         """SearchTsvResponse.entry_id must be a UUID."""
-        from phiacta.views.search_tsv.schemas import SearchTsvResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvResponse
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -60,7 +60,7 @@ class TestSearchTsvResponseSchema:
 
     def test_version_id_is_uuid(self) -> None:
         """SearchTsvResponse.version_id must be a UUID."""
-        from phiacta.views.search_tsv.schemas import SearchTsvResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvResponse
 
         entry_id = uuid4()
         version_id = uuid4()
@@ -76,7 +76,7 @@ class TestSearchTsvResponseSchema:
 
     def test_tsv_is_string(self) -> None:
         """SearchTsvResponse.tsv is a string representation of the tsvector."""
-        from phiacta.views.search_tsv.schemas import SearchTsvResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvResponse
 
         resp = SearchTsvResponse(
             entry_id=uuid4(),
@@ -89,7 +89,7 @@ class TestSearchTsvResponseSchema:
 
     def test_computed_at_is_datetime(self) -> None:
         """SearchTsvResponse.computed_at is a datetime."""
-        from phiacta.views.search_tsv.schemas import SearchTsvResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvResponse
 
         now = datetime.now(tz=timezone.utc)
         resp = SearchTsvResponse(
@@ -102,7 +102,7 @@ class TestSearchTsvResponseSchema:
 
     def test_empty_tsv_string_is_valid(self) -> None:
         """SearchTsvResponse accepts an empty tsv string (edge case)."""
-        from phiacta.views.search_tsv.schemas import SearchTsvResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvResponse
 
         resp = SearchTsvResponse(
             entry_id=uuid4(),
@@ -123,7 +123,7 @@ class TestSearchTsvVersionResponseSchema:
 
     def test_construction_with_all_fields(self) -> None:
         """SearchTsvVersionResponse can be constructed with all fields."""
-        from phiacta.views.search_tsv.schemas import SearchTsvVersionResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvVersionResponse
 
         vid = uuid4()
         resp = SearchTsvVersionResponse(
@@ -141,7 +141,7 @@ class TestSearchTsvVersionResponseSchema:
 
     def test_view_type_field(self) -> None:
         """SearchTsvVersionResponse.view_type is a string."""
-        from phiacta.views.search_tsv.schemas import SearchTsvVersionResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvVersionResponse
 
         resp = SearchTsvVersionResponse(
             id=uuid4(),
@@ -154,7 +154,7 @@ class TestSearchTsvVersionResponseSchema:
 
     def test_parameters_is_dict(self) -> None:
         """SearchTsvVersionResponse.parameters is a dict."""
-        from phiacta.views.search_tsv.schemas import SearchTsvVersionResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvVersionResponse
 
         resp = SearchTsvVersionResponse(
             id=uuid4(),
@@ -168,7 +168,7 @@ class TestSearchTsvVersionResponseSchema:
 
     def test_empty_parameters_is_valid(self) -> None:
         """SearchTsvVersionResponse with empty parameters dict is valid."""
-        from phiacta.views.search_tsv.schemas import SearchTsvVersionResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvVersionResponse
 
         resp = SearchTsvVersionResponse(
             id=uuid4(),
@@ -181,7 +181,7 @@ class TestSearchTsvVersionResponseSchema:
 
     def test_status_values(self) -> None:
         """SearchTsvVersionResponse accepts various status values as strings."""
-        from phiacta.views.search_tsv.schemas import SearchTsvVersionResponse
+        from phiacta.extensions.search_tsv.schemas import SearchTsvVersionResponse
 
         for status in ["active", "deprecated", "pending"]:
             resp = SearchTsvVersionResponse(

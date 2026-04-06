@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.compose import EntryDataProvider
@@ -15,13 +13,11 @@ from phiacta.core.models.entry import Entry
 from phiacta.core.models.outbox import Outbox
 from phiacta.core.schemas.entry import EntryCreate
 from phiacta.core.services.entity_service import EntityService
-from phiacta.core.services.git_service import GitService
 
 
 class EntryService:
-    def __init__(self, session: AsyncSession, git_service: GitService | None = None) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self._session = session
-        self._git = git_service
         self._entity_service = EntityService(session)
 
     async def create_entry(
@@ -49,7 +45,12 @@ class EntryService:
         entity = await self._entity_service.register_entity(
             entity_type="entry", created_by=user.id,
         )
-        entry = Entry(id=entity.id, created_by=user.id, repo_name=str(entity.id))
+        entry = Entry(
+            id=entity.id,
+            created_by=user.id,
+            repo_name=str(entity.id),
+            visibility=body.visibility,
+        )
         self._session.add(entry)
         await self._session.flush()
 
@@ -82,36 +83,6 @@ class EntryService:
             entity_id=entry.id, metadata={},
         )
 
-        await self._session.commit()
-        await self._session.refresh(entry)
-        return entry
-
-    async def archive_entry(self, entry: Entry, user_id: UUID | None = None) -> Entry:
-        if self._git is None:
-            raise RuntimeError("GitService required for archival")
-        if entry.status not in ("active", "draft"):
-            raise ValueError(f"Cannot archive entry with status '{entry.status}'")
-        entry.status = "archived"
-        await self._git.archive_repo(entry.id)
-        if user_id is not None:
-            await self._entity_service.log_activity(
-                actor_id=user_id, action="entry.archived", entity_id=entry.id,
-            )
-        await self._session.commit()
-        await self._session.refresh(entry)
-        return entry
-
-    async def unarchive_entry(self, entry: Entry, user_id: UUID | None = None) -> Entry:
-        if self._git is None:
-            raise RuntimeError("GitService required for unarchival")
-        if entry.status != "archived":
-            raise ValueError(f"Cannot unarchive entry with status '{entry.status}'")
-        await self._git.unarchive_repo(entry.id)
-        entry.status = "active"
-        if user_id is not None:
-            await self._entity_service.log_activity(
-                actor_id=user_id, action="entry.unarchived", entity_id=entry.id,
-            )
         await self._session.commit()
         await self._session.refresh(entry)
         return entry

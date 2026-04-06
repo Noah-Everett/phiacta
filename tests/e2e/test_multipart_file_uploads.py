@@ -28,7 +28,6 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -355,26 +354,6 @@ class TestMultipartPutFileErrors:
         )
         assert resp.status_code == 403
         assert "author" in resp.json()["detail"].lower()
-
-    async def test_multipart_archived_entry_returns_403(
-        self,
-        authed: AuthedFixture,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """Scenario: Multipart upload to archived entry returns 403."""
-        client, _, token = authed
-        entry = await create_entry(client, token, title="Archived Multipart")
-        entry_id = entry["id"]
-        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
-        await set_entry_status(e2e_session_factory, entry_id, "archived")
-
-        resp = await client.put(
-            f"/v1/entries/{entry_id}/files/README.md",
-            headers=auth_header(token),
-            **_multipart_kwargs(b"hello"),
-        )
-        assert resp.status_code == 403
-        assert "not editable" in resp.json()["detail"].lower()
 
     async def test_multipart_json_body_rejected(
         self,

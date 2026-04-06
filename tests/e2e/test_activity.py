@@ -25,7 +25,6 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -610,41 +609,24 @@ class TestActivityFeedIsolation:
 class TestActivityActionVocabulary:
     """Scenario: All specified action types are correctly logged."""
 
-    async def test_all_entry_actions_logged(
+    async def test_entry_created_action_logged(
         self,
         owner: AuthedFixture,
-        fake_git: FakeGitService,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Creating, archiving, and unarchiving an entry produces exactly
-        the three expected action types."""
+        """Creating an entry logs 'entry.created' activity."""
         client, user, token = owner
-        entry = await _create_ready_entry(
-            client, token, e2e_session_factory, title="All Actions"
-        )
-        entry_id = entry["id"]
-
-        # Archive
         resp = await client.post(
-            f"/v1/entries/{entry_id}/archive",
+            "/v1/entries",
+            json={"title": "Activity Test", "content_format": "markdown"},
             headers=auth_header(token),
         )
-        assert resp.status_code == 200
-
-        # Unarchive
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/unarchive",
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
 
         resp = await client.get("/v1/activity", params={"actor": user["id"]})
         assert resp.status_code == 200
         items = resp.json()["items"]
         actions = {a["action"] for a in items}
         assert "entry.created" in actions
-        assert "entry.archived" in actions
-        assert "entry.unarchived" in actions
 
     async def test_all_issue_actions_logged(
         self,

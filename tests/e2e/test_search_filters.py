@@ -3,7 +3,7 @@
 
 """E2E tests for search endpoint filtering.
 
-Tests the dynamic filter mechanism: status, entry_type, tags, combined
+Tests the dynamic filter mechanism: visibility, entry_type, tags, combined
 filters, and unknown params. These tests create entries with known
 types/tags and insert tsvector rows directly so the search endpoint
 returns them.
@@ -25,14 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import phiacta.extensions.metadata.models  # noqa: F401
 import phiacta.extensions.tags.models  # noqa: F401
 import phiacta.extensions.types.models  # noqa: F401
-import phiacta.views.search_tsv.models  # noqa: F401
+import phiacta.extensions.search_tsv.models  # noqa: F401
 
 from tests.e2e.conftest import (
     auth_header,
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
+    set_entry_visibility,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -164,7 +164,7 @@ async def search_env(
       - "alpha": type=empirical, tags=[physics, quantum], content has "quantum"
       - "beta":  type=theorem,   tags=[math],             content has "quantum"
       - "gamma": type=empirical, tags=[math, physics],    content has "gamma"
-      - "archived": type=empirical, status=archived,      content has "quantum"
+      - "private": type=empirical, visibility=private,    content has "quantum"
     """
     client, user, token = authed
     vid = await _ensure_search_version(e2e_session_factory)
@@ -193,19 +193,19 @@ async def search_env(
     await _set_tags(client, token, gamma["id"], ["math", "physics"])
     await _insert_tsv(e2e_session_factory, gamma["id"], vid, "gamma math physics")
 
-    archived = await create_entry(
-        client, token, title="Archived Quantum", entry_type="empirical",
-        summary="Archived quantum entry",
+    private = await create_entry(
+        client, token, title="Private Quantum", entry_type="empirical",
+        summary="Private quantum entry",
     )
-    await set_entry_repo_status(e2e_session_factory, archived["id"], "ready")
-    await set_entry_status(e2e_session_factory, archived["id"], "archived")
-    await _insert_tsv(e2e_session_factory, archived["id"], vid, "quantum archived")
+    await set_entry_repo_status(e2e_session_factory, private["id"], "ready")
+    await set_entry_visibility(e2e_session_factory, private["id"], "private")
+    await _insert_tsv(e2e_session_factory, private["id"], vid, "quantum private")
 
     return {
         "alpha": alpha,
         "beta": beta,
         "gamma": gamma,
-        "archived": archived,
+        "private": private,
         "client": client,
         "token": token,
     }
@@ -220,39 +220,63 @@ def _ids(items: list[dict]) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-class TestSearchStatusFilter:
-    async def test_default_status_is_active(self, search_env: dict) -> None:
-        """Default search (no status param) returns only active entries."""
+class TestSearchVisibilityFilter:
+    async def test_default_visibility_is_public(self, search_env: dict) -> None:
+        """Default search (no visibility param) returns only public entries."""
         client = search_env["client"]
         resp = await client.get("/v1/tools/search/", params={"q": "quantum"})
         assert resp.status_code == 200
         ids = _ids(resp.json()["items"])
         assert search_env["alpha"]["id"] in ids
         assert search_env["beta"]["id"] in ids
-        assert search_env["archived"]["id"] not in ids
+        assert search_env["private"]["id"] not in ids
 
-    async def test_status_archived(self, search_env: dict) -> None:
-        """status=archived returns only archived entries."""
-        client = search_env["client"]
+    async def test_visibility_private_owner(self, search_env: dict) -> None:
+        """visibility=private returns owner's private entries."""
+        client, token = search_env["client"], search_env["token"]
         resp = await client.get(
-            "/v1/tools/search/", params={"q": "quantum", "status": "archived"}
+            "/v1/tools/search/",
+            params={"q": "quantum", "visibility": "private"},
+            headers=auth_header(token),
         )
         assert resp.status_code == 200
         ids = _ids(resp.json()["items"])
-        assert search_env["archived"]["id"] in ids
+        assert search_env["private"]["id"] in ids
         assert search_env["alpha"]["id"] not in ids
         assert search_env["beta"]["id"] not in ids
 
-    async def test_status_all(self, search_env: dict) -> None:
-        """status=all returns both active and archived entries."""
+    async def test_visibility_private_unauthenticated(self, search_env: dict) -> None:
+        """visibility=private without auth returns no private entries."""
         client = search_env["client"]
         resp = await client.get(
-            "/v1/tools/search/", params={"q": "quantum", "status": "all"}
+            "/v1/tools/search/", params={"q": "quantum", "visibility": "private"}
+        )
+        assert resp.status_code == 200
+        assert search_env["private"]["id"] not in _ids(resp.json()["items"])
+
+    async def test_visibility_all_owner(self, search_env: dict) -> None:
+        """visibility=all returns both public and owner's private entries."""
+        client, token = search_env["client"], search_env["token"]
+        resp = await client.get(
+            "/v1/tools/search/",
+            params={"q": "quantum", "visibility": "all"},
+            headers=auth_header(token),
         )
         assert resp.status_code == 200
         ids = _ids(resp.json()["items"])
         assert search_env["alpha"]["id"] in ids
-        assert search_env["archived"]["id"] in ids
+        assert search_env["private"]["id"] in ids
+
+    async def test_visibility_all_unauthenticated(self, search_env: dict) -> None:
+        """visibility=all without auth hides private entries."""
+        client = search_env["client"]
+        resp = await client.get(
+            "/v1/tools/search/", params={"q": "quantum", "visibility": "all"}
+        )
+        assert resp.status_code == 200
+        ids = _ids(resp.json()["items"])
+        assert search_env["alpha"]["id"] in ids
+        assert search_env["private"]["id"] not in ids
 
 
 class TestSearchEntryTypeFilter:
@@ -339,17 +363,18 @@ class TestSearchTagsFilter:
 
 
 class TestSearchCombinedFilters:
-    async def test_status_and_entry_type(self, search_env: dict) -> None:
-        """Combine status=all with entry_type=empirical."""
-        client = search_env["client"]
+    async def test_visibility_and_entry_type(self, search_env: dict) -> None:
+        """Combine visibility=all with entry_type=empirical (owner sees private)."""
+        client, token = search_env["client"], search_env["token"]
         resp = await client.get(
             "/v1/tools/search/",
-            params={"q": "quantum", "status": "all", "entry_type": "empirical"},
+            params={"q": "quantum", "visibility": "all", "entry_type": "empirical"},
+            headers=auth_header(token),
         )
         assert resp.status_code == 200
         ids = _ids(resp.json()["items"])
-        assert search_env["alpha"]["id"] in ids  # active empirical
-        assert search_env["archived"]["id"] in ids  # archived empirical
+        assert search_env["alpha"]["id"] in ids  # public empirical
+        assert search_env["private"]["id"] in ids  # private empirical
         assert search_env["beta"]["id"] not in ids  # theorem
 
     async def test_entry_type_and_tags(self, search_env: dict) -> None:
@@ -370,13 +395,13 @@ class TestSearchCombinedFilters:
         assert search_env["beta"]["id"] not in ids  # theorem
 
     async def test_all_three_filters(self, search_env: dict) -> None:
-        """Combine status + entry_type + tags."""
+        """Combine visibility + entry_type + tags."""
         client = search_env["client"]
         resp = await client.get(
             "/v1/tools/search/",
             params={
                 "q": "quantum OR gamma OR math OR physics",
-                "status": "active",
+                "visibility": "public",
                 "entry_type": "empirical",
                 "tags": "math,physics;mode=and",
             },

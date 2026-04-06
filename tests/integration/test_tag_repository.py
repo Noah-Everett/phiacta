@@ -22,7 +22,7 @@ from tests.conftest import make_user, make_entry
 async def _create_user_and_entry(
     db_session: AsyncSession,
     *,
-    status: str = "active",
+    visibility: str = "public",
 ) -> tuple[User, Entry]:
     """Helper: create a user and entry in the database."""
     suffix = uuid4().hex[:8]
@@ -30,7 +30,7 @@ async def _create_user_and_entry(
     db_session.add(user)
     await db_session.flush()
 
-    entry_kwargs = make_entry(created_by=user.id, status=status)
+    entry_kwargs = make_entry(created_by=user.id, visibility=visibility)
     # Remove 'tags' key if present (will be removed from make_entry later)
     entry_kwargs.pop("tags", None)
     entry = Entry(**entry_kwargs)
@@ -190,36 +190,36 @@ class TestFindEntriesByTags:
         assert results == []
         assert total == 0
 
-    async def test_active_only_by_default(
+    async def test_private_excluded_by_default(
         self, db_session: AsyncSession
     ) -> None:
-        """Archived entries are excluded by default."""
+        """Private entries are excluded by default (no viewer)."""
         from phiacta.extensions.tags.repository import TagRepository
 
         user, entry = await _create_user_and_entry(
-            db_session, status="archived"
+            db_session, visibility="private"
         )
         repo = TagRepository(db_session)
-        await repo.replace_tags(entry.id, ["archived-test"], user.id)
+        await repo.replace_tags(entry.id, ["private-test"], user.id)
 
         results, total = await repo.find_entries_by_tags(
-            tags=["archived-test"], mode="or", status="active"
+            tags=["private-test"], mode="or"
         )
         found_ids = {r.id for r in results}
         assert entry.id not in found_ids
 
-    async def test_include_archived(self, db_session: AsyncSession) -> None:
-        """Archived entries are included when include_archived=True."""
+    async def test_private_visible_to_owner(self, db_session: AsyncSession) -> None:
+        """Private entries are visible to the owner."""
         from phiacta.extensions.tags.repository import TagRepository
 
         user, entry = await _create_user_and_entry(
-            db_session, status="archived"
+            db_session, visibility="private"
         )
         repo = TagRepository(db_session)
-        await repo.replace_tags(entry.id, ["archived-include"], user.id)
+        await repo.replace_tags(entry.id, ["private-include"], user.id)
 
         results, total = await repo.find_entries_by_tags(
-            tags=["archived-include"], mode="or", status=None
+            tags=["private-include"], mode="or", viewer_id=user.id
         )
         found_ids = {r.id for r in results}
         assert entry.id in found_ids

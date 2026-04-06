@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import Row, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.visibility import archive_visibility_condition
 from phiacta.core.models.entry import Entry
 from phiacta.extensions.references.models import ExtensionReference
 
@@ -37,6 +38,7 @@ async def traverse_references(
     direction: str,
     rel_filter: list[str] | None,
     limit: int,
+    viewer_id: UUID | None = None,
     db: AsyncSession,
 ) -> tuple[dict[UUID, int], list[Row]]:
     """Traverse the reference graph from seeds via iterative BFS.
@@ -46,13 +48,17 @@ async def traverse_references(
     Uses node-based visited tracking: each node is expanded at most once
     (first reached = minimum depth), keeping work linear in nodes.
     Joins entries at every hop to confirm the entity is an entry.
-    Does NOT filter by entry status — archived entries are included.
+    Archived entries are only visible to their owner (``viewer_id``).
     """
     if not seed_ids:
         return {}, []
 
-    # Validate seeds are actual entries
-    valid_stmt = select(Entry.id).where(Entry.id.in_(seed_ids))
+    # Validate seeds are actual entries visible to the caller
+    valid_stmt = (
+        select(Entry.id)
+        .where(Entry.id.in_(seed_ids))
+        .where(archive_visibility_condition(viewer_id))
+    )
     valid_result = await db.execute(valid_stmt)
     valid_seeds = {row.id for row in valid_result.all()}
 
@@ -79,6 +85,7 @@ async def traverse_references(
             node_ids=list(frontier),
             direction=direction,
             rel_filter=rel_filter,
+            viewer_id=viewer_id,
             db=db,
         )
 
@@ -106,15 +113,18 @@ async def _get_neighbors(
     node_ids: list[UUID],
     direction: str,
     rel_filter: list[str] | None,
+    viewer_id: UUID | None = None,
     db: AsyncSession,
 ) -> set[UUID]:
     """Get all entry neighbors of the given nodes via extension_references.
 
-    Only returns neighbors that are entries (joins entries table).
+    Only returns neighbors that are entries (joins entries table) and
+    visible to the caller (archived entries are owner-only).
     """
     if not node_ids:
         return set()
 
+    vis = archive_visibility_condition(viewer_id)
     neighbors: set[UUID] = set()
 
     if direction in ("outgoing", "both"):
@@ -123,6 +133,7 @@ async def _get_neighbors(
             select(ExtensionReference.to_entity_id)
             .join(Entry, Entry.id == ExtensionReference.to_entity_id)
             .where(ExtensionReference.from_entity_id.in_(node_ids))
+            .where(vis)
         )
         if rel_filter:
             stmt = stmt.where(ExtensionReference.rel.in_(rel_filter))
@@ -135,6 +146,7 @@ async def _get_neighbors(
             select(ExtensionReference.from_entity_id)
             .join(Entry, Entry.id == ExtensionReference.from_entity_id)
             .where(ExtensionReference.to_entity_id.in_(node_ids))
+            .where(vis)
         )
         if rel_filter:
             stmt = stmt.where(ExtensionReference.rel.in_(rel_filter))

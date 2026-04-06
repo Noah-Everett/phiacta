@@ -12,15 +12,16 @@ from pydantic import BaseModel, ConfigDict, Field
 class EntryCreate(BaseModel):
     """Request body for POST /entries.
 
-    Only core fields (content, content_format) are declared explicitly.
-    Extension fields (title, summary, entry_type, tags, …) arrive via
-    ``extra="allow"`` and are dispatched to registered providers.
+    Only core fields (content, content_format, visibility) are declared
+    explicitly. Extension fields (title, summary, entry_type, tags, ...)
+    arrive via ``extra="allow"`` and are dispatched to registered providers.
     """
 
     model_config = ConfigDict(extra="allow")
 
     content: str | None = Field(None, max_length=100_000)
     content_format: str = Field("markdown", pattern="^(markdown|latex|plain)$")
+    visibility: str = Field("public", pattern="^(public|private)$")
 
 
 class EntryUpdate(BaseModel):
@@ -39,12 +40,11 @@ class EntryListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="allow")
 
     id: UUID
-    schema_version: int
     repo_name: str
     forgejo_repo_id: int | None = None
     current_head_sha: str | None = None
     repo_status: str
-    status: str
+    visibility: str
     created_by: UUID
     created_at: datetime
     updated_at: datetime
@@ -56,12 +56,11 @@ class EntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="allow")
 
     id: UUID
-    schema_version: int
     repo_name: str
     forgejo_repo_id: int | None = None
     current_head_sha: str | None = None
     repo_status: str
-    status: str
+    visibility: str
     created_by: UUID
     created_at: datetime
     updated_at: datetime

@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Shared ingestion logic — identity validation + view recomputation.
+"""Shared ingestion logic — content reading + extension hook dispatch.
 
-Views register on_ingest hooks via the plugin system.  This module calls
-all hooks after reading content and metadata, rather than hardcoding
-specific view imports.
+Extensions register on_ingest hooks via the plugin system.  This module
+calls all hooks after reading content and metadata.
 """
 
 from __future__ import annotations
@@ -17,7 +16,6 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.models.entry import Entry
-from phiacta.core.services.entry_yaml import parse_entry_yaml
 from phiacta.core.services.git_service import GitService, RepoNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -64,43 +62,27 @@ async def ingest_entry(
     *,
     on_ingest_hooks: list[OnIngestHook] | None = None,
 ) -> None:
-    """Ingest an entry from git and call all registered view hooks.
+    """Ingest an entry from git and call all registered extension hooks.
 
     Args:
         entry: The entry ORM object.
         sha: The git commit SHA to ingest from.
         db: Database session.
         git_service: Git service for reading files.
-        on_ingest_hooks: View hooks to call after reading content.
+        on_ingest_hooks: Extension hooks to call after reading content.
             If None, falls back to hardcoded search_tsv (for backwards compat).
     """
     entry_id = entry.id
 
-    yaml_bytes = await git_service.read_file(entry_id, ".phiacta/entry.yaml", ref=sha)
-    try:
-        yaml_str = yaml_bytes.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValueError(f"entry.yaml for entry {entry_id} is not valid UTF-8") from exc
-    parsed = parse_entry_yaml(yaml_str)
-
-    yaml_entry_id = parsed.get("entry_id")
-    if yaml_entry_id != entry_id:
-        raise ValueError(f"entry_id mismatch for entry {entry_id}: YAML has {yaml_entry_id}")
-
-    schema_version = parsed.get("schema_version")
-    if isinstance(schema_version, int):
-        entry.schema_version = schema_version
-    await db.flush()
-
+    # Read content and metadata — entry.yaml is no longer read
     content = await _read_content_file(entry_id, git_service, ref=sha)
     metadata = await _read_metadata(entry_id, db)
 
     # Call all registered on_ingest hooks
     hooks = on_ingest_hooks
     if hooks is None:
-        # Backwards compat: if no hooks passed, fall back to hardcoded search_tsv
         try:
-            from phiacta.views.search_tsv import on_ingest as _search_hook
+            from phiacta.extensions.search_tsv import on_ingest as _search_hook
             hooks = [_search_hook]
         except ImportError:
             hooks = []

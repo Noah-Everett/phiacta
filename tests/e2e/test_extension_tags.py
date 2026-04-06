@@ -28,7 +28,7 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
+    set_entry_visibility,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -447,73 +447,84 @@ class TestFindEntriesByTags:
         assert "entry_id" in item
         assert item["entry_id"] == entry["id"]
 
-    async def test_find_entries_archived_excluded_by_default(
+    async def test_find_entries_private_excluded_by_default(
         self,
         client: httpx.AsyncClient,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Archived entries are excluded from find-by-tags by default."""
+        """Private entries are excluded from find-by-tags by default."""
         auth = await register_user(
             client, handle="find-arch"
         )
         token = auth["access_token"]
 
-        entry = await create_entry(client, token, title="To Be Archived")
+        entry = await create_entry(client, token, title="To Be Private")
         await set_entry_repo_status(
             e2e_session_factory, entry["id"], "ready"
         )
         await client.put(
             f"/v1/extensions/tags/{entry['id']}",
-            json={"tags": ["archive-filter-test"]},
+            json={"tags": ["visibility-filter-test"]},
             headers=auth_header(token),
         )
 
-        # Archive the entry
-        await set_entry_status(e2e_session_factory, entry["id"], "archived")
+        # Set entry to private
+        await set_entry_visibility(e2e_session_factory, entry["id"], "private")
 
         # Default search should exclude it
         resp = await client.get(
             "/v1/extensions/tags/entries",
-            params={"tags": "archive-filter-test"},
+            params={"tags": "visibility-filter-test"},
         )
         assert resp.status_code == 200
         found_ids = [item["entry_id"] for item in resp.json()["items"]]
         assert entry["id"] not in found_ids
 
-    async def test_find_entries_archived_included_with_flag(
+    async def test_find_entries_private_visible_to_owner(
         self,
         client: httpx.AsyncClient,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Archived entries are included when include_archived=true."""
+        """Private entries are visible to the owner when authenticated."""
         auth = await register_user(
             client, handle="find-incl"
         )
         token = auth["access_token"]
 
-        entry = await create_entry(client, token, title="Archived Included")
+        entry = await create_entry(client, token, title="Private Visible to Owner")
         await set_entry_repo_status(
             e2e_session_factory, entry["id"], "ready"
         )
         await client.put(
             f"/v1/extensions/tags/{entry['id']}",
-            json={"tags": ["archive-include-test"]},
+            json={"tags": ["visibility-include-test"]},
             headers=auth_header(token),
         )
 
-        await set_entry_status(e2e_session_factory, entry["id"], "archived")
+        await set_entry_visibility(e2e_session_factory, entry["id"], "private")
 
-        # With include_archived=true
+        # Owner sees their private entry
         resp = await client.get(
             "/v1/extensions/tags/entries",
             params={
-                "tags": "archive-include-test",
-                "include_archived": "true",
+                "tags": "visibility-include-test",
             },
+            headers=auth_header(token),
         )
         assert resp.status_code == 200
         found_ids = [item["entry_id"] for item in resp.json()["items"]]
         assert entry["id"] in found_ids
+
+        # Without auth, private entry is hidden
+        resp = await client.get(
+            "/v1/extensions/tags/entries",
+            params={
+                "tags": "visibility-include-test",
+            },
+        )
+        assert resp.status_code == 200
+        found_ids = [item["entry_id"] for item in resp.json()["items"]]
+        assert entry["id"] not in found_ids
 
 
 # ---------------------------------------------------------------------------

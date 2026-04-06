@@ -24,8 +24,7 @@ from phiacta.core.services.ingestion import ingest_entry
 
 logger = logging.getLogger(__name__)
 
-# Entries in these statuses are skipped during reconciliation.
-_SKIP_STATUSES = frozenset({"archived", "retracted"})
+# All entries are reconciled regardless of visibility.
 
 
 @dataclass
@@ -93,7 +92,7 @@ class ReconciliationService:
                     repo_name=entry.repo_name,
                     current_head_sha=entry.current_head_sha,
                     repo_status=entry.repo_status,
-                    status=entry.status,
+                    visibility=entry.visibility,
                 )
 
         # --- Phase 2: Detect orphan repos (always uses full DB set) ---
@@ -110,10 +109,7 @@ class ReconciliationService:
         for eid, snap in db_map.items():
             report.entries_checked += 1
 
-            # Skip archived/retracted
-            if snap.status in _SKIP_STATUSES:
-                report.entries_skipped += 1
-                continue
+            # All entries are reconciled regardless of visibility
 
             in_forgejo = eid in forgejo_map
 
@@ -225,4 +221,4 @@ class _EntrySnapshot:
     repo_name: str
     current_head_sha: str | None
     repo_status: str
-    status: str
+    visibility: str

@@ -24,7 +24,7 @@ from phiacta.core.api.entry_guards import (
     get_readable_entry,
 )
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_user
+from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
 from phiacta.core.schemas.entry_issue import (
@@ -152,11 +152,12 @@ async def list_issues(
     state: str | None = Query(None, pattern="^(open|closed)$"),
     limit: int = Query(50, ge=1, le=200),
     page: int = Query(1, ge=1),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> list[IssueListItem]:
     """List issues on an entry's repository."""
-    await get_readable_entry(entry_id, db)
+    await get_readable_entry(entry_id, db, user=user)
 
     try:
         issues = await git_service.list_issues(
@@ -186,11 +187,12 @@ async def list_issues(
 async def get_issue_detail(
     entry_id: UUID,
     number: int,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
 ) -> IssueDetail:
     """Get an issue with its comments."""
-    await get_readable_entry(entry_id, db)
+    await get_readable_entry(entry_id, db, user=user)
 
     try:
         issue = await git_service.get_issue(entry_id, number)
@@ -232,7 +234,7 @@ async def add_issue_comment(
     git_service: GitService = Depends(get_git_service),
 ) -> IssueCommentResponse:
     """Add a comment to an issue."""
-    await get_readable_entry(entry_id, db)
+    await get_readable_entry(entry_id, db, user=user)
 
     try:
         comment = await git_service.create_issue_comment(

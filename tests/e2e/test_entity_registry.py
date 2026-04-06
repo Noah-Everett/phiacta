@@ -32,7 +32,6 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -610,72 +609,6 @@ class TestEditCreatesEntity:
 # ---------------------------------------------------------------------------
 
 
-class TestArchivalLogsActivity:
-    """Scenario: Archiving/unarchiving an entry logs activity events."""
-
-    async def test_archive_logs_entry_archived(
-        self,
-        owner: AuthedFixture,
-        fake_git: FakeGitService,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """POST /entries/{id}/archive logs 'entry.archived' activity."""
-        client, user, token = owner
-        entry = await _create_ready_entry(
-            client, token, e2e_session_factory, title="Archive Me"
-        )
-        entry_id = entry["id"]
-
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/archive",
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 200
-
-        resp = await client.get("/v1/activity", params={"actor": user["id"]})
-        assert resp.status_code == 200
-        items = resp.json()["items"]
-        archive_events = [a for a in items if a["action"] == "entry.archived"]
-        assert len(archive_events) >= 1
-        assert archive_events[0]["entity_id"] == entry_id
-
-    async def test_unarchive_logs_entry_unarchived(
-        self,
-        owner: AuthedFixture,
-        fake_git: FakeGitService,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """POST /entries/{id}/unarchive logs 'entry.unarchived' activity."""
-        client, user, token = owner
-        entry = await _create_ready_entry(
-            client, token, e2e_session_factory, title="Unarchive Me"
-        )
-        entry_id = entry["id"]
-
-        # Archive
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/archive",
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 200
-
-        # Unarchive
-        resp = await client.post(
-            f"/v1/entries/{entry_id}/unarchive",
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 200
-
-        resp = await client.get("/v1/activity", params={"actor": user["id"]})
-        assert resp.status_code == 200
-        items = resp.json()["items"]
-        unarchive_events = [
-            a for a in items if a["action"] == "entry.unarchived"
-        ]
-        assert len(unarchive_events) >= 1
-        assert unarchive_events[0]["entity_id"] == entry_id
-
-
 # ---------------------------------------------------------------------------
 # Regression: existing features still work
 # ---------------------------------------------------------------------------
@@ -699,7 +632,7 @@ class TestRegressionEntryOperations:
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Regression Test"
-        assert data["status"] == "active"
+        assert data["visibility"] == "public"
         assert data["repo_status"] == "provisioning"
         assert data["created_by"] == user["id"]
 

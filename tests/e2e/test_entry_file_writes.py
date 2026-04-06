@@ -26,7 +26,6 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
-    set_entry_status,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
@@ -246,46 +245,6 @@ class TestPutFileErrors:
         )
         assert resp.status_code == 403
         assert "author" in resp.json()["detail"].lower()
-
-    async def test_put_archived_entry_returns_403(
-        self,
-        authed: AuthedFixture,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """PUT to an archived entry returns 403 'Entry is not editable'."""
-        client, _, token = authed
-        entry = await create_entry(client, token, title="Archived Put Entry")
-        entry_id = entry["id"]
-        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
-        await set_entry_status(e2e_session_factory, entry_id, "archived")
-
-        resp = await client.put(
-            f"/v1/entries/{entry_id}/files/README.md",
-            **_multipart("hello"),
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 403
-        assert "not editable" in resp.json()["detail"].lower()
-
-    async def test_put_retracted_entry_returns_403(
-        self,
-        authed: AuthedFixture,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """PUT to a retracted entry returns 403 'Entry is not editable'."""
-        client, _, token = authed
-        entry = await create_entry(client, token, title="Retracted Put Entry")
-        entry_id = entry["id"]
-        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
-        await set_entry_status(e2e_session_factory, entry_id, "retracted")
-
-        resp = await client.put(
-            f"/v1/entries/{entry_id}/files/README.md",
-            **_multipart("hello"),
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 403
-        assert "not editable" in resp.json()["detail"].lower()
 
     async def test_put_nonexistent_entry_returns_404(
         self,
@@ -557,29 +516,6 @@ class TestDeleteFileErrors:
             headers=auth_header(token_b),
         )
         assert resp.status_code == 403
-
-    async def test_delete_archived_entry_returns_403(
-        self,
-        authed: AuthedFixture,
-        fake_git: FakeGitService,
-        e2e_session_factory: async_sessionmaker[AsyncSession],
-    ) -> None:
-        """DELETE on an archived entry returns 403."""
-        client, _, token = authed
-        entry = await create_entry(client, token, title="Archived Delete")
-        entry_id = entry["id"]
-        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
-        await set_entry_status(e2e_session_factory, entry_id, "archived")
-
-        fake_git.files[(UUID(entry_id), "README.md")] = b"content"
-
-        resp = await client.request(
-            "DELETE",
-            f"/v1/entries/{entry_id}/files/README.md",
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 403
-        assert "not editable" in resp.json()["detail"].lower()
 
     async def test_delete_nonexistent_entry_returns_404(
         self,

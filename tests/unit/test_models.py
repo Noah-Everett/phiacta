@@ -16,8 +16,8 @@ class TestEntryDefaults:
         entry = Entry(repo_name=str(uuid4()), created_by=uuid4())
         assert entry.forgejo_repo_id is None
         assert entry.current_head_sha is None
-        status_col = Entry.__table__.c["status"]
-        assert status_col.default.arg == "active"
+        visibility_col = Entry.__table__.c["visibility"]
+        assert visibility_col.default.arg == "public"
 
     def test_entry_has_no_removed_columns(self) -> None:
         cols = {c.name for c in Entry.__table__.columns}

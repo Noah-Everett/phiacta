@@ -96,7 +96,6 @@ def _make_in_memory_manifest(
     """Create a PluginManifest without touching the filesystem."""
     type_map = {
         "extension": PluginType.EXTENSION,
-        "view": PluginType.VIEW,
         "tool": PluginType.TOOL,
     }
     return PluginManifest(
@@ -223,13 +222,13 @@ class TestPluginDiscovery:
             tmp_path, "extensions", "duplicate", manifest_type="extension"
         )
         _write_plugin_package(
-            tmp_path, "views", "duplicate", manifest_type="view"
+            tmp_path, "tools", "duplicate", manifest_type="tool"
         )
 
         registry = PluginRegistry(
             plugin_dirs={
                 "extension": tmp_path / "extensions",
-                "view": tmp_path / "views",
+                "tool": tmp_path / "tools",
             },
             enabled_plugins=["duplicate"],
         )
@@ -240,12 +239,9 @@ class TestPluginDiscovery:
     def test_discovers_multiple_plugin_types(
         self, tmp_path: Path
     ) -> None:
-        """Registry discovers plugins across extension, view, and tool dirs."""
+        """Registry discovers plugins across extension and tool dirs."""
         _write_plugin_package(
             tmp_path, "extensions", "tags", manifest_type="extension"
-        )
-        _write_plugin_package(
-            tmp_path, "views", "search", manifest_type="view"
         )
         _write_plugin_package(
             tmp_path, "tools", "export", manifest_type="tool"
@@ -254,16 +250,14 @@ class TestPluginDiscovery:
         registry = PluginRegistry(
             plugin_dirs={
                 "extension": tmp_path / "extensions",
-                "view": tmp_path / "views",
                 "tool": tmp_path / "tools",
             },
-            enabled_plugins=["tags", "search", "export"],
+            enabled_plugins=["tags", "export"],
         )
         registry.discover()
 
-        assert len(registry.plugins) == 3
+        assert len(registry.plugins) == 2
         assert registry.plugins["tags"].manifest.type == PluginType.EXTENSION
-        assert registry.plugins["search"].manifest.type == PluginType.VIEW
         assert registry.plugins["export"].manifest.type == PluginType.TOOL
 
 
@@ -500,9 +494,9 @@ class TestPluginSettings:
 
         _write_plugin_package(
             tmp_path,
-            "views",
+            "extensions",
             "search",
-            manifest_type="view",
+            manifest_type="extension",
             settings_class_code=settings_code,
         )
 
@@ -511,7 +505,7 @@ class TestPluginSettings:
         monkeypatch.delenv("SEARCH_API_KEY", raising=False)
 
         registry = PluginRegistry(
-            plugin_dirs={"view": tmp_path / "views"},
+            plugin_dirs={"extension": tmp_path / "extensions"},
             enabled_plugins=["search"],
         )
 
@@ -605,21 +599,21 @@ class TestRouterPrefixes:
         prefixes = {prefix for prefix, _ in routers}
         assert "/v1/extensions/tags" in prefixes
 
-    def test_view_router_prefix(self, tmp_path: Path) -> None:
-        """View plugins get prefix /v1/views/{name}/."""
+    def test_second_extension_router_prefix(self, tmp_path: Path) -> None:
+        """A second extension plugin also gets prefix /v1/extensions/{name}/."""
         _write_plugin_package(
-            tmp_path, "views", "search", manifest_type="view"
+            tmp_path, "extensions", "search", manifest_type="extension"
         )
 
         registry = PluginRegistry(
-            plugin_dirs={"view": tmp_path / "views"},
+            plugin_dirs={"extension": tmp_path / "extensions"},
             enabled_plugins=["search"],
         )
         registry.discover()
         routers = registry.get_routers()
 
         prefixes = {prefix for prefix, _ in routers}
-        assert "/v1/views/search" in prefixes
+        assert "/v1/extensions/search" in prefixes
 
     def test_tool_router_prefix(self, tmp_path: Path) -> None:
         """Tool plugins get prefix /v1/tools/{name}/."""
@@ -686,24 +680,19 @@ class TestRouterPrefixes:
             tmp_path, "extensions", "tags", manifest_type="extension"
         )
         _write_plugin_package(
-            tmp_path, "views", "search", manifest_type="view"
-        )
-        _write_plugin_package(
             tmp_path, "tools", "export", manifest_type="tool"
         )
 
         registry = PluginRegistry(
             plugin_dirs={
                 "extension": tmp_path / "extensions",
-                "view": tmp_path / "views",
                 "tool": tmp_path / "tools",
             },
-            enabled_plugins=["tags", "search", "export"],
+            enabled_plugins=["tags", "export"],
         )
         registry.discover()
         routers = registry.get_routers()
 
         prefixes = {prefix for prefix, _ in routers}
         assert "/v1/extensions/tags" in prefixes
-        assert "/v1/views/search" in prefixes
         assert "/v1/tools/export" in prefixes

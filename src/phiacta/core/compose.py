@@ -118,12 +118,11 @@ def _core_fields(entry: Entry) -> dict:
     """Extract core (entries-table) fields as a dict."""
     return {
         "id": entry.id,
-        "schema_version": entry.schema_version,
         "repo_name": entry.repo_name,
         "forgejo_repo_id": entry.forgejo_repo_id,
         "current_head_sha": entry.current_head_sha,
         "repo_status": entry.repo_status,
-        "status": entry.status,
+        "visibility": entry.visibility,
         "created_by": entry.created_by,
         "created_at": entry.created_at,
         "updated_at": entry.updated_at,

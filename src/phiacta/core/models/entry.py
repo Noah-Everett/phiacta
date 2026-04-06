@@ -20,10 +20,6 @@ from phiacta.core.models.base import Base, TimestampMixin, UUIDMixin
 class Entry(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "entries"
 
-    schema_version: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1
-    )
-
     # Git sync
     forgejo_repo_id: Mapped[int | None] = mapped_column(Integer, default=None)
     repo_name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -34,9 +30,9 @@ class Entry(UUIDMixin, TimestampMixin, Base):
         String(20), nullable=False, default="provisioning"
     )
 
-    # Status
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="active"
+    # Visibility — controls who can see the entry
+    visibility: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="public"
     )
 
     # Creator
@@ -52,9 +48,9 @@ class Entry(UUIDMixin, TimestampMixin, Base):
 
     __table_args__ = (
         Index(
-            "idx_entries_active",
-            "status",
-            postgresql_where=text("status = 'active'"),
+            "idx_entries_public",
+            "visibility",
+            postgresql_where=text("visibility = 'public'"),
         ),
         Index("idx_entries_created_by", "created_by"),
     )

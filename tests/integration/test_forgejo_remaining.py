@@ -230,7 +230,7 @@ class TestArchival:
     """Archive and unarchive endpoints."""
 
     async def test_archive_entry(self) -> None:
-        """Create entry, wait ready, archive it, verify status='archived'."""
+        """Create entry, wait ready, archive it, verify visibility='private'."""
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
             token, entry_id, _ = await _setup_ready_entry(
                 client, title="Archive Test",
@@ -244,14 +244,17 @@ class TestArchival:
                 f"archive failed: {archive_resp.text}"
             )
 
-            get_resp = await client.get(f"/v1/entries/{entry_id}")
+            get_resp = await client.get(
+                f"/v1/entries/{entry_id}",
+                headers=_auth_header(token),
+            )
             assert get_resp.status_code == 200
-            assert get_resp.json()["status"] == "archived", (
-                f"Expected status='archived', got: {get_resp.json()['status']!r}"
+            assert get_resp.json()["visibility"] == "private", (
+                f"Expected visibility='private', got: {get_resp.json()['visibility']!r}"
             )
 
     async def test_unarchive_entry(self) -> None:
-        """Archive then unarchive an entry, verify status returns to 'active'."""
+        """Archive then unarchive an entry, verify visibility returns to 'public'."""
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
             token, entry_id, _ = await _setup_ready_entry(
                 client, title="Unarchive Test",
@@ -277,36 +280,9 @@ class TestArchival:
 
             get_resp = await client.get(f"/v1/entries/{entry_id}")
             assert get_resp.status_code == 200
-            assert get_resp.json()["status"] == "active", (
-                f"Expected status='active' after unarchive, "
-                f"got: {get_resp.json()['status']!r}"
-            )
-
-    async def test_archive_blocks_file_writes(self) -> None:
-        """An archived entry rejects PUT file requests with 403."""
-        content_b64 = base64.b64encode(b"should be blocked").decode()
-
-        async with httpx.AsyncClient(base_url=BASE_URL, timeout=60.0) as client:
-            token, entry_id, _ = await _setup_ready_entry(
-                client, title="Archive Blocks Writes Test",
-            )
-
-            archive_resp = await client.post(
-                f"/v1/entries/{entry_id}/archive",
-                headers=_auth_header(token),
-            )
-            assert archive_resp.status_code == 200, (
-                f"archive failed: {archive_resp.text}"
-            )
-
-            put_resp = await client.put(
-                f"/v1/entries/{entry_id}/files/blocked.txt",
-                files={"content": ("file", base64.b64decode(content_b64), "application/octet-stream")}, data={"message": "Should be rejected"},
-                headers=_auth_header(token),
-            )
-            assert put_resp.status_code == 403, (
-                f"Expected 403 for PUT to archived entry, "
-                f"got {put_resp.status_code}: {put_resp.text}"
+            assert get_resp.json()["visibility"] == "public", (
+                f"Expected visibility='public' after unarchive, "
+                f"got: {get_resp.json()['visibility']!r}"
             )
 
     async def test_archive_non_owner_rejected(self) -> None:
@@ -742,7 +718,7 @@ class TestEntryListFilters:
             # Find our entry and verify key fields are present.
             our_item = next(i for i in body["items"] if i["id"] == entry_id)
             for field in (
-                "id", "title", "status", "repo_status",
+                "id", "title", "visibility", "repo_status",
                 "entry_type", "created_at", "updated_at",
             ):
                 assert field in our_item, (

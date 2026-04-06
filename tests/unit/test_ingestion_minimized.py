@@ -22,11 +22,11 @@ def _make_yaml(entry_id: UUID, author_id: UUID | None = None) -> bytes:
     return yaml.dump({"entry_id": f"ent_{entry_id}", "schema_version": 1, "author": {"id": f"usr_{author_id or uuid4()}", "name": "test"}, "created_at": "2026-01-01T00:00:00"}, sort_keys=False).encode()
 
 
-async def _create(db: AsyncSession, status="active"):
+async def _create(db: AsyncSession, visibility="public"):
     user = User(**make_user())
     db.add(user)
     await db.flush()
-    entry = Entry(**make_entry(created_by=user.id, status=status))
+    entry = Entry(**make_entry(created_by=user.id, visibility=visibility))
     db.add(entry)
     await db.flush()
     return entry, user
@@ -66,16 +66,20 @@ class TestIngestNoRefs:
         await ingest_entry(entry, "a" * 40, db_session, fake)
 
 
-class TestIngestErrors:
-    async def test_raises_on_malformed_yaml(self, db_session: AsyncSession) -> None:
+class TestIngestWithoutEntryYaml:
+    """entry.yaml is no longer read during ingestion."""
+
+    async def test_succeeds_without_entry_yaml(self, db_session: AsyncSession) -> None:
+        """Ingestion works even when no entry.yaml exists in the repo."""
+        entry, _ = await _create(db_session)
+        fake = FakeGitService()
+        fake.files[(entry.id, ".phiacta/content.md")] = b"# Content"
+        await ingest_entry(entry, "a" * 40, db_session, fake)
+
+    async def test_ignores_malformed_entry_yaml(self, db_session: AsyncSession) -> None:
+        """Malformed entry.yaml is silently ignored (no longer parsed)."""
         entry, _ = await _create(db_session)
         fake = FakeGitService()
         fake.files[(entry.id, ".phiacta/entry.yaml")] = b": invalid: {{"
-        with pytest.raises((ValueError, Exception)):
-            await ingest_entry(entry, "a" * 40, db_session, fake)
-
-    async def test_raises_on_missing_yaml(self, db_session: AsyncSession) -> None:
-        entry, _ = await _create(db_session)
-        fake = FakeGitService()
-        with pytest.raises(Exception):
-            await ingest_entry(entry, "a" * 40, db_session, fake)
+        fake.files[(entry.id, ".phiacta/content.md")] = b"# Content"
+        await ingest_entry(entry, "a" * 40, db_session, fake)

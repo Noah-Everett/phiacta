@@ -13,7 +13,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.db.session import get_db
+from phiacta.core.models.user import User
 from phiacta.tools.graph.repository import (
     enrich_nodes,
     group_edges,
@@ -74,12 +76,14 @@ async def get_graph(
     rel: str | None = Query(None, description="Comma-separated relationship type filter"),
     entry_type: str | None = Query(None, description="Comma-separated entry type filter"),
     limit: int = Query(50, ge=1, le=500),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> GraphResponse:
     """Traverse the reference graph from seed entries.
 
-    Public read — no auth required. Returns nodes and grouped edges
-    for the subgraph reachable within ``depth`` hops from the seeds.
+    Returns nodes and grouped edges for the subgraph reachable within
+    ``depth`` hops from the seeds. Archived entries are only visible
+    to their owner.
     """
     # Validate mode
     if mode not in _VALID_MODES:
@@ -98,6 +102,7 @@ async def get_graph(
     seed_ids = _parse_uuids(entry_ids)
     rel_filter = _parse_csv(rel)
     entry_type_filter = _parse_csv(entry_type)
+    viewer_id = user.id if user else None
 
     # Set statement timeout as safety net (PostgreSQL only)
     try:
@@ -112,6 +117,7 @@ async def get_graph(
             direction=direction,
             rel_filter=rel_filter,
             limit=limit,
+            viewer_id=viewer_id,
             db=db,
         )
     except OperationalError:

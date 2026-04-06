@@ -43,6 +43,6 @@ def make_user(*, handle: str = "test-user", password_hash: str = "$2b$12$fakehas
     return {"id": uuid4(), "handle": handle, "password_hash": password_hash}
 
 
-def make_entry(*, created_by: object, repo_name: str | None = None, status: str = "active") -> dict[str, object]:
+def make_entry(*, created_by: object, repo_name: str | None = None, visibility: str = "public") -> dict[str, object]:
     entry_id = uuid4()
-    return {"id": entry_id, "repo_name": repo_name or str(entry_id), "created_by": created_by, "status": status}
+    return {"id": entry_id, "repo_name": repo_name or str(entry_id), "created_by": created_by, "visibility": visibility}

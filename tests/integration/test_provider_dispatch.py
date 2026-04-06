@@ -247,6 +247,7 @@ class TestRequiredOnCreateInService:
             model_config = ConfigDict(extra="allow")
             content: str | None = None
             content_format: str = "markdown"
+            visibility: str = "public"
 
         body = FakeBody()
 
@@ -297,6 +298,7 @@ class TestProviderFailureRollback:
             model_config = ConfigDict(extra="allow")
             content: str | None = None
             content_format: str = "markdown"
+            visibility: str = "public"
 
         body = FakeBody.model_validate({"content_format": "markdown", "title": ""})
 
