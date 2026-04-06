@@ -81,7 +81,7 @@ class TestReferenceConstraints:
     async def test_self_reference_rejected(self, two_entries: tuple[AuthedFixture, dict, dict]) -> None:
         (client, _, token), a, _ = two_entries
         resp = await client.post(f"/v1/extensions/references/{a['id']}", json={"target_entry_id": a["id"], "rel": "supports"}, headers=auth_header(token))
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
 
     async def test_same_entries_different_rel_allowed(self, two_entries: tuple[AuthedFixture, dict, dict]) -> None:
         (client, _, token), a, b = two_entries

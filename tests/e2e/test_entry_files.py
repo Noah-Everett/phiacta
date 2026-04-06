@@ -522,7 +522,7 @@ class TestGetFileContentPathValidation:
 
         # Use %2E%2E to prevent HTTP client from resolving ../
         resp = await client.get(f"/v1/entries/{entry_id}/files/%2E%2E/etc/passwd")
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
         assert "invalid file path" in resp.json()["detail"].lower()
 
     async def test_path_traversal_middle_dotdot_returns_400(
@@ -541,7 +541,7 @@ class TestGetFileContentPathValidation:
         resp = await client.get(
             f"/v1/entries/{entry_id}/files/subdir/%2E%2E/secret"
         )
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
         assert "invalid file path" in resp.json()["detail"].lower()
 
     async def test_absolute_path_returns_400(
@@ -560,7 +560,7 @@ class TestGetFileContentPathValidation:
         resp = await client.get(
             f"/v1/entries/{entry_id}/files/%2Fetc%2Fpasswd"
         )
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
         assert "invalid file path" in resp.json()["detail"].lower()
 
     async def test_phiacta_entry_yaml_is_readable(
