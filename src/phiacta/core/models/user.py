@@ -12,7 +12,7 @@ from phiacta.core.models.base import Base, TimestampMixin, UUIDMixin
 class User(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
-    handle: Mapped[str] = mapped_column(String(50), nullable=False)
+    username: Mapped[str] = mapped_column(String(50), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
 
     # Relationships
@@ -23,5 +23,5 @@ class User(UUIDMixin, TimestampMixin, Base):
     )
 
     __table_args__ = (
-        Index("idx_users_handle", "handle", unique=True),
+        Index("idx_users_username", "username", unique=True),
     )

@@ -37,14 +37,14 @@ def _b64(text: str) -> str:
 @pytest.fixture
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"activity-owner-{uid}")
+    auth = await register_user(client, username=f"activity-owner-{uid}")
     return client, auth["user"], auth["access_token"]
 
 
 @pytest.fixture
 async def other_user(client: httpx.AsyncClient) -> AuthedFixture:
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"activity-other-{uid}")
+    auth = await register_user(client, username=f"activity-other-{uid}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -153,7 +153,7 @@ class TestEmptyActivityFeed:
         self, client: httpx.AsyncClient,
     ) -> None:
         """A newly registered user has no activity items."""
-        auth = await register_user(client, handle="empty-feed-user")
+        auth = await register_user(client, username="empty-feed-user")
         user_id = auth["user"]["id"]
 
         resp = await client.get("/v1/activity", params={"actor": user_id})
@@ -166,7 +166,7 @@ class TestEmptyActivityFeed:
         self, client: httpx.AsyncClient,
     ) -> None:
         """Activity feed is accessible without authentication."""
-        auth = await register_user(client, handle="public-feed-user")
+        auth = await register_user(client, username="public-feed-user")
         user_id = auth["user"]["id"]
 
         # No Authorization header

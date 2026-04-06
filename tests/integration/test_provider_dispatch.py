@@ -34,7 +34,7 @@ async def _create_user_and_entry(
     """Helper: create a user and entry in the database."""
     from tests.conftest import make_user, make_entry
     suffix = uuid4().hex[:8]
-    user = User(**make_user(handle=f"dispatch-{suffix}"))
+    user = User(**make_user(username=f"dispatch-{suffix}"))
     db_session.add(user)
     await db_session.flush()
 
@@ -239,7 +239,7 @@ class TestRequiredOnCreateInService:
         from pydantic import BaseModel, ConfigDict
 
         from tests.conftest import make_user as _make_user
-        user = User(**_make_user(handle=f"reqval-{uuid4().hex[:8]}"))
+        user = User(**_make_user(username=f"reqval-{uuid4().hex[:8]}"))
         db_session.add(user)
         await db_session.flush()
 
@@ -288,7 +288,7 @@ class TestProviderFailureRollback:
         from pydantic import BaseModel, ConfigDict
 
         from tests.conftest import make_user as _make_user
-        user = User(**_make_user(handle=f"rollback-{uuid4().hex[:8]}"))
+        user = User(**_make_user(username=f"rollback-{uuid4().hex[:8]}"))
         db_session.add(user)
         await db_session.flush()
 

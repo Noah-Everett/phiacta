@@ -36,7 +36,7 @@ type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, handle=f"dispatch-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"dispatch-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -375,7 +375,7 @@ class TestOutboxPayload:
             assert payload["entry_id"] == str(entry_id)
             assert payload["content_format"] == "latex"
             assert "author_id" in payload
-            assert "author_handle" in payload
+            assert "author_username" in payload
 
             # Title should NOT be in the outbox payload
             assert "title" not in payload

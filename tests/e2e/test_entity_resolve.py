@@ -48,7 +48,7 @@ def _mount_extension_routers(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, handle=f"resolve-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"resolve-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -93,7 +93,7 @@ class TestResolveUser:
         assert resp.status_code == 200
         data = resp.json()
         assert data["entity_type"] == "user"
-        assert data["handle"] == user["handle"]
+        assert data["username"] == user["username"]
 
 
 class TestResolveErrors:

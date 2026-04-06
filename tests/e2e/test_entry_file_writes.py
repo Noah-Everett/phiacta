@@ -36,7 +36,7 @@ async def authed(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
     auth = await register_user(
-        client, handle=f"writer-{uid}"
+        client, username=f"writer-{uid}"
     )
     return client, auth["user"], auth["access_token"]
 
@@ -234,7 +234,7 @@ class TestPutFileErrors:
         # Register a second user
         uid = uuid4().hex[:8]
         auth_b = await register_user(
-            client, handle=f"other-{uid}"
+            client, username=f"other-{uid}"
         )
         token_b = auth_b["access_token"]
 
@@ -506,7 +506,7 @@ class TestDeleteFileErrors:
 
         uid = uuid4().hex[:8]
         auth_b = await register_user(
-            client, handle=f"other-del-{uid}"
+            client, username=f"other-del-{uid}"
         )
         token_b = auth_b["access_token"]
 

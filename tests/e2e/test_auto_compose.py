@@ -57,7 +57,7 @@ def _mount_extension_routers(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, handle=f"compose-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"compose-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -298,7 +298,7 @@ class TestUnifiedPatch:
         client: httpx.AsyncClient,
     ) -> None:
         (_, _, _), entry = ready_entry
-        other = await register_user(client, handle=f"other-{uuid4().hex[:8]}")
+        other = await register_user(client, username=f"other-{uuid4().hex[:8]}")
         resp = await client.patch(
             f"/v1/entries/{entry['id']}",
             json={"title": "Hijack"},
@@ -323,7 +323,7 @@ class TestGracefulDegradation:
         original = getattr(_app.state, "entry_data_providers", [])
         _app.state.entry_data_providers = []
         try:
-            auth = await register_user(client, handle=f"noprov-{uuid4().hex[:8]}")
+            auth = await register_user(client, username=f"noprov-{uuid4().hex[:8]}")
             entry = await create_entry(client, auth["access_token"], title="Bare")
             data = (await client.get(f"/v1/entries/{entry['id']}")).json()
             assert data["id"] == entry["id"]

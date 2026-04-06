@@ -36,7 +36,7 @@ async def _register(client: httpx.AsyncClient, prefix: str = "prop") -> tuple[di
     """Register a unique user. Returns (user_data, token)."""
     uid = uuid4().hex[:8]
     resp = await client.post("/v1/auth/register", json={
-        "handle": f"{prefix}_{uid}",
+        "username": f"{prefix}_{uid}",
         "password": "S3cur3P@ssword!",
     })
     assert resp.status_code == 201, resp.text

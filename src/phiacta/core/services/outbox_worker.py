@@ -364,8 +364,8 @@ class OutboxWorker:
         """
         entry_id = UUID(payload["entry_id"])
         content_format = self._validate_format(payload.get("content_format", "markdown"))
-        author_handle = self._sanitize_string(
-            payload.get("author_handle", "phiacta-service"), max_length=100
+        author_username = self._sanitize_string(
+            payload.get("author_username", "phiacta-service"), max_length=100
         )
         author_id_str = payload.get("author_id", "service")
 
@@ -374,7 +374,7 @@ class OutboxWorker:
         created_at_str = payload.get("created_at")
 
         author = AuthorInfo(
-            name=author_handle,
+            name=author_username,
             email=f"{author_id_str}@phiacta.local",
         )
 
@@ -449,13 +449,13 @@ class OutboxWorker:
         message = self._sanitize_string(
             payload.get("message", "Update entry content"), max_length=200
         )
-        author_handle = self._sanitize_string(
-            payload.get("author_handle", "phiacta-service"), max_length=100
+        author_username = self._sanitize_string(
+            payload.get("author_username", "phiacta-service"), max_length=100
         )
         author_id = payload.get("author_id", "service")
 
         author = AuthorInfo(
-            name=author_handle,
+            name=author_username,
             email=f"{author_id}@phiacta.local",
         )
 

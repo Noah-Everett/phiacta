@@ -10,12 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RegisterRequest(BaseModel):
-    handle: str = Field(min_length=1, max_length=50)
+    username: str = Field(min_length=1, max_length=50)
     password: str = Field(min_length=8, max_length=128)
 
 
 class LoginRequest(BaseModel):
-    handle: str
+    username: str
     password: str
 
 
@@ -23,7 +23,7 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    handle: str
+    username: str
     created_at: datetime
 
 

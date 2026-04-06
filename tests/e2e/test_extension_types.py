@@ -31,7 +31,7 @@ def _mount_types_router(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, handle=f"types-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"types-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -86,7 +86,7 @@ class TestPutType:
 
     async def test_put_type_non_owner_rejected(self, ready_entry: tuple[AuthedFixture, dict], client: httpx.AsyncClient) -> None:
         (_, _, _), entry = ready_entry
-        other = await register_user(client, handle=f"other-{uuid4().hex[:8]}")
+        other = await register_user(client, username=f"other-{uuid4().hex[:8]}")
         resp = await client.put(f"/v1/extensions/types/{entry['id']}", json={"entry_type": "hijack"}, headers=auth_header(other["access_token"]))
         assert resp.status_code == 403
 

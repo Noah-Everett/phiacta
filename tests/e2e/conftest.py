@@ -675,12 +675,12 @@ async def client(
 
 async def register_user(
     client: httpx.AsyncClient,
-    handle: str = "test-user",
+    username: str = "test-user",
     password: str = "TestPassword123!",
 ) -> dict:
     """Register a user and return the full auth response."""
     resp = await client.post("/v1/auth/register", json={
-        "handle": handle,
+        "username": username,
         "password": password,
     })
     assert resp.status_code == 201, resp.text

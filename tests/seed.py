@@ -30,10 +30,10 @@ import httpx
 # ---------------------------------------------------------------------------
 
 DEFAULT_BASE_URL = "https://api.phiacta.com"
-SEED_USER_HANDLE = "seed-user"
+SEED_USERNAME = "seed-user"
 SEED_USER_PASSWORD = os.environ.get("PHIACTA_SEED_PASSWORD", "SeedAgent!2026")
 
-COLLAB_USER_HANDLE = "collab-user"
+COLLAB_USERNAME = "collab-user"
 COLLAB_USER_PASSWORD = os.environ.get("PHIACTA_COLLAB_PASSWORD", "CollabAgent!2026")
 
 TIMEOUT = 30.0
@@ -127,18 +127,18 @@ def b64(text: str) -> str:
 def register_or_login(
     client: httpx.Client,
     base: str,
-    handle: str,
+    username: str,
     password: str,
 ) -> tuple[str, str]:
     """Register a user or login if already exists.  Returns (token, user_id)."""
     try:
         auth = post(client, f"{base}/auth/register", {
-            "handle": handle, "password": password,
+            "username": username, "password": password,
         })
         return auth["access_token"], auth["user"]["id"]
     except httpx.HTTPStatusError:
         auth = post(client, f"{base}/auth/login", {
-            "handle": handle, "password": password,
+            "username": username, "password": password,
         })
         return auth["access_token"], auth["user"]["id"]
 
@@ -953,12 +953,12 @@ def seed(base_url: str) -> None:
     # -- 1. Register & login both users ------------------------------------
     print("=== Registering users ===")
     token, user_id = register_or_login(
-        client, base, SEED_USER_HANDLE, SEED_USER_PASSWORD,
+        client, base, SEED_USERNAME, SEED_USER_PASSWORD,
     )
     print(f"  seed-user: {user_id}")
 
     collab_token, collab_id = register_or_login(
-        client, base, COLLAB_USER_HANDLE, COLLAB_USER_PASSWORD,
+        client, base, COLLAB_USERNAME, COLLAB_USER_PASSWORD,
     )
     print(f"  collab-user: {collab_id}")
 
@@ -1184,8 +1184,8 @@ def seed(base_url: str) -> None:
     print(f"  Files uploaded: {counters['files']}")
     print(f"  Edit proposals: {counters['edits']}")
     print(f"  Entry updates:  {counters['updates']}")
-    print(f"\n  seed-user:  {SEED_USER_HANDLE} / {SEED_USER_PASSWORD}")
-    print(f"  collab-user: {COLLAB_USER_HANDLE} / {COLLAB_USER_PASSWORD}")
+    print(f"\n  seed-user:  {SEED_USERNAME} / {SEED_USER_PASSWORD}")
+    print(f"  collab-user: {COLLAB_USERNAME} / {COLLAB_USER_PASSWORD}")
 
 
 # ---------------------------------------------------------------------------

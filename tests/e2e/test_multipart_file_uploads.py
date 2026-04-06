@@ -37,7 +37,7 @@ type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"multipart-{uid}")
+    auth = await register_user(client, username=f"multipart-{uid}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -344,7 +344,7 @@ class TestMultipartPutFileErrors:
         await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         uid = uuid4().hex[:8]
-        auth_b = await register_user(client, handle=f"other-mp-{uid}")
+        auth_b = await register_user(client, username=f"other-mp-{uid}")
         token_b = auth_b["access_token"]
 
         resp = await client.put(
@@ -614,7 +614,7 @@ class TestMultipartAdditionalCoverage:
         fake_git: FakeGitService,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Commit author uses the user's handle and phiacta.local email."""
+        """Commit author uses the user's username and phiacta.local email."""
         client, user, token = authed
         entry = await create_entry(client, token, title="Author Info Test")
         entry_id = entry["id"]
@@ -627,7 +627,7 @@ class TestMultipartAdditionalCoverage:
         )
         assert resp.status_code == 200
         commit = fake_git.commits[-1]
-        assert commit["author"].name == user["handle"]
+        assert commit["author"].name == user["username"]
         assert commit["author"].email == f"{user['id']}@phiacta.local"
 
     async def test_delete_without_message_uses_default(

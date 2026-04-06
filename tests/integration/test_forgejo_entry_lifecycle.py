@@ -11,7 +11,7 @@ Run with:
 
     pytest tests/integration/test_forgejo_entry_lifecycle.py -m forgejo
 
-Each test registers its own user (uuid4-prefixed handles) and creates
+Each test registers its own user (uuid4-prefixed usernames) and creates
 its own entries so tests are fully independent and can run in any order.
 
 Do NOT import from phiacta source code -- all interaction is through the HTTP API.
@@ -38,7 +38,7 @@ pytestmark = [pytest.mark.forgejo, pytest.mark.anyio]
 
 async def register_user(
     client: httpx.AsyncClient,
-    handle: str | None = None,
+    username: str | None = None,
     password: str = "Integration1!",
 ) -> dict:
     """Register a new user and return the full auth response dict.
@@ -49,7 +49,7 @@ async def register_user(
     resp = await client.post(
         "/v1/auth/register",
         json={
-            "handle": handle or f"user-{uid}",
+            "username": username or f"user-{uid}",
             "password": password,
         },
     )

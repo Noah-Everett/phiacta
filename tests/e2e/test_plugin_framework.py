@@ -120,7 +120,7 @@ class TestAppWithNoPlugins:
     ) -> None:
         """Core POST /v1/auth/register works when no plugins loaded."""
         resp = await client.post("/v1/auth/register", json={
-            "handle": f"no-plugin-{uuid4().hex[:8]}",
+            "username": f"no-plugin-{uuid4().hex[:8]}",
             "password": "TestPassword123!",
         })
         assert resp.status_code == 201
@@ -302,7 +302,7 @@ class TestAppWithPluginEnabled:
         """Core auth registration and login work with plugins enabled."""
         auth = await register_user(
             client,
-            handle=f"plugtest-{uuid4().hex[:8]}",
+            username=f"plugtest-{uuid4().hex[:8]}",
         )
         assert "access_token" in auth
         assert "user" in auth
@@ -315,7 +315,7 @@ class TestAppWithPluginEnabled:
         """Full entry creation flow works with plugins enabled."""
         auth = await register_user(
             client,
-            handle=f"plugentry-{uuid4().hex[:8]}",
+            username=f"plugentry-{uuid4().hex[:8]}",
         )
         token = auth["access_token"]
         entry = await create_entry(client, token, title="Plugin Coexistence Test")

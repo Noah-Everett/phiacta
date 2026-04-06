@@ -73,14 +73,14 @@ def _slugify(text: str, max_length: int = 60) -> str:
     return text[:max_length] or "proposal"
 
 
-def _make_branch_name(handle: str, title: str) -> str:
-    """Generate a branch name for a proposal: ``edit/{handle}/{slug}``."""
-    return f"edit/{handle}/{_slugify(title)}"
+def _make_branch_name(username: str, title: str) -> str:
+    """Generate a branch name for a proposal: ``edit/{username}/{slug}``."""
+    return f"edit/{username}/{_slugify(title)}"
 
 
 def _pr_to_list_item(
     pr: PullRequestInfo,
-    user_handle: str | None = None,
+    user_username: str | None = None,
 ) -> EditProposalListItem:
     return EditProposalListItem(
         number=pr.number,
@@ -89,7 +89,7 @@ def _pr_to_list_item(
         state=pr.state,
         is_draft=pr.is_draft,
         author={
-            "handle": user_handle or pr.author_name,
+            "username": user_username or pr.author_name,
         },
         head_branch=pr.head_branch,
         base_branch=pr.base_branch,
@@ -146,7 +146,7 @@ async def create_edit_proposal(
         decoded_files.append(FileContent(path=fc.path, content=raw))
 
     # Step 1: Create branch from main.
-    branch_name = _make_branch_name(user.handle, body.title)
+    branch_name = _make_branch_name(user.username, body.title)
     try:
         await git_service.create_branch(entry_id, branch_name)
     except ForgejoUnavailableError as exc:
@@ -164,7 +164,7 @@ async def create_edit_proposal(
             ) from exc
 
     # Step 2: Commit files to the proposal branch.
-    author = AuthorInfo(name=user.handle, email=f"{user.id}@phiacta.local")
+    author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
     message = body.title
     try:
         await git_service.commit_files(
@@ -184,7 +184,7 @@ async def create_edit_proposal(
             body=pr_body,
             head_branch=branch_name,
             base_branch="main",
-            author_name=user.handle,
+            author_name=user.username,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
         raise HTTPException(
@@ -210,7 +210,7 @@ async def create_edit_proposal(
             pr_info.number, entry_id,
         )
 
-    return _pr_to_list_item(pr_info, user.handle)
+    return _pr_to_list_item(pr_info, user.username)
 
 
 # ---------------------------------------------------------------------------

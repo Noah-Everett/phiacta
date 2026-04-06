@@ -46,7 +46,7 @@ def _b64(text: str) -> str:
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user (the entry owner) and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"entity-owner-{uid}")
+    auth = await register_user(client, username=f"entity-owner-{uid}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -54,7 +54,7 @@ async def owner(client: httpx.AsyncClient) -> AuthedFixture:
 async def other_user(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a second user and return (client, user_data, token)."""
     uid = uuid4().hex[:8]
-    auth = await register_user(client, handle=f"entity-other-{uid}")
+    auth = await register_user(client, username=f"entity-other-{uid}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -176,7 +176,7 @@ class TestUserRegistrationCreatesEntity:
     ) -> None:
         """New user has an empty activity feed -- no activity logged for
         registration itself."""
-        auth = await register_user(client, handle="fresh-user")
+        auth = await register_user(client, username="fresh-user")
         user_id = auth["user"]["id"]
 
         resp = await client.get("/v1/activity", params={"actor": user_id})
@@ -191,14 +191,14 @@ class TestUserRegistrationCreatesEntity:
         """The user UUID is the entity UUID (shared-PK). User profile
         endpoint must still return the correct user after entity
         registration."""
-        auth = await register_user(client, handle="entity-user-pk")
+        auth = await register_user(client, username="entity-user-pk")
         user_id = auth["user"]["id"]
 
         # The user should be fetchable via the user endpoint
         resp = await client.get(f"/v1/users/{user_id}")
         assert resp.status_code == 200
         assert resp.json()["id"] == user_id
-        assert resp.json()["handle"] == "entity-user-pk"
+        assert resp.json()["username"] == "entity-user-pk"
 
     async def test_first_user_entity_has_no_created_by(
         self, client: httpx.AsyncClient,
@@ -209,7 +209,7 @@ class TestUserRegistrationCreatesEntity:
         # This test implicitly verifies that created_by=NULL works for
         # the first user -- if the Entity FK required a valid created_by,
         # this would fail.
-        auth = await register_user(client, handle="first-ever-user")
+        auth = await register_user(client, username="first-ever-user")
         assert auth["user"]["id"] is not None
         assert auth["access_token"] is not None
 
@@ -660,11 +660,11 @@ class TestRegressionEntryOperations:
         """POST /v1/auth/register still returns user + access_token."""
         uid = uuid4().hex[:8]
         resp = await client.post("/v1/auth/register", json={
-            "handle": f"regression-{uid}",
+            "username": f"regression-{uid}",
             "password": "TestPassword123!",
         })
         assert resp.status_code == 201
         data = resp.json()
         assert "user" in data
         assert "access_token" in data
-        assert data["user"]["handle"] == f"regression-{uid}"
+        assert data["user"]["username"] == f"regression-{uid}"

@@ -26,7 +26,7 @@ def _unique_user() -> dict[str, str]:
     """Return a unique RegisterRequest payload."""
     uid = uuid4().hex[:12]
     return {
-        "handle": f"test_{uid}",
+        "username": f"test_{uid}",
         "password": "S3cur3P@ssword!",
     }
 
@@ -48,18 +48,18 @@ async def test_register_and_login() -> None:
         assert "access_token" in reg_body
         assert reg_body["token_type"] == "bearer"
         user_data = reg_body["user"]
-        assert user_data["handle"] == payload["handle"]
+        assert user_data["username"] == payload["username"]
 
         reg_token = reg_body["access_token"]
 
         login_resp = await client.post(
             "/v1/auth/login",
-            json={"handle": payload["handle"], "password": payload["password"]},
+            json={"username": payload["username"], "password": payload["password"]},
         )
         assert login_resp.status_code == 200, login_resp.text
         login_body = login_resp.json()
         assert "access_token" in login_body
-        assert login_body["user"]["handle"] == payload["handle"]
+        assert login_body["user"]["username"] == payload["username"]
 
         me_resp = await client.get(
             "/v1/auth/me",
@@ -67,12 +67,12 @@ async def test_register_and_login() -> None:
         )
         assert me_resp.status_code == 200, me_resp.text
         me_body = me_resp.json()
-        assert me_body["handle"] == payload["handle"]
+        assert me_body["username"] == payload["username"]
         assert me_body["id"] == user_data["id"]
 
 
-async def test_register_duplicate_handle_rejected() -> None:
-    """Same handle rejected on second registration."""
+async def test_register_duplicate_username_rejected() -> None:
+    """Same username rejected on second registration."""
     payload = _unique_user()
 
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
@@ -80,7 +80,7 @@ async def test_register_duplicate_handle_rejected() -> None:
         assert resp.status_code == 201
 
         duplicate = {
-            "handle": payload["handle"],
+            "username": payload["username"],
             "password": payload["password"],
         }
         dup_resp = await client.post("/v1/auth/register", json=duplicate)
@@ -101,18 +101,18 @@ async def test_login_wrong_password() -> None:
 
         resp = await client.post(
             "/v1/auth/login",
-            json={"handle": payload["handle"], "password": "Wr0ngP@ssword!"},
+            json={"username": payload["username"], "password": "Wr0ngP@ssword!"},
         )
         assert resp.status_code == 401
 
 
-async def test_login_nonexistent_handle() -> None:
-    """Nonexistent handle returns 401."""
+async def test_login_nonexistent_username() -> None:
+    """Nonexistent username returns 401."""
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
         resp = await client.post(
             "/v1/auth/login",
             json={
-                "handle": f"ghost_{uuid4().hex}",
+                "username": f"ghost_{uuid4().hex}",
                 "password": "S3cur3P@ssword!",
             },
         )
@@ -160,7 +160,7 @@ async def test_get_user_by_id() -> None:
 
         profile = profile_resp.json()
         assert profile["id"] == user_id
-        assert profile["handle"] == payload["handle"]
+        assert profile["username"] == payload["username"]
 
 
 async def test_get_nonexistent_user() -> None:

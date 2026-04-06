@@ -26,7 +26,7 @@ async def _create_user_and_entry(
 ) -> tuple[User, Entry]:
     """Helper: create a user and entry in the database."""
     suffix = uuid4().hex[:8]
-    user = User(**make_user(handle=f"repo-test-{suffix}"))
+    user = User(**make_user(username=f"repo-test-{suffix}"))
     db_session.add(user)
     await db_session.flush()
 

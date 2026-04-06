@@ -14,8 +14,8 @@ class UserRepository(BaseRepository[User]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, User)
 
-    async def get_by_handle(self, handle: str) -> User | None:
+    async def get_by_username(self, username: str) -> User | None:
         result = await self.session.execute(
-            select(User).where(User.handle == handle)
+            select(User).where(User.username == username)
         )
         return result.scalar_one_or_none()

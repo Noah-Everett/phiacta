@@ -68,7 +68,7 @@ def _mount_tags_router(client: httpx.AsyncClient) -> None:
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user and return (client, user_data, token)."""
     auth = await register_user(
-        client, handle="tags-test"
+        client, username="tags-test"
     )
     return client, auth["user"], auth["access_token"]
 
@@ -274,7 +274,7 @@ class TestFindEntriesByTags:
     ) -> None:
         """OR mode returns entries with ANY matching tag."""
         auth = await register_user(
-            client, handle="find-or"
+            client, username="find-or"
         )
         token = auth["access_token"]
 
@@ -313,7 +313,7 @@ class TestFindEntriesByTags:
     ) -> None:
         """AND mode returns only entries with ALL matching tags."""
         auth = await register_user(
-            client, handle="find-and"
+            client, username="find-and"
         )
         token = auth["access_token"]
 
@@ -373,7 +373,7 @@ class TestFindEntriesByTags:
     ) -> None:
         """Find-by-tags supports limit and offset pagination."""
         auth = await register_user(
-            client, handle="find-page"
+            client, username="find-page"
         )
         token = auth["access_token"]
 
@@ -424,7 +424,7 @@ class TestFindEntriesByTags:
     ) -> None:
         """Each item in find-by-tags response has entry_id."""
         auth = await register_user(
-            client, handle="find-shape"
+            client, username="find-shape"
         )
         token = auth["access_token"]
 
@@ -454,7 +454,7 @@ class TestFindEntriesByTags:
     ) -> None:
         """Private entries are excluded from find-by-tags by default."""
         auth = await register_user(
-            client, handle="find-arch"
+            client, username="find-arch"
         )
         token = auth["access_token"]
 
@@ -487,7 +487,7 @@ class TestFindEntriesByTags:
     ) -> None:
         """Private entries are visible to the owner when authenticated."""
         auth = await register_user(
-            client, handle="find-incl"
+            client, username="find-incl"
         )
         token = auth["access_token"]
 
@@ -556,7 +556,7 @@ class TestTagsAuthorization:
         (client, _, _), entry = ready_entry
 
         other = await register_user(
-            client, handle="non-owner-tags"
+            client, username="non-owner-tags"
         )
         resp = await client.put(
             f"/v1/extensions/tags/{entry['id']}",
@@ -855,7 +855,7 @@ class TestTagsIdempotencyAndIsolation:
     ) -> None:
         """Tags on entry A do not appear when listing tags for entry B."""
         auth = await register_user(
-            client, handle="isolation"
+            client, username="isolation"
         )
         token = auth["access_token"]
 
@@ -908,7 +908,7 @@ class TestTagsIdempotencyAndIsolation:
     ) -> None:
         """Omitting mode defaults to OR — entries with any tag match."""
         auth = await register_user(
-            client, handle="default-mode"
+            client, username="default-mode"
         )
         token = auth["access_token"]
 
@@ -945,7 +945,7 @@ class TestTagsIdempotencyAndIsolation:
     ) -> None:
         """Duplicate tags in search query are deduplicated — ?tags=a,a&mode=and works."""
         auth = await register_user(
-            client, handle="dedup-search"
+            client, username="dedup-search"
         )
         token = auth["access_token"]
 

@@ -39,8 +39,8 @@ async def db_session(async_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
         await session.rollback()
 
 
-def make_user(*, handle: str = "test-user", password_hash: str = "$2b$12$fakehash") -> dict[str, object]:
-    return {"id": uuid4(), "handle": handle, "password_hash": password_hash}
+def make_user(*, username: str = "test-user", password_hash: str = "$2b$12$fakehash") -> dict[str, object]:
+    return {"id": uuid4(), "username": username, "password_hash": password_hash}
 
 
 def make_entry(*, created_by: object, repo_name: str | None = None, visibility: str = "public") -> dict[str, object]:

@@ -33,7 +33,7 @@ class EditProposalAuthor(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    handle: str
+    username: str
 
 
 class EditProposalListItem(BaseModel):

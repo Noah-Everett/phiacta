@@ -31,7 +31,7 @@ def _mount_references_router(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, handle=f"refs-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"refs-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
@@ -103,7 +103,7 @@ class TestDeleteReference:
         (_, _, token), a, b = two_entries
         create_resp = await client.post(f"/v1/extensions/references/{a['id']}", json={"target_entry_id": b["id"], "rel": "supports"}, headers=auth_header(token))
         ref_id = create_resp.json()["id"]
-        other = await register_user(client, handle=f"other-{uuid4().hex[:8]}")
+        other = await register_user(client, username=f"other-{uuid4().hex[:8]}")
         resp = await client.delete(f"/v1/extensions/references/{ref_id}", headers=auth_header(other["access_token"]))
         assert resp.status_code == 403
 
@@ -111,7 +111,7 @@ class TestDeleteReference:
 class TestReferenceAuth:
     async def test_create_non_owner_rejected(self, two_entries: tuple[AuthedFixture, dict, dict], client: httpx.AsyncClient) -> None:
         (_, _, _), a, b = two_entries
-        other = await register_user(client, handle=f"other-{uuid4().hex[:8]}")
+        other = await register_user(client, username=f"other-{uuid4().hex[:8]}")
         resp = await client.post(f"/v1/extensions/references/{a['id']}", json={"target_entry_id": b["id"], "rel": "supports"}, headers=auth_header(other["access_token"]))
         assert resp.status_code == 403
 

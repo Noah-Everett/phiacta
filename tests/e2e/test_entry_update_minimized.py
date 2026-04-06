@@ -29,7 +29,7 @@ def _mount_metadata_router(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, handle=f"update-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"update-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 

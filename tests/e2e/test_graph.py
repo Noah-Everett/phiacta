@@ -54,7 +54,7 @@ def _mount_routers(client: httpx.AsyncClient) -> None:
 
 @pytest.fixture
 async def authed(client: httpx.AsyncClient) -> AuthedFixture:
-    auth = await register_user(client, handle=f"graph-{uuid4().hex[:8]}")
+    auth = await register_user(client, username=f"graph-{uuid4().hex[:8]}")
     return client, auth["user"], auth["access_token"]
 
 
