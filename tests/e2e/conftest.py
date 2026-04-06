@@ -237,6 +237,11 @@ class FakeGitService:
             self.branches[entry_id] = {}
         self.branches[entry_id][name] = from_ref
 
+    async def delete_branch(self, entry_id: UUID, name: str) -> None:
+        """Delete a branch from memory."""
+        repo_branches = self.branches.get(entry_id, {})
+        repo_branches.pop(name, None)
+
     async def rename_branch(self, entry_id: UUID, old_name: str, new_name: str) -> None:
         """Rename a branch in memory."""
         repo_branches = self.branches.get(entry_id, {})

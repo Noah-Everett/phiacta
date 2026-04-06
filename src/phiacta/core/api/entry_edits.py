@@ -50,9 +50,12 @@ from phiacta.core.services.git_service import (
     PullRequestInfo,
     RepoNotFoundError,
 )
+from phiacta.core.pagination import CursorPage, decode_page_cursor, encode_page_cursor
 from phiacta.core.services.git_service_dep import get_git_service
 
 logger = logging.getLogger(__name__)
+
+_FORGEJO_MAX_LIMIT = 50
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
@@ -76,18 +79,6 @@ def _make_branch_name(username: str, title: str) -> str:
     return f"edit/{username}/{_slugify(title)}"
 
 
-async def _cleanup_branch(
-    git_service: GitService, entry_id: UUID, branch_name: str,
-) -> None:
-    """Best-effort cleanup of a proposal branch after a failed step."""
-    try:
-        await git_service.delete_branch(entry_id, branch_name)
-    except Exception:
-        logger.warning(
-            "Failed to clean up branch %s on entry %s", branch_name, entry_id,
-        )
-
-
 def _pr_to_list_item(
     pr: PullRequestInfo,
     user_username: str | None = None,
@@ -107,6 +98,18 @@ def _pr_to_list_item(
         updated_at=pr.updated_at,
         merged_at=pr.merged_at,
     )
+
+
+async def _cleanup_branch(
+    git_service: GitService, entry_id: UUID, branch_name: str,
+) -> None:
+    """Best-effort cleanup of a proposal branch after a failed step."""
+    try:
+        await git_service.delete_branch(entry_id, branch_name)
+    except Exception:
+        logger.warning(
+            "Failed to clean up branch %s on entry %s", branch_name, entry_id,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -225,22 +228,32 @@ async def create_edit_proposal(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{entry_id}/edits", response_model=list[EditProposalListItem])
+@router.get("/{entry_id}/edits", response_model=CursorPage[EditProposalListItem])
 async def list_edit_proposals(
     entry_id: UUID,
     state: str | None = Query(None, pattern="^(open|closed|merged)$"),
     limit: int = Query(50, ge=1, le=200),
-    page: int = Query(1, ge=1),
+    cursor: str | None = Query(None),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
-) -> list[EditProposalListItem]:
+) -> CursorPage[EditProposalListItem]:
     """List edit proposals for an entry, optionally filtered by state."""
     await get_readable_entry(entry_id, db, user=user)
 
+    # Decode cursor to page number (Forgejo uses page-based pagination)
+    page = 1
+    if cursor is not None:
+        try:
+            page = decode_page_cursor(cursor)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    effective_limit = min(limit, _FORGEJO_MAX_LIMIT)
+
     try:
         prs = await git_service.list_pull_requests(
-            entry_id, state=state, limit=limit, page=page,
+            entry_id, state=state, limit=effective_limit, page=page,
         )
     except RepoNotFoundError as exc:
         raise HTTPException(
@@ -251,7 +264,11 @@ async def list_edit_proposals(
             status_code=502, detail="Git service unavailable",
         ) from exc
 
-    return [_pr_to_list_item(pr) for pr in prs]
+    items = [_pr_to_list_item(pr) for pr in prs]
+    has_more = len(prs) == effective_limit
+    next_cursor = encode_page_cursor(page + 1) if has_more else None
+
+    return CursorPage(items=items, limit=effective_limit, has_more=has_more, next_cursor=next_cursor)
 
 
 # ---------------------------------------------------------------------------

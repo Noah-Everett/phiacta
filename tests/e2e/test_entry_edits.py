@@ -34,7 +34,6 @@ from tests.e2e.conftest import (
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 
-
 @pytest.fixture
 async def owner(client: httpx.AsyncClient) -> AuthedFixture:
     """Register a user (the entry owner) and return (client, user_data, token)."""
@@ -425,7 +424,7 @@ class TestCreateEditProposalErrors:
             },
             headers=auth_header(proposer_token),
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     async def test_create_absolute_path_blocked_400(
         self,
@@ -449,7 +448,7 @@ class TestCreateEditProposalErrors:
             },
             headers=auth_header(proposer_token),
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     async def test_create_invalid_base64_400(
         self,
@@ -481,14 +480,14 @@ class TestCreateEditProposalErrors:
         proposer: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """POST /edits with a file exceeding max_file_size_bytes returns 400."""
+        """POST /edits with a file exceeding schema max_length returns 422."""
         client, _, owner_token = owner
         _, _, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
         entry_id = entry["id"]
 
-        # Default max is 25 MB; create content slightly over that
-        oversized = "x" * (25 * 1024 * 1024 + 1)
+        # Schema max_length is 10MB; Pydantic rejects before our size check
+        oversized = "x" * (10_000_001)
 
         resp = await client.post(
             f"/v1/entries/{entry_id}/edits",
@@ -500,8 +499,7 @@ class TestCreateEditProposalErrors:
             },
             headers=auth_header(proposer_token),
         )
-        assert resp.status_code == 400
-        assert "exceeds maximum size" in resp.json()["detail"].lower()
+        assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -524,7 +522,7 @@ class TestListEditProposals:
 
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert isinstance(data, list)
         assert len(data) == 0
 
@@ -555,7 +553,7 @@ class TestListEditProposals:
 
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert isinstance(data, list)
         assert len(data) == 2
         titles = {item["title"] for item in data}
@@ -610,7 +608,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         assert data[0]["title"] == "Stays open"
         assert data[0]["state"] == "open"
@@ -662,7 +660,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits", params={"state": "closed"}
         )
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         assert data[0]["state"] == "closed"
 
@@ -713,7 +711,7 @@ class TestListEditProposals:
             f"/v1/entries/{entry_id}/edits", params={"state": "merged"}
         )
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         assert data[0]["state"] == "merged"
 
@@ -730,7 +728,7 @@ class TestListEditProposals:
         # No auth header
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        assert isinstance(resp.json(), list)
+        assert isinstance(resp.json()["items"], list)
 
     async def test_list_proposals_response_fields(
         self,
@@ -758,7 +756,7 @@ class TestListEditProposals:
 
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         item = data[0]
         expected_keys = {
@@ -794,19 +792,24 @@ class TestListEditProposals:
             )
             assert resp.status_code == 201
 
-        # Page 1, limit 2
+        # First page, limit 2
         resp = await client.get(
-            f"/v1/entries/{entry_id}/edits", params={"limit": 2, "page": 1}
+            f"/v1/entries/{entry_id}/edits", params={"limit": 2}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 2
+        data = resp.json()
+        assert len(data["items"]) == 2
+        assert data["has_more"] is True
+        assert data["next_cursor"] is not None
 
-        # Page 2, limit 2
+        # Second page via cursor
         resp = await client.get(
-            f"/v1/entries/{entry_id}/edits", params={"limit": 2, "page": 2}
+            f"/v1/entries/{entry_id}/edits", params={"limit": 2, "cursor": data["next_cursor"]}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        data2 = resp.json()
+        assert len(data2["items"]) == 1
+        assert data2["has_more"] is False
 
     async def test_list_proposals_nonexistent_entry_404(
         self,
@@ -1525,7 +1528,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        assert len(resp.json()["items"]) == 1
 
         # Merge
         resp = await client.post(
@@ -1540,15 +1543,15 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 0
+        assert len(resp.json()["items"]) == 0
 
         # List -- 1 merged
         resp = await client.get(
             f"/v1/entries/{entry_id}/edits", params={"state": "merged"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["state"] == "merged"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["state"] == "merged"
 
     async def test_create_close_lifecycle(
         self,
@@ -1587,15 +1590,15 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 0
+        assert len(resp.json()["items"]) == 0
 
         # List -- 1 closed
         resp = await client.get(
             f"/v1/entries/{entry_id}/edits", params={"state": "closed"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["state"] == "closed"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["state"] == "closed"
 
     async def test_multiple_proposals_lifecycle(
         self,
@@ -1653,7 +1656,7 @@ class TestEditProposalLifecycle:
         # List all -- should be 2
         resp = await client.get(f"/v1/entries/{entry_id}/edits")
         assert resp.status_code == 200
-        all_proposals = resp.json()
+        all_proposals = resp.json()["items"]
         assert len(all_proposals) == 2
 
         # List open -- should be 0
@@ -1661,14 +1664,14 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "open"}
         )
         assert resp.status_code == 200
-        assert len(resp.json()) == 0
+        assert len(resp.json()["items"]) == 0
 
         # List merged -- should be 1
         resp = await client.get(
             f"/v1/entries/{entry_id}/edits", params={"state": "merged"}
         )
         assert resp.status_code == 200
-        merged = resp.json()
+        merged = resp.json()["items"]
         assert len(merged) == 1
         assert merged[0]["title"] == "To merge"
 
@@ -1677,7 +1680,7 @@ class TestEditProposalLifecycle:
             f"/v1/entries/{entry_id}/edits", params={"state": "closed"}
         )
         assert resp.status_code == 200
-        closed = resp.json()
+        closed = resp.json()["items"]
         assert len(closed) == 1
         assert closed[0]["title"] == "To close"
 
@@ -1723,14 +1726,14 @@ class TestEditProposalLifecycle:
         # List A -- should only have 1 proposal for A
         resp = await client.get(f"/v1/entries/{entry_a['id']}/edits")
         assert resp.status_code == 200
-        data_a = resp.json()
+        data_a = resp.json()["items"]
         assert len(data_a) == 1
         assert data_a[0]["title"] == "Proposal for A"
 
         # List B -- should only have 1 proposal for B
         resp = await client.get(f"/v1/entries/{entry_b['id']}/edits")
         assert resp.status_code == 200
-        data_b = resp.json()
+        data_b = resp.json()["items"]
         assert len(data_b) == 1
         assert data_b[0]["title"] == "Proposal for B"
 

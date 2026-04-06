@@ -1140,8 +1140,9 @@ def seed(base_url: str) -> None:
         entry_key = EDIT_PROPOSALS[0][0]
         if entry_key in entry_ids:
             eid = entry_ids[entry_key]
-            edits = get(client, f"{base}/entries/{eid}/edits", token=token, params={"state": "open"})
-            if isinstance(edits, list) and edits:
+            edits_resp = get(client, f"{base}/entries/{eid}/edits", token=token, params={"state": "open"})
+            edits = edits_resp.get("items", []) if isinstance(edits_resp, dict) else edits_resp
+            if edits:
                 pr_num = edits[0]["number"]
                 resp = post(client, f"{base}/entries/{eid}/edits/{pr_num}/merge", {}, token=token)
                 if resp:
@@ -1151,8 +1152,9 @@ def seed(base_url: str) -> None:
         entry_key = EDIT_PROPOSALS[1][0]
         if entry_key in entry_ids:
             eid = entry_ids[entry_key]
-            edits = get(client, f"{base}/entries/{eid}/edits", token=token, params={"state": "open"})
-            if isinstance(edits, list) and edits:
+            edits_resp = get(client, f"{base}/entries/{eid}/edits", token=token, params={"state": "open"})
+            edits = edits_resp.get("items", []) if isinstance(edits_resp, dict) else edits_resp
+            if edits:
                 pr_num = edits[0]["number"]
                 resp = post(client, f"{base}/entries/{eid}/edits/{pr_num}/close", {}, token=token)
                 if resp:

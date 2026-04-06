@@ -12,7 +12,6 @@ It returns actions performed by a user in reverse chronological order.
 
 from __future__ import annotations
 
-import base64
 from uuid import UUID, uuid4
 
 import httpx
@@ -30,9 +29,6 @@ from tests.e2e.conftest import (
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
-
-def text: str -> str:
-    return base64.b64encode(text.encode()).decode()
 
 
 @pytest.fixture
@@ -218,13 +214,13 @@ class TestActivityFeedErrors:
         self,
         owner: AuthedFixture,
     ) -> None:
-        """Providing a non-UUID 'before' cursor returns 422."""
+        """Providing an invalid cursor returns 400."""
         client, user, _ = owner
         resp = await client.get(
             "/v1/activity",
-            params={"actor": user["id"], "before": "not-a-uuid"},
+            params={"actor": user["id"], "cursor": "not-a-valid-cursor"},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +367,7 @@ class TestActivityFeedPagination:
         # Page 2
         resp = await client.get(
             "/v1/activity",
-            params={"actor": user["id"], "limit": 2, "before": cursor},
+            params={"actor": user["id"], "limit": 2, "cursor": cursor},
         )
         assert resp.status_code == 200
         page2 = resp.json()
@@ -401,7 +397,7 @@ class TestActivityFeedPagination:
         for _ in range(10):  # Safety limit
             params: dict = {"actor": user["id"], "limit": 2}
             if cursor:
-                params["before"] = cursor
+                params["cursor"] = cursor
             resp = await client.get(
                 "/v1/activity",
                 params=params,

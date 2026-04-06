@@ -12,6 +12,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from phiacta.core.pagination import CursorPage
+
 router = APIRouter(prefix="/plugins", tags=["plugins"])
 
 
@@ -34,12 +36,12 @@ class PluginInfo(BaseModel):
     provider: PluginProviderInfo | None = None
 
 
-@router.get("", response_model=list[PluginInfo])
-async def list_plugins(request: Request) -> list[PluginInfo]:
-    """Return metadata for all loaded plugins. Public read."""
+@router.get("", response_model=CursorPage[PluginInfo])
+async def list_plugins(request: Request) -> CursorPage[PluginInfo]:
+    """Return metadata for all loaded plugins. Bounded — always returns all."""
     registry = getattr(request.app.state, "plugin_registry", None)
     if registry is None:
-        return []
+        return CursorPage(items=[], limit=0, has_more=False, next_cursor=None)
 
     plugins_map = registry.plugins
     result: list[PluginInfo] = []
@@ -62,4 +64,4 @@ async def list_plugins(request: Request) -> list[PluginInfo]:
             depends_on=reg.manifest.depends_on,
             provider=provider_info,
         ))
-    return result
+    return CursorPage(items=result, limit=len(result), has_more=False, next_cursor=None)

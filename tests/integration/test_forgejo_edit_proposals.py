@@ -117,13 +117,13 @@ async def test_list_proposals() -> None:
         resp = await client.get(f"/v1/entries/{entry['id']}/edits")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) >= 2
+        assert len(data["items"]) >= 2
 
         resp = await client.get(
             f"/v1/entries/{entry['id']}/edits", params={"state": "open"},
         )
         assert resp.status_code == 200
-        assert len(resp.json()) >= 2
+        assert len(resp.json()["items"]) >= 2
 
 
 async def test_merge_proposal() -> None:
@@ -188,7 +188,7 @@ async def test_close_proposal() -> None:
             f"/v1/entries/{entry['id']}/edits", params={"state": "closed"},
         )
         assert resp.status_code == 200
-        closed = resp.json()
+        closed = resp.json()["items"]
         assert any(p["number"] == pr_number for p in closed)
 
 
@@ -293,7 +293,7 @@ async def test_proposal_lifecycle_state_transitions() -> None:
         resp = await client.get(
             f"/v1/entries/{entry['id']}/edits", params={"state": "open"},
         )
-        assert any(p["number"] == pr_number for p in resp.json())
+        assert any(p["number"] == pr_number for p in resp.json()["items"])
 
         # Merge
         resp = await client.post(
@@ -311,9 +311,9 @@ async def test_proposal_lifecycle_state_transitions() -> None:
         resp = await client.get(
             f"/v1/entries/{entry['id']}/edits", params={"state": "merged"},
         )
-        assert any(p["number"] == pr_number for p in resp.json())
+        assert any(p["number"] == pr_number for p in resp.json()["items"])
 
         resp = await client.get(
             f"/v1/entries/{entry['id']}/edits", params={"state": "open"},
         )
-        assert not any(p["number"] == pr_number for p in resp.json())
+        assert not any(p["number"] == pr_number for p in resp.json()["items"])

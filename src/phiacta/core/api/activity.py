@@ -9,9 +9,10 @@ by actor (user) and entity, with cursor pagination.
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,55 +20,78 @@ from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.entry import Entry
 from phiacta.core.models.user import User
+from phiacta.core.pagination import (
+    CursorPage,
+    build_keyset_cursor,
+    decode_cursor,
+)
+from phiacta.core.api.rate_limit import limiter
 from phiacta.core.repositories.activity_repository import ActivityRepository
 from phiacta.core.repositories.entity_repository import EntityRepository
 from phiacta.core.repositories.user_repository import UserRepository
-from phiacta.core.schemas.activity import ActivityFeedResponse, ActivityItem
+from phiacta.core.schemas.activity import ActivityItem
 
 router = APIRouter(prefix="/activity", tags=["activity"])
 
 
-@router.get("", response_model=ActivityFeedResponse)
+@router.get("", response_model=CursorPage[ActivityItem])
+@limiter.limit("300/minute")
 async def get_activity(
+    request: Request,
     actor: UUID | None = Query(None, description="Filter by actor (user ID)"),
     entity: UUID | None = Query(None, description="Filter by entity ID"),
     limit: int = Query(50, ge=1, le=100),
-    before: UUID | None = Query(None, description="Cursor for pagination"),
+    cursor: str | None = Query(None, description="Cursor for pagination"),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
-) -> ActivityFeedResponse:
-    """Query the activity feed. At least one filter (actor or entity) is required.
-
-    Public endpoint — no authentication required.
-    """
+) -> CursorPage[ActivityItem]:
+    """Query the activity feed. At least one filter (actor or entity) is required."""
     if actor is None and entity is None:
         raise HTTPException(
             status_code=400,
             detail="At least one filter required: actor or entity",
         )
 
+    # Decode cursor
+    cursor_created_at: datetime | None = None
+    cursor_id: UUID | None = None
+    if cursor is not None:
+        try:
+            data = decode_cursor(cursor)
+            cursor_created_at = datetime.fromisoformat(data["v"])
+            cursor_id = UUID(data["id"])
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid cursor: {exc}") from exc
+
     activity_repo = ActivityRepository(db)
     entity_repo = EntityRepository(db)
 
     if actor is not None:
-        # Verify actor user exists (don't shadow the `user` param)
         user_repo = UserRepository(db)
         actor_user = await user_repo.get_by_id(actor)
         if actor_user is None:
             raise HTTPException(status_code=404, detail="User not found")
 
-        items, next_cursor = await activity_repo.list_by_actor(
-            actor_id=actor, limit=limit, before=before,
+        items = await activity_repo.list_by_actor(
+            actor_id=actor, limit=limit,
+            cursor_created_at=cursor_created_at,
+            cursor_id=cursor_id,
         )
     else:
-        # entity filter
         target = await entity_repo.get_by_id(entity)  # type: ignore[arg-type]
         if target is None:
             raise HTTPException(status_code=404, detail="Entity not found")
 
-        items, next_cursor = await activity_repo.list_by_entity(
-            entity_id=entity, limit=limit, before=before,  # type: ignore[arg-type]
+        items = await activity_repo.list_by_entity(
+            entity_id=entity, limit=limit,  # type: ignore[arg-type]
+            cursor_created_at=cursor_created_at,
+            cursor_id=cursor_id,
         )
+
+    # Detect has_more from limit+1 fetch
+    has_more = len(items) > limit
+    if has_more:
+        items = items[:limit]
 
     # Batch fetch entities to avoid N+1
     entity_ids = list({a.entity_id for a in items})
@@ -121,7 +145,16 @@ async def get_activity(
             created_at=a.created_at,
         ))
 
-    # Use the repository's cursor: if the DB had more rows, there may be
-    # more visible items on subsequent pages even if visibility filtering
-    # reduced this batch below the limit.
-    return ActivityFeedResponse(items=result_items, next_cursor=next_cursor)
+    # Build next_cursor from last DB item (not filtered item) to preserve
+    # cursor continuity even when visibility filtering reduces the page.
+    next_cursor: str | None = None
+    if has_more and items:
+        last = items[-1]
+        next_cursor = build_keyset_cursor(
+            "created_at", "desc", last.created_at, last.id,
+        )
+
+    return CursorPage(
+        items=result_items, limit=limit,
+        has_more=has_more, next_cursor=next_cursor,
+    )

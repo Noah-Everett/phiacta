@@ -17,6 +17,7 @@ from phiacta.core.auth.passwords import hash_password_async, verify_password_asy
 from phiacta.core.auth.pat import extract_pat_prefix, generate_pat, hash_pat
 from phiacta.core.auth.tokens import create_access_token
 from phiacta.core.db.session import get_db
+from phiacta.core.pagination import CursorPage
 from phiacta.core.models.personal_access_token import PersonalAccessToken
 from phiacta.core.models.user import User
 from phiacta.core.repositories.pat_repository import PersonalAccessTokenRepository
@@ -184,15 +185,16 @@ async def create_token(
     )
 
 
-@router.get("/tokens", response_model=list[TokenListItem])
+@router.get("/tokens", response_model=CursorPage[TokenListItem])
 async def list_tokens(
     user: User = Depends(get_current_user_jwt_only),
     db: AsyncSession = Depends(get_db),
-) -> list[TokenListItem]:
-    """List the current user's personal access tokens."""
+) -> CursorPage[TokenListItem]:
+    """List the current user's personal access tokens. Bounded — always returns all."""
     repo = PersonalAccessTokenRepository(db)
     tokens = await repo.list_by_user(user.id)
-    return [TokenListItem.model_validate(t) for t in tokens]
+    items = [TokenListItem.model_validate(t) for t in tokens]
+    return CursorPage(items=items, limit=len(items), has_more=False, next_cursor=None)
 
 
 @router.delete("/tokens/{token_id}", status_code=204)

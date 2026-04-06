@@ -68,7 +68,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert isinstance(data, list)
         assert len(data) == 2
         names = {item["name"] for item in data}
@@ -95,7 +95,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         names = [item["name"] for item in data]
         assert ".phiacta" in names
         assert "README.md" in names
@@ -120,7 +120,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         item = data[0]
         assert set(item.keys()) == {"name", "path", "type", "size"}
@@ -148,7 +148,7 @@ class TestListEntryFiles:
         # Request without any auth header
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        assert len(resp.json()["items"]) == 1
 
     async def test_list_files_only_phiacta_returns_phiacta(
         self,
@@ -168,7 +168,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 1
         assert data[0]["name"] == ".phiacta"
 
@@ -193,7 +193,7 @@ class TestListEntryFiles:
 
         resp = await client.get(f"/v1/entries/{entry_id}/files")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 4
         types = {item["name"]: item["type"] for item in data}
         assert types["README.md"] == "file"
@@ -522,7 +522,7 @@ class TestGetFileContentPathValidation:
 
         # Use %2E%2E to prevent HTTP client from resolving ../
         resp = await client.get(f"/v1/entries/{entry_id}/files/%2E%2E/etc/passwd")
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
         assert "invalid file path" in resp.json()["detail"].lower()
 
     async def test_path_traversal_middle_dotdot_returns_400(
@@ -541,7 +541,7 @@ class TestGetFileContentPathValidation:
         resp = await client.get(
             f"/v1/entries/{entry_id}/files/subdir/%2E%2E/secret"
         )
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
         assert "invalid file path" in resp.json()["detail"].lower()
 
     async def test_absolute_path_returns_400(
@@ -560,7 +560,7 @@ class TestGetFileContentPathValidation:
         resp = await client.get(
             f"/v1/entries/{entry_id}/files/%2Fetc%2Fpasswd"
         )
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
         assert "invalid file path" in resp.json()["detail"].lower()
 
     async def test_phiacta_entry_yaml_is_readable(

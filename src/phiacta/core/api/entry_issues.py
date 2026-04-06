@@ -45,9 +45,12 @@ from phiacta.core.services.git_service import (
     IssueInfo,
     RepoNotFoundError,
 )
+from phiacta.core.pagination import CursorPage, decode_page_cursor, encode_page_cursor
 from phiacta.core.services.git_service_dep import get_git_service
 
 logger = logging.getLogger(__name__)
+
+_FORGEJO_MAX_LIMIT = 50
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
@@ -150,22 +153,31 @@ async def create_issue(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{entry_id}/issues", response_model=list[IssueListItem])
+@router.get("/{entry_id}/issues", response_model=CursorPage[IssueListItem])
 async def list_issues(
     entry_id: UUID,
     state: str | None = Query(None, pattern="^(open|closed)$"),
     limit: int = Query(50, ge=1, le=200),
-    page: int = Query(1, ge=1),
+    cursor: str | None = Query(None),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
-) -> list[IssueListItem]:
+) -> CursorPage[IssueListItem]:
     """List issues on an entry's repository."""
     await get_readable_entry(entry_id, db, user=user)
 
+    page = 1
+    if cursor is not None:
+        try:
+            page = decode_page_cursor(cursor)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    effective_limit = min(limit, _FORGEJO_MAX_LIMIT)
+
     try:
         issues = await git_service.list_issues(
-            entry_id, state=state, limit=limit, page=page,
+            entry_id, state=state, limit=effective_limit, page=page,
         )
     except ForgejoUnavailableError as exc:
         raise HTTPException(
@@ -176,7 +188,11 @@ async def list_issues(
             status_code=502, detail="Git service unavailable",
         ) from exc
 
-    return [_issue_to_list_item(i) for i in issues]
+    items = [_issue_to_list_item(i) for i in issues]
+    has_more = len(issues) == effective_limit
+    next_cursor = encode_page_cursor(page + 1) if has_more else None
+
+    return CursorPage(items=items, limit=effective_limit, has_more=has_more, next_cursor=next_cursor)
 
 
 # ---------------------------------------------------------------------------

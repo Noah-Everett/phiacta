@@ -113,7 +113,8 @@ class TestAppWithNoPlugins:
         assert resp.status_code == 200
         data = resp.json()
         assert "items" in data
-        assert "total" in data
+        assert "has_more" in data
+        assert "next_cursor" in data
 
     async def test_auth_register_returns_201(
         self, client: httpx.AsyncClient
@@ -292,7 +293,8 @@ class TestAppWithPluginEnabled:
         assert resp.status_code == 200
         data = resp.json()
         assert "items" in data
-        assert "total" in data
+        assert "has_more" in data
+        assert "next_cursor" in data
 
     async def test_core_auth_still_works_with_plugin(
         self,

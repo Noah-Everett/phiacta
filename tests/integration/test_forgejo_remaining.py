@@ -258,7 +258,8 @@ class TestEntryHistory:
                 f"GET history failed: {history_resp.text}"
             )
 
-            commits = history_resp.json()
+            history_data = history_resp.json()
+            commits = history_data["items"]
             assert isinstance(commits, list), (
                 f"Expected list of commits, got: {type(commits)}"
             )
@@ -286,7 +287,8 @@ class TestEntryHistory:
                 f"GET history without auth failed: {history_resp.text}"
             )
 
-            commits = history_resp.json()
+            history_data = history_resp.json()
+            commits = history_data["items"]
             assert isinstance(commits, list), (
                 f"Expected list of commits, got: {type(commits)}"
             )
@@ -376,7 +378,7 @@ class TestContentFormat:
 
             files_resp = await client.get(f"/v1/entries/{entry_id}/files")
             assert files_resp.status_code == 200, files_resp.text
-            file_names = [f["name"] for f in files_resp.json()]
+            file_names = [f["name"] for f in files_resp.json()["items"]]
 
             # Content is at .phiacta/content.tex for latex format.
             # Check recursively — the listing may show the .phiacta
@@ -487,7 +489,7 @@ class TestCommitDiffDetail:
             assert history_resp.status_code == 200, (
                 f"GET history failed: {history_resp.text}"
             )
-            commits = history_resp.json()
+            commits = history_resp.json()["items"]
             assert isinstance(commits, list) and len(commits) >= 1, (
                 f"Expected at least 1 commit in history, got: {commits}"
             )
@@ -602,7 +604,7 @@ class TestEntryReferences:
 
 
 class TestEntryListFilters:
-    """GET /v1/entries with limit/offset pagination and default listing."""
+    """GET /v1/entries with cursor-based pagination and default listing."""
 
     async def test_list_entries_default(self) -> None:
         """Create an entry, GET /entries, verify the entry appears in the list
@@ -618,10 +620,11 @@ class TestEntryListFilters:
             )
 
             body = list_resp.json()
-            # PaginatedResponse shape: items, total, limit, offset, has_more
+            # CursorPage shape: items, limit, has_more, next_cursor
             assert "items" in body, f"Response missing 'items': {body}"
-            assert "total" in body, f"Response missing 'total': {body}"
+            assert "limit" in body, f"Response missing 'limit': {body}"
             assert "has_more" in body, f"Response missing 'has_more': {body}"
+            assert "next_cursor" in body, f"Response missing 'next_cursor': {body}"
 
             item_ids = [item["id"] for item in body["items"]]
             assert entry_id in item_ids, (
@@ -644,8 +647,8 @@ class TestEntryListFilters:
 
     async def test_list_entries_pagination(self) -> None:
         """Create 3 entries, GET /entries?limit=2, verify 2 items and
-        has_more=true, then GET /entries?limit=2&offset=2 and verify the
-        remaining 1 item appears and has_more=false.
+        has_more=true, then use next_cursor to fetch page 2 and verify the
+        remaining items appear.
 
         This test registers a fresh user and creates entries with unique
         titles to make it easy to find them in the paginated results without
@@ -667,22 +670,9 @@ class TestEntryListFilters:
             for eid in entry_ids:
                 await wait_for_ready(client, eid)
 
-            # Fetch the full list to determine the baseline total.
-            baseline_resp = await client.get(
-                "/v1/entries", params={"limit": 200, "offset": 0},
-            )
-            assert baseline_resp.status_code == 200
-            total = baseline_resp.json()["total"]
-
-            # We need at least 3 entries in the DB for pagination to be
-            # meaningful; the 3 we just created guarantee this.
-            assert total >= 3, (
-                f"Expected at least 3 entries in DB, got {total}"
-            )
-
             # Page 1: limit=2
             page1_resp = await client.get(
-                "/v1/entries", params={"limit": 2, "offset": 0},
+                "/v1/entries", params={"limit": 2},
             )
             assert page1_resp.status_code == 200, (
                 f"GET /entries?limit=2 failed: {page1_resp.text}"
@@ -691,24 +681,24 @@ class TestEntryListFilters:
             assert len(page1["items"]) == 2, (
                 f"Expected 2 items with limit=2, got {len(page1['items'])}"
             )
-            if total > 2:
-                assert page1["has_more"] is True, (
-                    f"Expected has_more=true with total={total} and limit=2, "
-                    f"got has_more={page1['has_more']!r}"
-                )
+            assert page1["has_more"] is True, (
+                f"Expected has_more=true with limit=2, "
+                f"got has_more={page1['has_more']!r}"
+            )
+            assert page1["next_cursor"] is not None, (
+                "Expected next_cursor to be set when has_more=true"
+            )
 
-            # Page 2: limit=2, offset=2 — should return (total - 2) capped at 2.
+            # Page 2: use the cursor from page 1.
             page2_resp = await client.get(
-                "/v1/entries", params={"limit": 2, "offset": 2},
+                "/v1/entries", params={"limit": 2, "cursor": page1["next_cursor"]},
             )
             assert page2_resp.status_code == 200, (
-                f"GET /entries?limit=2&offset=2 failed: {page2_resp.text}"
+                f"GET /entries with cursor failed: {page2_resp.text}"
             )
             page2 = page2_resp.json()
-            expected_page2_count = min(2, max(0, total - 2))
-            assert len(page2["items"]) == expected_page2_count, (
-                f"Expected {expected_page2_count} items on page 2 "
-                f"(total={total}), got {len(page2['items'])}"
+            assert len(page2["items"]) >= 1, (
+                f"Expected at least 1 item on page 2, got {len(page2['items'])}"
             )
 
             # IDs on page 1 and page 2 must not overlap.

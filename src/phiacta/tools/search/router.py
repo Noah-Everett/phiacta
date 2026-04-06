@@ -16,8 +16,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.tool_deps import get_db, get_optional_user, get_providers
-from phiacta.extensions.search_tsv.search_service import get_active_version, search_text
+from phiacta.core.tool_deps import get_db, get_optional_user, get_providers, EntryDataProvider
+from phiacta.core.pagination import decode_offset_cursor, encode_offset_cursor
+from phiacta.extensions.search_tsv.repository import get_active_version
+from phiacta.extensions.search_tsv.search_service import search_text
 from phiacta.tools.search.schemas import SearchResponse, SearchResultItem
 
 logger = logging.getLogger(__name__)
@@ -26,7 +28,8 @@ router = APIRouter()
 
 _DEFAULT_LANGUAGE = "english"
 
-_RESERVED_PARAMS = frozenset({"q", "visibility", "limit", "offset"})
+_RESERVED_PARAMS = frozenset({"q", "visibility", "limit", "cursor"})
+
 
 
 @router.get("/", response_model=SearchResponse)
@@ -35,7 +38,7 @@ async def search_entries(
     q: str = Query(..., min_length=1, max_length=500),
     visibility: str = Query("public"),
     limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    cursor: str | None = Query(None),
     user=Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> SearchResponse:
@@ -47,6 +50,14 @@ async def search_entries(
     q = q.strip()
     if not q:
         raise HTTPException(status_code=422, detail="Query must not be blank")
+
+    # Decode offset from cursor
+    offset = 0
+    if cursor is not None:
+        try:
+            offset = decode_offset_cursor(cursor)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     providers = get_providers(request)
     filterable = {
@@ -62,7 +73,7 @@ async def search_entries(
     version = await get_active_version(db=db)
     if version is None:
         return SearchResponse(
-            items=[], total=0, limit=limit, offset=offset, version_id=None,
+            items=[], limit=limit, has_more=False, next_cursor=None, version_id=None,
         )
 
     language = (
@@ -74,7 +85,7 @@ async def search_entries(
     repo_visibility = None if visibility == "all" else visibility
 
     try:
-        rows, total = await search_text(
+        rows, has_more = await search_text(
             q=q, version_id=version.id, language=language,
             db=db, limit=limit, offset=offset,
             visibility=repo_visibility, user=user,
@@ -87,7 +98,7 @@ async def search_entries(
                 "search failed with language=%r, retrying with '%s'",
                 language, _DEFAULT_LANGUAGE,
             )
-            rows, total = await search_text(
+            rows, has_more = await search_text(
                 q=q, version_id=version.id, language=_DEFAULT_LANGUAGE,
                 db=db, limit=limit, offset=offset,
                 visibility=repo_visibility, user=user,
@@ -108,7 +119,9 @@ async def search_entries(
         for r in rows
     ]
 
+    next_cursor = encode_offset_cursor(offset + limit) if has_more else None
+
     return SearchResponse(
-        items=items, total=total, limit=limit, offset=offset,
+        items=items, limit=limit, has_more=has_more, next_cursor=next_cursor,
         version_id=version.id,
     )

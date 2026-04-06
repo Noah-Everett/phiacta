@@ -126,7 +126,7 @@ async def _insert_tsv(
     async with session_factory() as session:
         await session.execute(
             text(
-                "INSERT INTO view_search_tsv (entry_id, version_id, tsv) "
+                "INSERT INTO view_search_tsv (entity_id, version_id, tsv) "
                 "VALUES (:eid, :vid, to_tsvector('english', :content))"
             ),
             {"eid": entry_id, "vid": str(version_id), "content": content},
@@ -308,7 +308,7 @@ class TestSearchEntryTypeFilter:
         )
         assert resp.status_code == 200
         assert resp.json()["items"] == []
-        assert resp.json()["total"] == 0
+        assert resp.json()["has_more"] is False
 
 
 class TestSearchTagsFilter:
@@ -359,7 +359,7 @@ class TestSearchTagsFilter:
         )
         assert resp.status_code == 200
         assert resp.json()["items"] == []
-        assert resp.json()["total"] == 0
+        assert resp.json()["has_more"] is False
 
 
 class TestSearchCombinedFilters:
@@ -441,7 +441,7 @@ class TestSearchPagination:
         )
         assert resp_all.status_code == 200
         assert resp_filtered.status_code == 200
-        # Filtered total should be less than or equal to unfiltered
-        assert resp_filtered.json()["total"] <= resp_all.json()["total"]
+        # Filtered result count should be less than or equal to unfiltered
+        assert len(resp_filtered.json()["items"]) <= len(resp_all.json()["items"])
         # And specifically, only beta is a theorem that matches "quantum"
-        assert resp_filtered.json()["total"] == 1
+        assert len(resp_filtered.json()["items"]) == 1

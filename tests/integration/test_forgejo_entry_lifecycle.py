@@ -150,7 +150,7 @@ class TestFullEntryLifecycle:
             # List files -- README.md must be present
             files_resp = await client.get(f"/v1/entries/{entry_id}/files")
             assert files_resp.status_code == 200, files_resp.text
-            file_names = [f["name"] for f in files_resp.json()]
+            file_names = [f["name"] for f in files_resp.json()["items"]]
             assert "README.md" in file_names, (
                 f"README.md missing from listing: {file_names}"
             )
@@ -198,7 +198,7 @@ class TestFileWriteAndRead:
             # List files -- data.csv must appear
             files_resp = await client.get(f"/v1/entries/{entry_id}/files")
             assert files_resp.status_code == 200, files_resp.text
-            file_names = [f["name"] for f in files_resp.json()]
+            file_names = [f["name"] for f in files_resp.json()["items"]]
             assert "data.csv" in file_names, (
                 f"data.csv missing from listing: {file_names}"
             )
@@ -237,7 +237,7 @@ class TestFileDelete:
             # Confirm file is listed
             files_resp = await client.get(f"/v1/entries/{entry_id}/files")
             assert files_resp.status_code == 200
-            assert "temp.txt" in [f["name"] for f in files_resp.json()]
+            assert "temp.txt" in [f["name"] for f in files_resp.json()["items"]]
 
             # Delete temp.txt
             del_resp = await client.request(
@@ -257,7 +257,7 @@ class TestFileDelete:
             # Confirm file is gone
             files_resp2 = await client.get(f"/v1/entries/{entry_id}/files")
             assert files_resp2.status_code == 200
-            file_names2 = [f["name"] for f in files_resp2.json()]
+            file_names2 = [f["name"] for f in files_resp2.json()["items"]]
             assert "temp.txt" not in file_names2, (
                 f"temp.txt still present after deletion: {file_names2}"
             )
@@ -396,7 +396,7 @@ class TestMultipleEntriesIsolated:
                 f"/v1/entries/{entry_a['id']}/files",
             )
             assert files_a.status_code == 200
-            names_a = [f["name"] for f in files_a.json()]
+            names_a = [f["name"] for f in files_a.json()["items"]]
             assert "only.txt" in names_a, (
                 f"only.txt missing from A: {names_a}"
             )
@@ -409,7 +409,7 @@ class TestMultipleEntriesIsolated:
                 f"/v1/entries/{entry_b['id']}/files",
             )
             assert files_b.status_code == 200
-            names_b = [f["name"] for f in files_b.json()]
+            names_b = [f["name"] for f in files_b.json()["items"]]
             assert "beta.txt" in names_b, (
                 f"beta.txt missing from B: {names_b}"
             )

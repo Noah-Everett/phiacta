@@ -240,7 +240,7 @@ class TestListTokens:
 
         resp = await client.get("/v1/auth/tokens", headers=auth_header(jwt))
         assert resp.status_code == 200
-        tokens = resp.json()
+        tokens = resp.json()["items"]
 
         assert isinstance(tokens, list)
         assert len(tokens) >= 1
@@ -278,14 +278,14 @@ class TestListTokens:
         # User B lists — should only see their own
         resp_b = await client.get("/v1/auth/tokens", headers=auth_header(jwt_b))
         assert resp_b.status_code == 200
-        b_tokens = resp_b.json()
+        b_tokens = resp_b.json()["items"]
         assert len(b_tokens) == 1
         assert b_tokens[0]["name"] == "b-token-1"
 
         # User A lists — should only see their own
         resp_a = await client.get("/v1/auth/tokens", headers=auth_header(jwt_a))
         assert resp_a.status_code == 200
-        a_tokens = resp_a.json()
+        a_tokens = resp_a.json()["items"]
         assert len(a_tokens) == 2
         a_names = {t["name"] for t in a_tokens}
         assert a_names == {"a-token-1", "a-token-2"}
@@ -332,7 +332,7 @@ class TestRevokeToken:
 
         # Verify revoked_at is set in the list
         list_resp = await client.get("/v1/auth/tokens", headers=auth_header(jwt))
-        tokens = list_resp.json()
+        tokens = list_resp.json()["items"]
         revoked = [t for t in tokens if t["id"] == token_id]
         assert len(revoked) == 1
         assert revoked[0]["revoked_at"] is not None
@@ -639,7 +639,7 @@ class TestPatLastUsedAt:
         await create_pat(client, jwt, name="unused")
 
         resp = await client.get("/v1/auth/tokens", headers=auth_header(jwt))
-        tokens = resp.json()
+        tokens = resp.json()["items"]
         assert len(tokens) == 1
         assert tokens[0]["last_used_at"] is None
 
@@ -660,7 +660,7 @@ class TestPatLastUsedAt:
 
         # Check last_used_at is set
         list_resp = await client.get("/v1/auth/tokens", headers=auth_header(jwt))
-        tokens = list_resp.json()
+        tokens = list_resp.json()["items"]
         used_token = [t for t in tokens if t["id"] == pat_data["id"]]
         assert len(used_token) == 1
 

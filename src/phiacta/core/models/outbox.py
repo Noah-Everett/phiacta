@@ -23,9 +23,11 @@ class Outbox(UUIDMixin, Base):
         JSON().with_variant(JSONB, "postgresql"), nullable=False, server_default="{}"
     )
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="pending"
+        String(20), nullable=False, default="pending", server_default=text("'pending'"),
     )
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0"),
+    )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     process_after: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

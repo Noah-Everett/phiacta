@@ -93,7 +93,7 @@ class TestViewSearchTsvModel:
     """Test the ViewSearchTsv model: creation, reading, field types."""
 
     async def test_create_and_read_back(self, db_session: AsyncSession) -> None:
-        """ViewSearchTsv can be created with entry_id, version_id and read back."""
+        """ViewSearchTsv can be created with entity_id, version_id and read back."""
         from phiacta.extensions.search_tsv.models import ViewSearchTsv
 
         user = await _create_user(db_session)
@@ -103,7 +103,7 @@ class TestViewSearchTsvModel:
         # Insert via raw SQL since tsvector column needs to_tsvector
         await db_session.execute(
             text(
-                "INSERT INTO view_search_tsv (entry_id, version_id, tsv) "
+                "INSERT INTO view_search_tsv (entity_id, version_id, tsv) "
                 "VALUES (:eid, :vid, to_tsvector('english', :content))"
             ),
             {
@@ -117,40 +117,40 @@ class TestViewSearchTsvModel:
         # Read back via ORM
         result = await db_session.execute(
             select(ViewSearchTsv).where(
-                ViewSearchTsv.entry_id == entry.id,
+                ViewSearchTsv.entity_id == entry.id,
                 ViewSearchTsv.version_id == version.id,
             )
         )
         row = result.scalar_one()
 
-        assert row.entry_id == entry.id
+        assert row.entity_id == entry.id
         assert row.version_id == version.id
         assert row.tsv is not None
         assert row.computed_at is not None
         assert isinstance(row.computed_at, datetime)
 
     async def test_composite_primary_key(self, db_session: AsyncSession) -> None:
-        """ViewSearchTsv has a composite PK of (entry_id, version_id)."""
+        """ViewSearchTsv has a composite PK of (entity_id, version_id)."""
         from phiacta.extensions.search_tsv.models import ViewSearchTsv
 
         pk_cols = [
             c.name for c in ViewSearchTsv.__table__.primary_key.columns
         ]
-        assert "entry_id" in pk_cols
+        assert "entity_id" in pk_cols
         assert "version_id" in pk_cols
         assert len(pk_cols) == 2
 
     async def test_duplicate_entry_version_raises_integrity_error(
         self, db_session: AsyncSession
     ) -> None:
-        """Inserting two rows with the same (entry_id, version_id) raises IntegrityError."""
+        """Inserting two rows with the same (entity_id, version_id) raises IntegrityError."""
         user = await _create_user(db_session)
         entry = await _create_entry(db_session, user.id)
         version = await _create_version(db_session)
 
         await db_session.execute(
             text(
-                "INSERT INTO view_search_tsv (entry_id, version_id, tsv) "
+                "INSERT INTO view_search_tsv (entity_id, version_id, tsv) "
                 "VALUES (:eid, :vid, to_tsvector('english', :content))"
             ),
             {
@@ -164,7 +164,7 @@ class TestViewSearchTsvModel:
         with pytest.raises(IntegrityError):
             await db_session.execute(
                 text(
-                    "INSERT INTO view_search_tsv (entry_id, version_id, tsv) "
+                    "INSERT INTO view_search_tsv (entity_id, version_id, tsv) "
                     "VALUES (:eid, :vid, to_tsvector('english', :content))"
                 ),
                 {
@@ -187,7 +187,7 @@ class TestViewSearchTsvModel:
         for v in [v1, v2]:
             await db_session.execute(
                 text(
-                    "INSERT INTO view_search_tsv (entry_id, version_id, tsv) "
+                    "INSERT INTO view_search_tsv (entity_id, version_id, tsv) "
                     "VALUES (:eid, :vid, to_tsvector('english', :content))"
                 ),
                 {
@@ -200,7 +200,7 @@ class TestViewSearchTsvModel:
 
         result = await db_session.execute(
             text(
-                "SELECT count(*) FROM view_search_tsv WHERE entry_id = :eid"
+                "SELECT count(*) FROM view_search_tsv WHERE entity_id = :eid"
             ),
             {"eid": str(entry.id)},
         )
@@ -214,7 +214,7 @@ class TestViewSearchTsvModel:
 
 @needs_pg
 class TestCascadeConstraint:
-    """Test that ON DELETE CASCADE works on the entry_id FK."""
+    """Test that ON DELETE CASCADE works on the entity_id FK."""
 
     async def test_entry_delete_cascades_to_view_search_tsv(
         self, db_session: AsyncSession
@@ -228,7 +228,7 @@ class TestCascadeConstraint:
 
         await db_session.execute(
             text(
-                "INSERT INTO view_search_tsv (entry_id, version_id, tsv) "
+                "INSERT INTO view_search_tsv (entity_id, version_id, tsv) "
                 "VALUES (:eid, :vid, to_tsvector('english', :content))"
             ),
             {
@@ -249,7 +249,7 @@ class TestCascadeConstraint:
         # view_search_tsv row should be gone
         result = await db_session.execute(
             text(
-                "SELECT count(*) FROM view_search_tsv WHERE entry_id = :eid"
+                "SELECT count(*) FROM view_search_tsv WHERE entity_id = :eid"
             ),
             {"eid": str(entry.id)},
         )
@@ -276,7 +276,7 @@ class TestVersionFKConstraint:
         with pytest.raises(IntegrityError):
             await db_session.execute(
                 text(
-                    "INSERT INTO view_search_tsv (entry_id, version_id, tsv) "
+                    "INSERT INTO view_search_tsv (entity_id, version_id, tsv) "
                     "VALUES (:eid, :vid, to_tsvector('english', :content))"
                 ),
                 {
@@ -328,7 +328,7 @@ class TestSearchTsvRepository:
         version = await _create_version(db_session)
 
         await upsert(
-            entry_id=entry.id,
+            entity_id=entry.id,
             version_id=version.id,
             content="Upsert creates a new row for search.",
             db=db_session,
@@ -338,7 +338,7 @@ class TestSearchTsvRepository:
         result = await db_session.execute(
             text(
                 "SELECT count(*) FROM view_search_tsv "
-                "WHERE entry_id = :eid AND version_id = :vid"
+                "WHERE entity_id = :eid AND version_id = :vid"
             ),
             {"eid": str(entry.id), "vid": str(version.id)},
         )
@@ -356,7 +356,7 @@ class TestSearchTsvRepository:
 
         # First upsert
         await upsert(
-            entry_id=entry.id,
+            entity_id=entry.id,
             version_id=version.id,
             content="First version of content.",
             db=db_session,
@@ -365,7 +365,7 @@ class TestSearchTsvRepository:
 
         # Second upsert with different content
         await upsert(
-            entry_id=entry.id,
+            entity_id=entry.id,
             version_id=version.id,
             content="Completely different quantum physics content.",
             db=db_session,
@@ -376,7 +376,7 @@ class TestSearchTsvRepository:
         result = await db_session.execute(
             text(
                 "SELECT count(*) FROM view_search_tsv "
-                "WHERE entry_id = :eid AND version_id = :vid"
+                "WHERE entity_id = :eid AND version_id = :vid"
             ),
             {"eid": str(entry.id), "vid": str(version.id)},
         )
@@ -393,7 +393,7 @@ class TestSearchTsvRepository:
         version = await _create_version(db_session)
 
         await upsert(
-            entry_id=entry.id,
+            entity_id=entry.id,
             version_id=version.id,
             content="Retrievable content for testing.",
             db=db_session,
@@ -401,10 +401,10 @@ class TestSearchTsvRepository:
         await db_session.flush()
 
         row = await get_by_entry(
-            entry_id=entry.id, version_id=version.id, db=db_session
+            entity_id=entry.id, version_id=version.id, db=db_session
         )
         assert row is not None
-        assert row.entry_id == entry.id
+        assert row.entity_id == entry.id
         assert row.version_id == version.id
 
     async def test_get_by_entry_returns_none_when_missing(
@@ -416,7 +416,7 @@ class TestSearchTsvRepository:
         version = await _create_version(db_session)
 
         row = await get_by_entry(
-            entry_id=uuid4(), version_id=version.id, db=db_session
+            entity_id=uuid4(), version_id=version.id, db=db_session
         )
         assert row is None
 
@@ -435,7 +435,7 @@ class TestSearchTsvRepository:
         version = await _create_version(db_session)
 
         await upsert(
-            entry_id=entry.id,
+            entity_id=entry.id,
             version_id=version.id,
             content="Content to be deleted.",
             db=db_session,
@@ -443,12 +443,12 @@ class TestSearchTsvRepository:
         await db_session.flush()
 
         await delete_by_entry(
-            entry_id=entry.id, version_id=version.id, db=db_session
+            entity_id=entry.id, version_id=version.id, db=db_session
         )
         await db_session.flush()
 
         row = await get_by_entry(
-            entry_id=entry.id, version_id=version.id, db=db_session
+            entity_id=entry.id, version_id=version.id, db=db_session
         )
         assert row is None
 
@@ -462,7 +462,7 @@ class TestSearchTsvRepository:
 
         # Should not raise
         await delete_by_entry(
-            entry_id=uuid4(), version_id=version.id, db=db_session
+            entity_id=uuid4(), version_id=version.id, db=db_session
         )
 
     async def test_get_active_version_returns_active(
@@ -532,7 +532,7 @@ class TestComputedAtTimestamp:
 
         before = datetime.now(UTC)
         await upsert(
-            entry_id=entry.id,
+            entity_id=entry.id,
             version_id=version.id,
             content="Timestamp test content.",
             db=db_session,
@@ -541,7 +541,7 @@ class TestComputedAtTimestamp:
         after = datetime.now(UTC)
 
         row = await get_by_entry(
-            entry_id=entry.id, version_id=version.id, db=db_session
+            entity_id=entry.id, version_id=version.id, db=db_session
         )
         assert row is not None
         computed = row.computed_at

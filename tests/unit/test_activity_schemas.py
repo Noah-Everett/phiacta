@@ -15,7 +15,8 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from phiacta.core.schemas.activity import ActivityFeedResponse, ActivityItem
+from phiacta.core.pagination import CursorPage
+from phiacta.core.schemas.activity import ActivityItem
 
 
 class TestActivityItemSchema:
@@ -223,11 +224,11 @@ class TestActivityItemSchema:
             assert item.entity_type == et
 
 
-class TestActivityFeedResponseSchema:
-    """ActivityFeedResponse schema validation."""
+class TestActivityCursorPageSchema:
+    """Activity feed uses CursorPage[ActivityItem] (PHI-193)."""
 
     def test_valid_response_with_items(self) -> None:
-        """A response with items and a cursor is accepted."""
+        """A CursorPage with activity items and a cursor is accepted."""
         items = [
             ActivityItem(
                 id=uuid4(),
@@ -240,26 +241,32 @@ class TestActivityFeedResponseSchema:
                 created_at=datetime.now(UTC),
             )
         ]
-        cursor = uuid4()
-        response = ActivityFeedResponse(items=items, next_cursor=cursor)
+        response = CursorPage[ActivityItem](
+            items=items, limit=50, has_more=True, next_cursor="abc123",
+        )
         assert len(response.items) == 1
-        assert response.next_cursor == cursor
+        assert response.next_cursor == "abc123"
+        assert response.has_more is True
 
     def test_valid_response_empty_items(self) -> None:
         """An empty response with null cursor is accepted."""
-        response = ActivityFeedResponse(items=[], next_cursor=None)
+        response = CursorPage[ActivityItem](
+            items=[], limit=50, has_more=False, next_cursor=None,
+        )
         assert response.items == []
         assert response.next_cursor is None
 
     def test_response_requires_items(self) -> None:
         """Omitting 'items' raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            ActivityFeedResponse(next_cursor=None)
+            CursorPage[ActivityItem](
+                limit=50, has_more=False, next_cursor=None,
+            )
         errors = exc_info.value.errors()
         assert any("items" in str(e["loc"]) for e in errors)
 
     def test_response_serialization(self) -> None:
-        """ActivityFeedResponse serializes correctly to JSON-compatible dict."""
+        """CursorPage serializes correctly to JSON-compatible dict."""
         item = ActivityItem(
             id=uuid4(),
             actor_id=uuid4(),
@@ -270,17 +277,24 @@ class TestActivityFeedResponseSchema:
             metadata={"title": "Test"},
             created_at=datetime.now(UTC),
         )
-        cursor = uuid4()
-        response = ActivityFeedResponse(items=[item], next_cursor=cursor)
+        response = CursorPage[ActivityItem](
+            items=[item], limit=50, has_more=True, next_cursor="cursor123",
+        )
         serialized = response.model_dump(mode="json")
         assert "items" in serialized
         assert "next_cursor" in serialized
+        assert "has_more" in serialized
+        assert "limit" in serialized
+        assert "total" not in serialized
+        assert "offset" not in serialized
         assert len(serialized["items"]) == 1
-        assert serialized["next_cursor"] == str(cursor)
+        assert serialized["next_cursor"] == "cursor123"
 
     def test_response_null_cursor_serialization(self) -> None:
         """null next_cursor serializes as None/null."""
-        response = ActivityFeedResponse(items=[], next_cursor=None)
+        response = CursorPage[ActivityItem](
+            items=[], limit=50, has_more=False, next_cursor=None,
+        )
         serialized = response.model_dump(mode="json")
         assert serialized["next_cursor"] is None
 
@@ -298,7 +312,9 @@ class TestActivityFeedResponseSchema:
                 metadata=None,
                 created_at=datetime.now(UTC),
             ))
-        response = ActivityFeedResponse(items=items, next_cursor=uuid4())
+        response = CursorPage[ActivityItem](
+            items=items, limit=50, has_more=False, next_cursor=None,
+        )
         assert len(response.items) == 5
 
     def test_response_items_are_activity_items(self) -> None:
@@ -313,6 +329,8 @@ class TestActivityFeedResponseSchema:
             metadata=None,
             created_at=datetime.now(UTC),
         )
-        response = ActivityFeedResponse(items=[item], next_cursor=None)
+        response = CursorPage[ActivityItem](
+            items=[item], limit=50, has_more=False, next_cursor=None,
+        )
         assert isinstance(response.items[0], ActivityItem)
         assert response.items[0].action == "entry.created"

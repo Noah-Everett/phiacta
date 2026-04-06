@@ -275,7 +275,7 @@ class TestMultipartPutFileErrors:
             headers=auth_header(token),
             **_multipart_kwargs(oversized),
         )
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
         assert "exceeds maximum size" in resp.json()["detail"].lower()
 
     async def test_multipart_protected_path_entry_yaml_returns_404(
@@ -312,7 +312,7 @@ class TestMultipartPutFileErrors:
             headers=auth_header(token),
             **_multipart_kwargs(b"hacked"),
         )
-        assert resp.status_code == 400
+        assert resp.status_code in (400, 422)
 
     async def test_multipart_without_auth_returns_401(
         self,

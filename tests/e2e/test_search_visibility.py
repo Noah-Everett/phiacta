@@ -82,7 +82,7 @@ async def _insert_tsv(
     async with session_factory() as session:
         await session.execute(
             text(
-                "INSERT INTO view_search_tsv (entry_id, version_id, tsv) "
+                "INSERT INTO view_search_tsv (entity_id, version_id, tsv) "
                 "VALUES (:eid, :vid, to_tsvector('english', :content))"
             ),
             {"eid": entry_id, "vid": str(version_id), "content": content},
@@ -248,7 +248,7 @@ class TestSearchVisibilityExclusion:
             params={"q": "quantum"},
             headers=auth_header(search_env["owner_token"]),
         )
-        assert resp_other.json()["total"] < resp_owner.json()["total"]
+        assert len(resp_other.json()["items"]) < len(resp_owner.json()["items"])
 
     async def test_search_with_only_private_results_returns_empty(
         self, search_env: dict, other_user: AuthedFixture,
@@ -261,8 +261,8 @@ class TestSearchVisibilityExclusion:
             headers=auth_header(other_token),
         )
         assert resp.status_code == 200
-        assert resp.json()["total"] == 0
         assert resp.json()["items"] == []
+        assert resp.json()["has_more"] is False
 
 
 class TestSearchTsvVisibility:

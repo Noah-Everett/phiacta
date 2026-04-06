@@ -21,6 +21,7 @@ from phiacta.core.api.rate_limit import limiter
 from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.config import Settings, get_settings
 from phiacta.core.db.session import get_db
+from phiacta.core.pagination import CursorPage
 from phiacta.core.models.user import User
 from phiacta.core.models.entry import Entry
 from phiacta.core.repositories.entry_repository import EntryRepository
@@ -97,18 +98,20 @@ async def _get_writable_entry(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{entry_id}/files", response_model=list[FileListItem])
+@router.get("/{entry_id}/files", response_model=CursorPage[FileListItem])
+@limiter.limit("300/minute")
 async def list_entry_files(
+    request: Request,
     entry_id: UUID,
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
-) -> list[FileListItem]:
-    """List files at the root of an entry's repository."""
+) -> CursorPage[FileListItem]:
+    """List files at the root of an entry's repository. Bounded — always returns all files."""
     await get_readable_entry(entry_id, db, user=user)
 
     try:
-        items = await git_service.list_files(entry_id)
+        raw_items = await git_service.list_files(entry_id)
     except RepoNotFoundError as exc:
         raise HTTPException(
             status_code=404, detail="Entry repository not found",
@@ -118,11 +121,14 @@ async def list_entry_files(
             status_code=502, detail="Git service unavailable",
         ) from exc
 
-    return [FileListItem.model_validate(i) for i in items]
+    items = [FileListItem.model_validate(i) for i in raw_items]
+    return CursorPage(items=items, limit=len(items), has_more=False, next_cursor=None)
 
 
 @router.get("/{entry_id}/files/{path:path}")
+@limiter.limit("300/minute")
 async def get_entry_file_content(
+    request: Request,
     entry_id: UUID,
     path: str,
     user: User | None = Depends(get_optional_user),

@@ -16,7 +16,7 @@ from phiacta.core.shared_deps import get_readable_entry, limiter
 from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
-from phiacta.core.schemas.common import PaginatedResponse
+from phiacta.core.pagination import CursorPage, build_keyset_cursor, decode_keyset_cursor
 from phiacta.extensions.references.repository import ReferenceRepository
 from phiacta.extensions.references.schemas import ReferenceCreateRequest, ReferenceResponse
 from phiacta.extensions.references.service import ReferenceService
@@ -33,19 +33,44 @@ def _to_response(ref) -> ReferenceResponse:
     )
 
 
-@router.get("/", response_model=PaginatedResponse[ReferenceResponse])
+@router.get("/", response_model=CursorPage[ReferenceResponse])
 async def list_references(
     entry_id: UUID = Query(...),
     direction: str = Query("both", pattern="^(both|incoming|outgoing)$"),
-    limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    cursor: str | None = Query(None),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
-) -> PaginatedResponse[ReferenceResponse]:
+) -> CursorPage[ReferenceResponse]:
     await get_readable_entry(entry_id, db, user=user)
+
+    from datetime import datetime as _dt
+    cursor_created_at: _dt | None = None
+    cursor_id: UUID | None = None
+    if cursor is not None:
+        try:
+            sort_value, cursor_id = decode_keyset_cursor(cursor, "created_at", "desc")
+            cursor_created_at = _dt.fromisoformat(sort_value)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     repo = ReferenceRepository(db)
-    refs = await repo.list_by_entry(entry_id, direction=direction, limit=limit, offset=offset)
-    total = await repo.count_by_entry(entry_id, direction=direction)
-    return PaginatedResponse(items=[_to_response(r) for r in refs], total=total, limit=limit, offset=offset)
+    refs = await repo.list_by_entry(
+        entry_id, direction=direction, limit=limit,
+        cursor_created_at=cursor_created_at, cursor_id=cursor_id,
+    )
+
+    has_more = len(refs) > limit
+    if has_more:
+        refs = refs[:limit]
+
+    items = [_to_response(r) for r in refs]
+    next_cursor: str | None = None
+    if has_more and refs:
+        last = refs[-1]
+        next_cursor = build_keyset_cursor("created_at", "desc", last.created_at, last.id)
+
+    return CursorPage(items=items, limit=limit, has_more=has_more, next_cursor=next_cursor)
 
 
 @router.post("/{entry_id}", response_model=ReferenceResponse, status_code=201)

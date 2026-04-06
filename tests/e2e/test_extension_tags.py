@@ -360,11 +360,12 @@ class TestFindEntriesByTags:
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"] == []
-        assert data["total"] == 0
-        # Verify pagination shape
+        assert data["has_more"] is False
+        assert data["next_cursor"] is None
+        # Verify CursorPage shape
         assert "limit" in data
-        assert "offset" in data
-        assert "has_more" in data
+        assert "total" not in data
+        assert "offset" not in data
 
     async def test_find_entries_pagination(
         self,
@@ -396,18 +397,18 @@ class TestFindEntriesByTags:
         # Get first page
         resp = await client.get(
             "/v1/extensions/tags/entries",
-            params={"tags": "pagination-test", "limit": 2, "offset": 0},
+            params={"tags": "pagination-test", "limit": 2},
         )
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 2
-        assert data["total"] == 5
         assert data["has_more"] is True
+        assert data["next_cursor"] is not None
 
-        # Get second page
+        # Get second page via cursor
         resp2 = await client.get(
             "/v1/extensions/tags/entries",
-            params={"tags": "pagination-test", "limit": 2, "offset": 2},
+            params={"tags": "pagination-test", "limit": 2, "cursor": data["next_cursor"]},
         )
         data2 = resp2.json()
         assert len(data2["items"]) == 2

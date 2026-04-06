@@ -10,11 +10,13 @@ semantics (replace-all, no updated_at, bulk operations).
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.pagination import keyset_condition
 from phiacta.core.visibility import discovery_condition
 from phiacta.core.models.entry import Entry
 from phiacta.extensions.tags.models import ExtensionTag
@@ -79,20 +81,21 @@ class TagRepository:
         tags: list[str],
         mode: str = "or",
         limit: int = 50,
-        offset: int = 0,
         viewer_id: UUID | None = None,
-    ) -> tuple[list[Entry], int]:
-        """Find entries that match the given tags.
+        cursor_created_at: datetime | None = None,
+        cursor_id: UUID | None = None,
+        # Legacy offset — unused when cursor is provided
+        offset: int = 0,
+    ) -> list[Entry]:
+        """Find entries that match the given tags with keyset pagination.
 
         mode="or": entries with ANY of the specified tags.
         mode="and": entries with ALL of the specified tags.
 
-        viewer_id: private entries are only visible to their owner.
-
-        Returns (entries, total_count) for pagination.
+        Returns limit+1 entries so the caller can detect has_more.
         """
         if not tags:
-            return [], 0
+            return []
 
         if mode == "and":
             subq = (
@@ -111,25 +114,21 @@ class TagRepository:
             ).subquery()
 
         base_query = select(Entry).join(subq, Entry.id == subq.c.entity_id)
-
-        # Private entries are only visible to their owner
         base_query = base_query.where(discovery_condition(viewer_id))
 
-        # Count total
-        count_query = select(func.count()).select_from(
-            base_query.subquery()
-        )
-        total_result = await self.session.execute(count_query)
-        total = total_result.scalar_one()
+        # Keyset pagination
+        if cursor_created_at is not None and cursor_id is not None:
+            base_query = base_query.where(
+                keyset_condition(
+                    Entry.created_at, Entry.id,
+                    cursor_created_at, cursor_id, descending=True,
+                )
+            )
 
-        # Get paginated results
         results_query = (
             base_query
-            .order_by(Entry.created_at.desc())
-            .limit(limit)
-            .offset(offset)
+            .order_by(Entry.created_at.desc(), Entry.id.desc())
+            .limit(limit + 1)
         )
         result = await self.session.execute(results_query)
-        entries = list(result.scalars().all())
-
-        return entries, total
+        return list(result.scalars().all())

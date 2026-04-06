@@ -4,7 +4,7 @@
 """SQLAlchemy model for the view_search_tsv table.
 
 Each row stores a precomputed tsvector for an entry at a specific view version.
-The composite primary key (entry_id, version_id) supports blue-green version
+The composite primary key (entity_id, version_id) supports blue-green version
 swaps — both old and new versions can coexist during recomputation.
 
 The tsv column uses PostgreSQL's TSVECTOR type (falls back to Text on SQLite
@@ -45,16 +45,16 @@ class TSVector(types.TypeDecorator):
 class ViewSearchTsv(Base):
     """Precomputed tsvector for full-text search.
 
-    Composite PK (entry_id, version_id) — no surrogate UUID.
+    Composite PK (entity_id, version_id) — no surrogate UUID.
     GIN index on tsv for fast full-text search queries.
-    ON DELETE CASCADE on both FKs ensures cleanup when entries or versions
+    ON DELETE CASCADE on both FKs ensures cleanup when entities or versions
     are removed.
     """
 
     __tablename__ = "view_search_tsv"
 
-    entry_id: Mapped[UUID] = mapped_column(
-        ForeignKey("entries.id", ondelete="CASCADE"), primary_key=True
+    entity_id: Mapped[UUID] = mapped_column(
+        ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True
     )
     version_id: Mapped[UUID] = mapped_column(
         ForeignKey("view_versions.id", ondelete="CASCADE"), primary_key=True
