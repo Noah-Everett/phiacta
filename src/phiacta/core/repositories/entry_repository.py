@@ -24,7 +24,7 @@ class EntryRepository(BaseRepository[Entry]):
         self,
         limit: int = 50,
         offset: int = 0,
-        visibility: str | None = "public",
+        visibility: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
         user: User | None = None,
@@ -44,7 +44,7 @@ class EntryRepository(BaseRepository[Entry]):
         return list(result.scalars().all())
 
     async def count_entries(
-        self, visibility: str | None = "public", user: User | None = None,
+        self, visibility: str | None = None, user: User | None = None,
     ) -> int:
         stmt = select(func.count()).select_from(Entry)
         if visibility is not None:

@@ -80,7 +80,8 @@ class EntryService:
 
         await self._entity_service.log_activity(
             actor_id=user.id, action="entry.created",
-            entity_id=entry.id, metadata={},
+            entity_id=entry.id,
+            metadata={"title": provider_fields.get("title")},
         )
 
         await self._session.commit()

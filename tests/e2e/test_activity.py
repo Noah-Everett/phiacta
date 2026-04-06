@@ -25,12 +25,13 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
+    set_entry_visibility,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 
-def _b64(text: str) -> str:
+def text: str -> str:
     return base64.b64encode(text.encode()).decode()
 
 
@@ -693,7 +694,7 @@ class TestActivityActionVocabulary:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Improve data",
-                "files": [{"path": "data.csv", "content": _b64("x,y")}],
+                "files": [{"path": "data.csv", "content": "x,y"}],
             },
             headers=auth_header(token_b),
         )
@@ -718,3 +719,205 @@ class TestActivityActionVocabulary:
         assert resp.status_code == 200
         a_actions = {a["action"] for a in resp.json()["items"]}
         assert "edit.merged" in a_actions
+
+
+# ---------------------------------------------------------------------------
+# Visibility filtering
+# ---------------------------------------------------------------------------
+
+
+class TestActivityVisibility:
+    """Scenario: Activity feed filters out items referencing private entries
+    the caller cannot see.
+
+    The activity endpoint uses ``check_entry_access`` to determine whether
+    each activity item's underlying entry is visible to the requesting user.
+    Private entry activities are hidden from non-owners and unauthenticated
+    callers, but visible to the entry owner.
+    """
+
+    async def test_private_entry_hidden_from_non_owner(
+        self,
+        owner: AuthedFixture,
+        other_user: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """User A creates a private entry. User B queries A's activity feed
+        (authenticated as B). The 'entry.created' activity for the private
+        entry should NOT appear."""
+        client, user_a, token_a = owner
+        _, user_b, token_b = other_user
+
+        entry = await _create_ready_entry(
+            client, token_a, e2e_session_factory, title="Private Entry"
+        )
+        await set_entry_visibility(e2e_session_factory, entry["id"], "private")
+
+        # User B queries A's feed (authenticated as B)
+        resp = await client.get(
+            "/v1/activity",
+            params={"actor": user_a["id"]},
+            headers=auth_header(token_b),
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        entity_ids = {item["entity_id"] for item in items}
+        assert entry["id"] not in entity_ids, (
+            "Private entry activity should not be visible to non-owner"
+        )
+
+    async def test_public_entry_visible_in_feed(
+        self,
+        owner: AuthedFixture,
+        other_user: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """User A creates a public entry. Anyone querying the activity feed
+        should see the 'entry.created' activity."""
+        client, user_a, token_a = owner
+        _, user_b, token_b = other_user
+
+        entry = await _create_ready_entry(
+            client, token_a, e2e_session_factory, title="Public Entry"
+        )
+        # Entries default to public, but be explicit
+        await set_entry_visibility(e2e_session_factory, entry["id"], "public")
+
+        # User B queries A's feed
+        resp = await client.get(
+            "/v1/activity",
+            params={"actor": user_a["id"]},
+            headers=auth_header(token_b),
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        entity_ids = {item["entity_id"] for item in items}
+        assert entry["id"] in entity_ids, (
+            "Public entry activity should be visible to any user"
+        )
+
+        # Unauthenticated user queries A's feed
+        resp = await client.get(
+            "/v1/activity",
+            params={"actor": user_a["id"]},
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        entity_ids = {item["entity_id"] for item in items}
+        assert entry["id"] in entity_ids, (
+            "Public entry activity should be visible without authentication"
+        )
+
+    async def test_owner_sees_own_private_entry_activity(
+        self,
+        owner: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """User A creates a private entry, then queries their own activity
+        feed (authenticated). The private entry's activity SHOULD appear."""
+        client, user_a, token_a = owner
+
+        entry = await _create_ready_entry(
+            client, token_a, e2e_session_factory, title="Owner Private Entry"
+        )
+        await set_entry_visibility(e2e_session_factory, entry["id"], "private")
+
+        # Owner queries their own feed (authenticated)
+        resp = await client.get(
+            "/v1/activity",
+            params={"actor": user_a["id"]},
+            headers=auth_header(token_a),
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        entity_ids = {item["entity_id"] for item in items}
+        assert entry["id"] in entity_ids, (
+            "Owner should see their own private entry activity"
+        )
+
+    async def test_mixed_public_private_entries_in_feed(
+        self,
+        owner: AuthedFixture,
+        other_user: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """User A creates both public and private entries. Non-owner sees
+        only the public entry's activity. Owner sees all."""
+        client, user_a, token_a = owner
+        _, user_b, token_b = other_user
+
+        public_entry = await _create_ready_entry(
+            client, token_a, e2e_session_factory, title="Mixed Public"
+        )
+        private_entry = await _create_ready_entry(
+            client, token_a, e2e_session_factory, title="Mixed Private"
+        )
+        await set_entry_visibility(
+            e2e_session_factory, private_entry["id"], "private"
+        )
+
+        # Non-owner (User B) sees only public
+        resp = await client.get(
+            "/v1/activity",
+            params={"actor": user_a["id"]},
+            headers=auth_header(token_b),
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        entity_ids = {item["entity_id"] for item in items}
+        assert public_entry["id"] in entity_ids, (
+            "Non-owner should see public entry activity"
+        )
+        assert private_entry["id"] not in entity_ids, (
+            "Non-owner should NOT see private entry activity"
+        )
+
+        # Owner (User A) sees both
+        resp = await client.get(
+            "/v1/activity",
+            params={"actor": user_a["id"]},
+            headers=auth_header(token_a),
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        entity_ids = {item["entity_id"] for item in items}
+        assert public_entry["id"] in entity_ids, (
+            "Owner should see public entry activity"
+        )
+        assert private_entry["id"] in entity_ids, (
+            "Owner should see private entry activity"
+        )
+
+    async def test_unauthenticated_user_does_not_see_private_activity(
+        self,
+        owner: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """An unauthenticated caller should not see activity for private
+        entries. Only public entry activities should appear."""
+        client, user_a, token_a = owner
+
+        public_entry = await _create_ready_entry(
+            client, token_a, e2e_session_factory, title="Unauth Public"
+        )
+        private_entry = await _create_ready_entry(
+            client, token_a, e2e_session_factory, title="Unauth Private"
+        )
+        await set_entry_visibility(
+            e2e_session_factory, private_entry["id"], "private"
+        )
+
+        # No Authorization header
+        resp = await client.get(
+            "/v1/activity",
+            params={"actor": user_a["id"]},
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        entity_ids = {item["entity_id"] for item in items}
+        assert public_entry["id"] in entity_ids, (
+            "Unauthenticated user should see public entry activity"
+        )
+        assert private_entry["id"] not in entity_ids, (
+            "Unauthenticated user should NOT see private entry activity"
+        )

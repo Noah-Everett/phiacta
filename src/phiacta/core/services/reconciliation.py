@@ -33,7 +33,7 @@ class ReconciliationReport:
     entries_drifted: int = 0
     entries_repaired: int = 0
     entries_errored: int = 0
-    entries_skipped: int = 0  # archived/retracted
+    entries_skipped: int = 0  # unused, retained for backward compatibility
     orphan_repos: list[str] = field(default_factory=list)  # repo names with no DB entry
     missing_repos: list[UUID] = field(default_factory=list)  # entry IDs with no Forgejo repo
     stuck_provisioning: list[UUID] = field(default_factory=list)

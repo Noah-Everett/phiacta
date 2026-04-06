@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class IssueCreate(BaseModel):
     """Request body for POST /entries/{entry_id}/issues."""
 
-    title: str = Field(max_length=500)
+    title: str = Field(min_length=1, max_length=500)
     body: str | None = Field(default=None, max_length=10000)
 
 

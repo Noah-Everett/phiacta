@@ -57,13 +57,15 @@ router = APIRouter(prefix="/entries", tags=["entries"])
 # ---------------------------------------------------------------------------
 
 
-def _issue_to_list_item(issue: IssueInfo) -> IssueListItem:
+def _issue_to_list_item(
+    issue: IssueInfo, user_username: str | None = None,
+) -> IssueListItem:
     return IssueListItem(
         number=issue.number,
         title=issue.title,
         body=issue.body or None,
         state=issue.state,
-        author=IssueAuthor(username=issue.author_name),
+        author=IssueAuthor(username=user_username or issue.author_name),
         comments_count=issue.comments_count,
         created_at=issue.created_at,
         updated_at=issue.updated_at,
@@ -71,11 +73,13 @@ def _issue_to_list_item(issue: IssueInfo) -> IssueListItem:
     )
 
 
-def _comment_to_response(comment: IssueCommentInfo) -> IssueCommentResponse:
+def _comment_to_response(
+    comment: IssueCommentInfo, user_username: str | None = None,
+) -> IssueCommentResponse:
     return IssueCommentResponse(
         id=comment.id,
         body=comment.body,
-        author=IssueAuthor(username=comment.author_name),
+        author=IssueAuthor(username=user_username or comment.author_name),
         created_at=comment.created_at,
         updated_at=comment.updated_at,
     )
@@ -101,7 +105,7 @@ async def create_issue(
     git_service: GitService = Depends(get_git_service),
 ) -> IssueListItem:
     """Create an issue on an entry's repository."""
-    entry = await get_proposable_entry(entry_id, db)
+    entry = await get_proposable_entry(entry_id, db, user=user)
 
     try:
         issue = await git_service.create_issue(
@@ -138,7 +142,7 @@ async def create_issue(
             issue.number, entry_id,
         )
 
-    return _issue_to_list_item(issue)
+    return _issue_to_list_item(issue, user.username)
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +269,7 @@ async def add_issue_comment(
             number, entry_id,
         )
 
-    return _comment_to_response(comment)
+    return _comment_to_response(comment, user.username)
 
 
 # ---------------------------------------------------------------------------

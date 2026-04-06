@@ -21,6 +21,9 @@ from phiacta.core.models.entry import Entry
 from phiacta.core.models.user import User
 from phiacta.core.visibility import discovery_condition
 from phiacta.extensions.search_tsv.models import ViewSearchTsv
+from phiacta.extensions.search_tsv.repository import (
+    get_active_version as get_active_version,  # noqa: F401 — re-exported for tool isolation
+)
 
 try:
     from phiacta.extensions.metadata.models import ExtensionMetadata
@@ -56,7 +59,7 @@ def _build_prefix_tsquery(q: str, language: str):
 async def search_text(
     *, q: str, version_id: UUID, language: str, db: AsyncSession,
     limit: int, offset: int,
-    visibility: str | None = "public",
+    visibility: str | None = None,
     user: User | None = None,
     filters: dict[str, str] | None = None,
     providers: list[EntryDataProvider] | None = None,

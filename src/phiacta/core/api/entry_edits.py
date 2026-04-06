@@ -11,8 +11,6 @@ Read endpoints (list, detail) are public.
 
 from __future__ import annotations
 
-import base64
-import binascii
 import logging
 import re
 import unicodedata
@@ -78,6 +76,18 @@ def _make_branch_name(username: str, title: str) -> str:
     return f"edit/{username}/{_slugify(title)}"
 
 
+async def _cleanup_branch(
+    git_service: GitService, entry_id: UUID, branch_name: str,
+) -> None:
+    """Best-effort cleanup of a proposal branch after a failed step."""
+    try:
+        await git_service.delete_branch(entry_id, branch_name)
+    except Exception:
+        logger.warning(
+            "Failed to clean up branch %s on entry %s", branch_name, entry_id,
+        )
+
+
 def _pr_to_list_item(
     pr: PullRequestInfo,
     user_username: str | None = None,
@@ -120,30 +130,25 @@ async def create_edit_proposal(
     settings: Settings = Depends(get_settings),
 ) -> EditProposalListItem:
     """Create an edit proposal (branch + PR) for an entry."""
-    entry = await get_proposable_entry(entry_id, db)
+    entry = await get_proposable_entry(entry_id, db, user=user)
 
     # Validate all file paths before touching Forgejo.
     for fc in body.files:
         try:
             validate_file_path(fc.path)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Invalid file path") from exc
+            raise HTTPException(status_code=422, detail="Invalid file path") from exc
 
-    # Decode file contents and check size.
-    decoded_files: list[FileContent] = []
+    # Validate file sizes (content is plain text, not base64).
+    validated_files: list[FileContent] = []
     for fc in body.files:
-        try:
-            raw = base64.b64decode(fc.content)
-        except (binascii.Error, ValueError) as exc:
-            raise HTTPException(
-                status_code=400, detail="Invalid base64 content",
-            ) from exc
-        if len(raw) > settings.max_file_size_bytes:
+        raw_size = len(fc.content.encode("utf-8"))
+        if raw_size > settings.max_file_size_bytes:
             raise HTTPException(
                 status_code=400,
                 detail=f"File content exceeds maximum size of {settings.max_file_size_bytes} bytes",
             )
-        decoded_files.append(FileContent(path=fc.path, content=raw))
+        validated_files.append(FileContent(path=fc.path, content=fc.content))
 
     # Step 1: Create branch from main.
     branch_name = _make_branch_name(user.username, body.title)
@@ -168,9 +173,10 @@ async def create_edit_proposal(
     message = body.title
     try:
         await git_service.commit_files(
-            entry_id, decoded_files, author, message, branch=branch_name,
+            entry_id, validated_files, author, message, branch=branch_name,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
+        await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
@@ -187,6 +193,7 @@ async def create_edit_proposal(
             author_name=user.username,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
+        await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
@@ -346,12 +353,12 @@ async def merge_edit_proposal(
                 validate_file_path(fd.path)
             except ValueError as exc:
                 logger.warning(
-                    "Merge blocked: PR #%d on entry %s contains .phiacta/ changes",
+                    "Merge blocked: PR #%d on entry %s contains invalid file path",
                     number, entry_id,
                 )
                 raise HTTPException(
                     status_code=422,
-                    detail="Proposal contains changes to .phiacta/ which is not allowed",
+                    detail="Proposal contains an invalid file path",
                 ) from exc
     except HTTPException:
         raise

@@ -22,7 +22,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import phiacta.extensions.metadata.models  # noqa: F401
@@ -37,31 +36,10 @@ from tests.e2e.conftest import (
     create_entry,
     register_user,
     set_entry_repo_status,
+    set_entry_visibility,
 )
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-async def set_entry_visibility(
-    session_factory: async_sessionmaker[AsyncSession],
-    entry_id: str,
-    visibility: str,
-) -> None:
-    """Set an entry's visibility directly in the DB."""
-    from phiacta.core.models.entry import Entry
-
-    async with session_factory() as session:
-        result = await session.execute(
-            select(Entry).where(Entry.id == UUID(entry_id))
-        )
-        entry = result.scalar_one()
-        entry.visibility = visibility
-        await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -722,3 +700,124 @@ class TestFileWriteOnPrivateEntry:
             headers=auth_header(other_token),
         )
         assert resp.status_code == 403
+
+
+# ===========================================================================
+# 8. Query-param extension endpoints — private entries return 403
+# ===========================================================================
+
+
+class TestQueryParamExtensionVisibility:
+    """Visibility checks on extension endpoints that take entry_id as query param."""
+
+    async def test_types_get_returns_403_for_non_owner(
+        self,
+        private_entry: tuple[AuthedFixture, dict],
+        other_user: AuthedFixture,
+    ) -> None:
+        (_, _, _), entry = private_entry
+        client, _, other_token = other_user
+        resp = await client.get(
+            "/v1/extensions/types/",
+            params={"entry_id": entry["id"]},
+            headers=auth_header(other_token),
+        )
+        assert resp.status_code == 403
+
+    async def test_types_get_returns_403_unauthenticated(
+        self,
+        private_entry: tuple[AuthedFixture, dict],
+    ) -> None:
+        (client, _, _), entry = private_entry
+        resp = await client.get(
+            "/v1/extensions/types/",
+            params={"entry_id": entry["id"]},
+        )
+        assert resp.status_code == 403
+
+    async def test_metadata_get_returns_403_for_non_owner(
+        self,
+        private_entry: tuple[AuthedFixture, dict],
+        other_user: AuthedFixture,
+    ) -> None:
+        (_, _, _), entry = private_entry
+        client, _, other_token = other_user
+        resp = await client.get(
+            "/v1/extensions/metadata/",
+            params={"entry_id": entry["id"]},
+            headers=auth_header(other_token),
+        )
+        assert resp.status_code == 403
+
+    async def test_metadata_get_returns_403_unauthenticated(
+        self,
+        private_entry: tuple[AuthedFixture, dict],
+    ) -> None:
+        (client, _, _), entry = private_entry
+        resp = await client.get(
+            "/v1/extensions/metadata/",
+            params={"entry_id": entry["id"]},
+        )
+        assert resp.status_code == 403
+
+    async def test_tags_get_returns_403_for_non_owner(
+        self,
+        private_entry: tuple[AuthedFixture, dict],
+        other_user: AuthedFixture,
+    ) -> None:
+        (_, _, _), entry = private_entry
+        client, _, other_token = other_user
+        resp = await client.get(
+            "/v1/extensions/tags/",
+            params={"entry_id": entry["id"]},
+            headers=auth_header(other_token),
+        )
+        assert resp.status_code == 403
+
+    async def test_tags_get_returns_403_unauthenticated(
+        self,
+        private_entry: tuple[AuthedFixture, dict],
+    ) -> None:
+        (client, _, _), entry = private_entry
+        resp = await client.get(
+            "/v1/extensions/tags/",
+            params={"entry_id": entry["id"]},
+        )
+        assert resp.status_code == 403
+
+    async def test_owner_can_access_types_on_private_entry(
+        self,
+        private_entry: tuple[AuthedFixture, dict],
+    ) -> None:
+        (client, _, owner_token), entry = private_entry
+        resp = await client.get(
+            "/v1/extensions/types/",
+            params={"entry_id": entry["id"]},
+            headers=auth_header(owner_token),
+        )
+        # 200 or 404 (type may not be set) — but NOT 403
+        assert resp.status_code != 403
+
+    async def test_owner_can_access_metadata_on_private_entry(
+        self,
+        private_entry: tuple[AuthedFixture, dict],
+    ) -> None:
+        (client, _, owner_token), entry = private_entry
+        resp = await client.get(
+            "/v1/extensions/metadata/",
+            params={"entry_id": entry["id"]},
+            headers=auth_header(owner_token),
+        )
+        assert resp.status_code != 403
+
+    async def test_owner_can_access_tags_on_private_entry(
+        self,
+        private_entry: tuple[AuthedFixture, dict],
+    ) -> None:
+        (client, _, owner_token), entry = private_entry
+        resp = await client.get(
+            "/v1/extensions/tags/",
+            params={"entry_id": entry["id"]},
+            headers=auth_header(owner_token),
+        )
+        assert resp.status_code != 403

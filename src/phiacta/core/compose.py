@@ -134,31 +134,25 @@ def _should_call_provider(
     *,
     is_list: bool,
     include: set[str] | None,
-    exclude: set[str] | None,
 ) -> bool:
-    """Decide whether a provider should be called for this request."""
-    # Explicit include/exclude always wins over defaults.
+    """Decide whether a provider should be called for this request.
+
+    ``include`` is a **whitelist** — when present, only providers whose
+    fields overlap with the include set are called.  When absent, the
+    provider's default for the endpoint type is used.
+    """
     if include is not None:
         return bool(provider.fields & include)
-    if exclude is not None:
-        # Skip only if ALL provider fields are excluded.
-        if provider.fields <= exclude:
-            return False
-        return True
-    # Fall back to provider defaults.
     return provider.include_in_list if is_list else provider.include_in_detail
 
 
 def _filter_fields(
     data: dict,
     include: set[str] | None,
-    exclude: set[str] | None,
 ) -> dict:
-    """Remove fields the caller doesn't want."""
+    """Keep only the fields the caller asked for."""
     if include is not None:
-        data = {k: v for k, v in data.items() if k in include}
-    if exclude is not None:
-        data = {k: v for k, v in data.items() if k not in exclude}
+        return {k: v for k, v in data.items() if k in include}
     return data
 
 
@@ -168,14 +162,13 @@ async def compose_entry_response(
     db: AsyncSession,
     *,
     include: set[str] | None = None,
-    exclude: set[str] | None = None,
 ) -> dict:
     """Compose a single entry response from core fields + providers."""
     result = _core_fields(entry)
 
     for provider in providers:
         if not _should_call_provider(
-            provider, is_list=False, include=include, exclude=exclude,
+            provider, is_list=False, include=include,
         ):
             continue
         try:
@@ -187,7 +180,7 @@ async def compose_entry_response(
             )
             continue
         if data is not None:
-            result.update(_filter_fields(data, include, exclude))
+            result.update(_filter_fields(data, include))
 
     return result
 
@@ -198,7 +191,6 @@ async def compose_entry_list_responses(
     db: AsyncSession,
     *,
     include: set[str] | None = None,
-    exclude: set[str] | None = None,
 ) -> list[dict]:
     """Compose list responses using bulk provider queries (no N+1)."""
     if not entries:
@@ -211,7 +203,7 @@ async def compose_entry_list_responses(
     active_providers: list[EntryDataProvider] = []
     for provider in providers:
         if not _should_call_provider(
-            provider, is_list=True, include=include, exclude=exclude,
+            provider, is_list=True, include=include,
         ):
             continue
         try:
@@ -232,7 +224,7 @@ async def compose_entry_list_responses(
         for provider, pmap in zip(active_providers, provider_maps):
             data = pmap.get(entry.id)
             if data is not None:
-                row.update(_filter_fields(data, include, exclude))
+                row.update(_filter_fields(data, include))
         results.append(row)
 
     return results

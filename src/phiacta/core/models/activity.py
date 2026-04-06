@@ -22,11 +22,11 @@ class Activity(Base, UUIDMixin):
     __tablename__ = "activity"
 
     actor_id: Mapped[UUID] = mapped_column(
-        ForeignKey("entities.id"), nullable=False,
+        ForeignKey("entities.id", ondelete="RESTRICT"), nullable=False,
     )
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     entity_id: Mapped[UUID] = mapped_column(
-        ForeignKey("entities.id"), nullable=False,
+        ForeignKey("entities.id", ondelete="RESTRICT"), nullable=False,
     )
     activity_metadata: Mapped[dict | None] = mapped_column(
         "metadata", JSON, nullable=True,

@@ -24,6 +24,8 @@ class TestEntryDefaults:
         assert "title" not in cols
         assert "layout_hint" not in cols
         assert "content_cache" not in cols
+        assert "status" not in cols
+        assert "schema_version" not in cols
 
 
 class TestOutboxDefaults:

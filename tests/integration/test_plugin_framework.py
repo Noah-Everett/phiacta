@@ -11,6 +11,8 @@ Tests that:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from phiacta.plugin import PluginManifest, PluginType
@@ -76,3 +78,92 @@ class TestSearchTsvAsExtension:
     def test_old_views_search_tsv_removed(self) -> None:
         with pytest.raises(ImportError):
             import phiacta.views.search_tsv  # type: ignore[import-not-found]  # noqa: F401
+
+
+class TestPluginRegistryNoViewsDirectory:
+    """PluginRegistry should work without a 'view' directory key."""
+
+    def test_discover_works_without_view_dir(self, tmp_path: Path) -> None:
+        """Registry discovers plugins when plugin_dirs has no 'view' key."""
+        from phiacta.plugin import PluginRegistry
+
+        # Create a minimal extension plugin on disk
+        ext_dir = tmp_path / "extensions" / "test_ext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "__init__.py").write_text(
+            "from phiacta.plugin import PluginManifest, PluginType\n"
+            "manifest = PluginManifest(\n"
+            "    name='test_ext',\n"
+            "    type=PluginType.EXTENSION,\n"
+            "    version='0.1.0',\n"
+            "    description='Test extension',\n"
+            ")\n"
+        )
+
+        registry = PluginRegistry(
+            plugin_dirs={"extension": tmp_path / "extensions"},
+            enabled_plugins=["test_ext"],
+        )
+        registry.discover()
+
+        assert "test_ext" in registry.plugins
+        assert registry.plugins["test_ext"].manifest.type == PluginType.EXTENSION
+
+    def test_view_dir_key_is_silently_skipped(self, tmp_path: Path) -> None:
+        """A 'view' key in plugin_dirs is silently skipped (no crash)."""
+        from phiacta.plugin import PluginRegistry
+
+        ext_dir = tmp_path / "extensions" / "test_ext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "__init__.py").write_text(
+            "from phiacta.plugin import PluginManifest, PluginType\n"
+            "manifest = PluginManifest(\n"
+            "    name='test_ext',\n"
+            "    type=PluginType.EXTENSION,\n"
+            "    version='0.1.0',\n"
+            "    description='Test extension',\n"
+            ")\n"
+        )
+
+        # Include a 'view' key pointing to a non-existent directory
+        registry = PluginRegistry(
+            plugin_dirs={
+                "extension": tmp_path / "extensions",
+                "view": tmp_path / "views",
+            },
+            enabled_plugins=["test_ext"],
+        )
+        registry.discover()
+
+        assert "test_ext" in registry.plugins
+
+    def test_default_plugin_dirs_has_no_view_key(self) -> None:
+        """The default PluginRegistry plugin_dirs should not include a 'view' key."""
+        from phiacta.plugin import PluginRegistry
+
+        registry = PluginRegistry(enabled_plugins=[])
+        # Access the internal plugin_dirs to verify no 'view' key
+        assert "view" not in registry._plugin_dirs
+
+
+class TestSearchTsvManifestDependsOn:
+    """search_tsv manifest should have correct depends_on."""
+
+    def test_search_tsv_has_empty_depends_on(self) -> None:
+        from phiacta.extensions.search_tsv import manifest
+
+        assert manifest.depends_on == [], (
+            f"search_tsv depends_on should be empty, got {manifest.depends_on}"
+        )
+
+
+class TestSearchToolManifestDependsOn:
+    """search tool manifest should declare dependency on search_tsv."""
+
+    def test_search_tool_depends_on_search_tsv(self) -> None:
+        from phiacta.tools.search import manifest
+
+        assert "search_tsv" in manifest.depends_on, (
+            f"search tool should depend on search_tsv, "
+            f"got depends_on={manifest.depends_on}"
+        )

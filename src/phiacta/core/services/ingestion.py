@@ -20,7 +20,9 @@ from phiacta.core.services.git_service import GitService, RepoNotFoundError
 
 logger = logging.getLogger(__name__)
 
-_CONTENT_EXTENSIONS = [".md", ".tex", ".txt"]
+from phiacta.formats import FORMAT_EXTENSIONS
+
+_CONTENT_EXTENSIONS = list(FORMAT_EXTENSIONS.values())
 
 # Type alias matching plugin.OnIngestHook
 OnIngestHook = Callable[..., Coroutine]

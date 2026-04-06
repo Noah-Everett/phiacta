@@ -6,7 +6,11 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from phiacta.formats import FORMAT_EXTENSIONS
+
+VALID_VISIBILITY = ("public", "private")
 
 
 class EntryCreate(BaseModel):
@@ -20,8 +24,17 @@ class EntryCreate(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     content: str | None = Field(None, max_length=100_000)
-    content_format: str = Field("markdown", pattern="^(markdown|latex|plain)$")
+    content_format: str = Field("markdown")
     visibility: str = Field("public", pattern="^(public|private)$")
+
+    @field_validator("content_format")
+    @classmethod
+    def _validate_content_format(cls, v: str) -> str:
+        if v not in FORMAT_EXTENSIONS:
+            raise ValueError(
+                f"content_format must be one of {set(FORMAT_EXTENSIONS)}"
+            )
+        return v
 
 
 class EntryUpdate(BaseModel):

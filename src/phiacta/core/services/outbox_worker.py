@@ -430,7 +430,10 @@ class OutboxWorker:
             else:
                 raise
 
-        # Step 5: Update entry record with Forgejo state.
+        # Step 5: Update entry record with Forgejo state and run ingestion.
+        # Ingestion MUST happen here because the webhook race condition
+        # means the webhook handler may see current_head_sha already set
+        # and skip ingestion (tsvector never computed).
         async with self._session_factory() as session:
             repo = EntryRepository(session)
             await repo.update_repo_status(
@@ -439,6 +442,12 @@ class OutboxWorker:
                 forgejo_repo_id=repo_id,
                 current_head_sha=sha,
             )
+            entry = await repo.get_by_id(entry_id)
+            if entry is not None:
+                await ingest_entry(
+                    entry, sha, session, self._git,
+                    on_ingest_hooks=self._on_ingest_hooks,
+                )
             await session.commit()
 
     async def _handle_commit_files(self, payload: dict) -> None:
@@ -466,7 +475,8 @@ class OutboxWorker:
             entry_id, files, author, message
         )
 
-        # Update head SHA (via repository so ORM onupdate fires)
+        # Update head SHA and run ingestion (same webhook race fix as
+        # _handle_create_repo — outbox worker must run ingestion itself).
         async with self._session_factory() as session:
             repo = EntryRepository(session)
             await repo.update_repo_status(
@@ -474,6 +484,12 @@ class OutboxWorker:
                 repo_status="ready",
                 current_head_sha=sha,
             )
+            entry = await repo.get_by_id(entry_id)
+            if entry is not None:
+                await ingest_entry(
+                    entry, sha, session, self._git,
+                    on_ingest_hooks=self._on_ingest_hooks,
+                )
             await session.commit()
 
     async def _handle_create_branch(self, payload: dict) -> None:

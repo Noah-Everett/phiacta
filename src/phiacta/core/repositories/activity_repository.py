@@ -83,15 +83,46 @@ class ActivityRepository:
 
         return items, next_cursor
 
-    async def list_by_entity(self, entity_id: UUID) -> list[Activity]:
-        """List all activity for an entity, newest first."""
+    async def list_by_entity(
+        self,
+        entity_id: UUID,
+        limit: int = 50,
+        before: UUID | None = None,
+    ) -> tuple[list[Activity], UUID | None]:
+        """List activity for an entity, newest first, with cursor pagination.
+
+        ``before`` is the ID of the last item from the previous page.
+        Returns (items, next_cursor) where next_cursor is the ID to pass
+        as ``before`` for the next page, or None if no more items.
+        """
         stmt = (
             select(Activity)
             .where(Activity.entity_id == entity_id)
-            .order_by(Activity.created_at.desc())
+            .order_by(Activity.created_at.desc(), Activity.id.desc())
+            .limit(limit + 1)
         )
+
+        if before is not None:
+            cursor_row = await self._session.get(Activity, before)
+            if cursor_row is not None:
+                stmt = stmt.where(
+                    (Activity.created_at < cursor_row.created_at)
+                    | (
+                        (Activity.created_at == cursor_row.created_at)
+                        & (Activity.id < cursor_row.id)
+                    )
+                )
+
         result = await self._session.execute(stmt)
-        return list(result.scalars().all())
+        items = list(result.scalars().all())
+
+        if len(items) > limit:
+            items = items[:limit]
+            next_cursor = items[-1].id
+        else:
+            next_cursor = None
+
+        return items, next_cursor
 
     async def count_by_actor(self, actor_id: UUID) -> int:
         stmt = (

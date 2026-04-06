@@ -17,7 +17,6 @@ dependencies = [
     # Auth
     "PyJWT[crypto]>=2.8",
     "bcrypt>=4.0",
-    "email-validator>=2.0",
 
     # Rate limiting
     "slowapi>=0.1.9",
@@ -27,9 +26,6 @@ dependencies = [
 
     # Multipart form parsing (required by FastAPI for UploadFile/Form)
     "python-multipart>=0.0.9",
-
-    # Logging
-    "structlog>=24.4",
 
     # YAML parsing (used by entry_yaml, docs endpoint)
     "PyYAML>=6.0",
@@ -75,3 +71,7 @@ plugins = ["pydantic.mypy"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "forgejo: tests requiring a live Forgejo instance (deselected by default)",
+]
+addopts = "-m 'not forgejo'"

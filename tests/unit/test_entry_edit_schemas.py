@@ -57,14 +57,14 @@ class TestEditProposalCreateValidTitle:
         assert any(e["loc"] == ("title",) for e in errors)
 
     def test_title_empty_string(self) -> None:
-        """An empty title string is accepted by Pydantic (business logic may reject it)."""
-        # Pydantic does not add min_length=1 by default, so empty is valid at schema level.
-        # The API endpoint may add additional checks.
-        model = EditProposalCreate(
-            title="",
-            files=[{"path": "README.md", "content": "dGVzdA=="}],
-        )
-        assert model.title == ""
+        """An empty title string is rejected at schema level (min_length=1)."""
+        with pytest.raises(ValidationError) as exc_info:
+            EditProposalCreate(
+                title="",
+                files=[{"path": "README.md", "content": "dGVzdA=="}],
+            )
+        errors = exc_info.value.errors()
+        assert any(e["loc"] == ("title",) for e in errors)
 
     def test_title_with_unicode(self) -> None:
         """A title with unicode characters is accepted."""

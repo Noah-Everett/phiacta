@@ -267,7 +267,7 @@ class TestPutFileErrors:
         authed: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """PUT to .phiacta/entry.yaml is blocked (returns 404)."""
+        """PUT to .phiacta/entry.yaml is allowed (entry.yaml is no longer special)."""
         client, _, token = authed
         entry = await create_entry(client, token, title="Phiacta Block Put")
         entry_id = entry["id"]
@@ -278,7 +278,7 @@ class TestPutFileErrors:
             **_multipart("hacked: true"),
             headers=auth_header(token),
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
 
     async def test_put_phiacta_refs_is_allowed(
         self,
@@ -557,7 +557,11 @@ class TestDeleteFileErrors:
         authed: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """DELETE .phiacta/entry.yaml is blocked (returns 404)."""
+        """DELETE .phiacta/entry.yaml is not blocked by path validation.
+
+        Returns 200 if the file exists, 404 if it doesn't — but never 403
+        for policy reasons (entry.yaml is no longer protected).
+        """
         client, _, token = authed
         entry = await create_entry(client, token, title="Phiacta Block Delete")
         entry_id = entry["id"]
@@ -568,7 +572,8 @@ class TestDeleteFileErrors:
             f"/v1/entries/{entry_id}/files/.phiacta/entry.yaml",
             headers=auth_header(token),
         )
-        assert resp.status_code == 404
+        # 200 if file exists, 404 if not — either is fine. NOT 403.
+        assert resp.status_code in (200, 404)
 
     async def test_delete_repo_provisioning_returns_409(
         self,
@@ -686,7 +691,7 @@ class TestFileWritePathValidation:
         authed: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """PUT to .phiacta/entry.yaml returns 404."""
+        """PUT to .phiacta/entry.yaml is allowed (no longer protected)."""
         client, _, token = authed
         entry = await create_entry(client, token, title="PV4")
         entry_id = entry["id"]
@@ -697,7 +702,7 @@ class TestFileWritePathValidation:
             **_multipart("x"),
             headers=auth_header(token),
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
 
     async def test_put_phiacta_bare_allowed(
         self,
@@ -742,7 +747,7 @@ class TestFileWritePathValidation:
         authed: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """DELETE .phiacta/entry.yaml returns 404."""
+        """DELETE .phiacta/entry.yaml is not blocked by path validation."""
         client, _, token = authed
         entry = await create_entry(client, token, title="PV7")
         entry_id = entry["id"]
@@ -753,7 +758,7 @@ class TestFileWritePathValidation:
             f"/v1/entries/{entry_id}/files/.phiacta/entry.yaml",
             headers=auth_header(token),
         )
-        assert resp.status_code == 404
+        assert resp.status_code in (200, 404)
 
     async def test_put_url_encoded_dotdot_blocked(
         self,

@@ -13,7 +13,6 @@ Run with:
 from __future__ import annotations
 
 import asyncio
-import base64
 from uuid import uuid4
 
 import httpx
@@ -23,9 +22,6 @@ BASE_URL = "http://localhost:8000"
 
 pytestmark = [pytest.mark.forgejo, pytest.mark.anyio]
 
-
-def _b64(text: str) -> str:
-    return base64.b64encode(text.encode()).decode()
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -87,7 +83,7 @@ async def test_create_proposal() -> None:
             json={
                 "title": "Fix typo in README",
                 "body": "Corrected spelling",
-                "files": [{"path": "README.md", "content": _b64("# Fixed")}],
+                "files": [{"path": "README.md", "content": "# Fixed"}],
             },
             headers=_auth(proposer_token),
         )
@@ -112,7 +108,7 @@ async def test_list_proposals() -> None:
                 f"/v1/entries/{entry['id']}/edits",
                 json={
                     "title": f"Proposal {i}",
-                    "files": [{"path": f"file{i}.txt", "content": _b64(f"content {i}")}],
+                    "files": [{"path": f"file{i}.txt", "content": f"content {i}"}],
                 },
                 headers=_auth(proposer_token),
             )
@@ -142,7 +138,7 @@ async def test_merge_proposal() -> None:
             f"/v1/entries/{entry['id']}/edits",
             json={
                 "title": "Rewrite README",
-                "files": [{"path": "README.md", "content": _b64("# Rewritten by proposal")}],
+                "files": [{"path": "README.md", "content": "# Rewritten by proposal"}],
             },
             headers=_auth(proposer_token),
         )
@@ -173,7 +169,7 @@ async def test_close_proposal() -> None:
             f"/v1/entries/{entry['id']}/edits",
             json={
                 "title": "Will be closed",
-                "files": [{"path": "x.txt", "content": _b64("x")}],
+                "files": [{"path": "x.txt", "content": "x"}],
             },
             headers=_auth(proposer_token),
         )
@@ -208,7 +204,7 @@ async def test_merge_updates_entry_sha() -> None:
             f"/v1/entries/{entry['id']}/edits",
             json={
                 "title": "SHA test",
-                "files": [{"path": "sha_test.txt", "content": _b64("trigger webhook")}],
+                "files": [{"path": "sha_test.txt", "content": "trigger webhook"}],
             },
             headers=_auth(proposer_token),
         )
@@ -240,7 +236,7 @@ async def test_non_owner_cannot_merge() -> None:
             f"/v1/entries/{entry['id']}/edits",
             json={
                 "title": "Unauthorized merge attempt",
-                "files": [{"path": "x.txt", "content": _b64("x")}],
+                "files": [{"path": "x.txt", "content": "x"}],
             },
             headers=_auth(proposer_token),
         )
@@ -266,7 +262,7 @@ async def test_phiacta_path_blocked_on_create() -> None:
             f"/v1/entries/{entry['id']}/edits",
             json={
                 "title": "Sneaky .phiacta edit",
-                "files": [{"path": ".phiacta/entry.yaml", "content": _b64("hacked: true")}],
+                "files": [{"path": ".phiacta/entry.yaml", "content": "hacked: true"}],
             },
             headers=_auth(proposer_token),
         )
@@ -285,7 +281,7 @@ async def test_proposal_lifecycle_state_transitions() -> None:
             f"/v1/entries/{entry['id']}/edits",
             json={
                 "title": "State transition test",
-                "files": [{"path": "state.txt", "content": _b64("v1")}],
+                "files": [{"path": "state.txt", "content": "v1"}],
             },
             headers=_auth(proposer_token),
         )

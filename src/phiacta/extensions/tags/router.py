@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.api.rate_limit import limiter
+from phiacta.core.shared_deps import limiter
 from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
@@ -52,8 +52,9 @@ async def list_tags_for_entry(
 ) -> TagListResponse:
     """List all tags for a given entry. Checks visibility."""
     entry = await EntryRepository(db).get_by_id(entry_id)
-    if entry is not None:
-        check_entry_access(entry, user)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    check_entry_access(entry, user)
     repo = TagRepository(db)
     tags = await repo.list_by_entry(entry_id)
     return TagListResponse(
@@ -79,7 +80,7 @@ async def set_tags(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError:

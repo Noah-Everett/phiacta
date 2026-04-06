@@ -30,7 +30,7 @@ class ExtensionTag(UUIDMixin, Base):
     )
     tag: Mapped[str] = mapped_column(String(200), nullable=False)
     created_by: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

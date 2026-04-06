@@ -18,8 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.auth.dependencies import get_optional_user
-from phiacta.core.tool_deps import get_db
+from phiacta.core.tool_deps import get_db, get_optional_user
 from phiacta.core.services.graph_query import (
     enrich_nodes,
     traverse_references,

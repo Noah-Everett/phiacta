@@ -19,7 +19,6 @@ Entity creation is a side-effect of existing endpoints:
 
 from __future__ import annotations
 
-import base64
 from uuid import UUID, uuid4
 
 import httpx
@@ -37,9 +36,6 @@ from tests.e2e.conftest import (
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
 
-def _b64(text: str) -> str:
-    """Encode text as base64 string for file content."""
-    return base64.b64encode(text.encode()).decode()
 
 
 @pytest.fixture
@@ -455,7 +451,7 @@ class TestEditCreatesEntity:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Fix methodology section",
-                "files": [{"path": "README.md", "content": _b64("# Fixed")}],
+                "files": [{"path": "README.md", "content": "# Fixed"}],
             },
             headers=auth_header(other_token),
         )
@@ -492,7 +488,7 @@ class TestEditCreatesEntity:
             json={
                 "title": "Improve references",
                 "files": [
-                    {"path": "refs.bib", "content": _b64("@article{}")},
+                    {"path": "refs.bib", "content": "@article{}"},
                 ],
             },
             headers=auth_header(other_token),
@@ -534,7 +530,7 @@ class TestEditCreatesEntity:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Bad proposal",
-                "files": [{"path": "bad.txt", "content": _b64("nope")}],
+                "files": [{"path": "bad.txt", "content": "nope"}],
             },
             headers=auth_header(other_token),
         )
@@ -575,7 +571,7 @@ class TestEditCreatesEntity:
             f"/v1/entries/{entry_id}/edits",
             json={
                 "title": "Lifecycle edit",
-                "files": [{"path": "data.csv", "content": _b64("a,b")}],
+                "files": [{"path": "data.csv", "content": "a,b"}],
             },
             headers=auth_header(other_token),
         )

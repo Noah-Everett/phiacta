@@ -272,16 +272,18 @@ class TestListByEntity:
         )
         await db_session.flush()
 
-        items = await repo.list_by_entity(entity_id)
+        items, next_cursor = await repo.list_by_entity(entity_id)
         assert len(items) == 2
         assert all(a.entity_id == entity_id for a in items)
+        assert next_cursor is None  # only 2 items, under default limit
 
     async def test_returns_empty_for_unknown_entity(
         self, db_session: AsyncSession,
     ) -> None:
         repo = ActivityRepository(db_session)
-        items = await repo.list_by_entity(uuid4())
+        items, next_cursor = await repo.list_by_entity(uuid4())
         assert items == []
+        assert next_cursor is None
 
     async def test_multiple_actors_on_same_entity(
         self, db_session: AsyncSession,
@@ -313,7 +315,7 @@ class TestListByEntity:
         )
         await db_session.flush()
 
-        items = await repo.list_by_entity(entity.id)
+        items, _ = await repo.list_by_entity(entity.id)
         assert len(items) == 2
         actor_ids = {a.actor_id for a in items}
         assert actor_a.id in actor_ids

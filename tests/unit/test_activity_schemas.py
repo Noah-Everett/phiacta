@@ -25,6 +25,7 @@ class TestActivityItemSchema:
         """A fully valid ActivityItem is accepted."""
         item = ActivityItem(
             id=uuid4(),
+            actor_id=uuid4(),
             action="entry.created",
             entity_type="entry",
             entity_id=uuid4(),
@@ -42,6 +43,7 @@ class TestActivityItemSchema:
         parent_id = uuid4()
         item = ActivityItem(
             id=uuid4(),
+            actor_id=uuid4(),
             action="issue.created",
             entity_type="issue",
             entity_id=uuid4(),
@@ -55,6 +57,7 @@ class TestActivityItemSchema:
         """ActivityItem metadata can be null."""
         item = ActivityItem(
             id=uuid4(),
+            actor_id=uuid4(),
             action="entry.archived",
             entity_type="entry",
             entity_id=uuid4(),
@@ -97,6 +100,7 @@ class TestActivityItemSchema:
         with pytest.raises(ValidationError) as exc_info:
             ActivityItem(
                 id=uuid4(),
+                actor_id=uuid4(),
                 action="entry.created",
                 entity_id=uuid4(),
                 parent_id=None,
@@ -111,6 +115,7 @@ class TestActivityItemSchema:
         with pytest.raises(ValidationError) as exc_info:
             ActivityItem(
                 id=uuid4(),
+                actor_id=uuid4(),
                 action="entry.created",
                 entity_type="entry",
                 parent_id=None,
@@ -125,6 +130,7 @@ class TestActivityItemSchema:
         with pytest.raises(ValidationError) as exc_info:
             ActivityItem(
                 id=uuid4(),
+                actor_id=uuid4(),
                 action="entry.created",
                 entity_type="entry",
                 entity_id=uuid4(),
@@ -139,6 +145,7 @@ class TestActivityItemSchema:
         at the service layer, not the schema layer)."""
         item = ActivityItem(
             id=uuid4(),
+            actor_id=uuid4(),
             action="custom.action",
             entity_type="entry",
             entity_id=uuid4(),
@@ -151,10 +158,12 @@ class TestActivityItemSchema:
     def test_activity_item_serialization(self) -> None:
         """ActivityItem serializes to dict with correct field names."""
         item_id = uuid4()
+        actor_id = uuid4()
         entity_id = uuid4()
         now = datetime.now(UTC)
         item = ActivityItem(
             id=item_id,
+            actor_id=actor_id,
             action="entry.created",
             entity_type="entry",
             entity_id=entity_id,
@@ -187,6 +196,7 @@ class TestActivityItemSchema:
         for action in actions:
             item = ActivityItem(
                 id=uuid4(),
+                actor_id=uuid4(),
                 action=action,
                 entity_type="entry",
                 entity_id=uuid4(),
@@ -202,6 +212,7 @@ class TestActivityItemSchema:
         for et in entity_types:
             item = ActivityItem(
                 id=uuid4(),
+                actor_id=uuid4(),
                 action="entry.created",
                 entity_type=et,
                 entity_id=uuid4(),
@@ -220,6 +231,7 @@ class TestActivityFeedResponseSchema:
         items = [
             ActivityItem(
                 id=uuid4(),
+                actor_id=uuid4(),
                 action="entry.created",
                 entity_type="entry",
                 entity_id=uuid4(),
@@ -250,6 +262,7 @@ class TestActivityFeedResponseSchema:
         """ActivityFeedResponse serializes correctly to JSON-compatible dict."""
         item = ActivityItem(
             id=uuid4(),
+            actor_id=uuid4(),
             action="entry.created",
             entity_type="entry",
             entity_id=uuid4(),
@@ -277,6 +290,7 @@ class TestActivityFeedResponseSchema:
         for i in range(5):
             items.append(ActivityItem(
                 id=uuid4(),
+                actor_id=uuid4(),
                 action="entry.created",
                 entity_type="entry",
                 entity_id=uuid4(),
@@ -291,6 +305,7 @@ class TestActivityFeedResponseSchema:
         """Items in the response are ActivityItem instances."""
         item = ActivityItem(
             id=uuid4(),
+            actor_id=uuid4(),
             action="entry.created",
             entity_type="entry",
             entity_id=uuid4(),

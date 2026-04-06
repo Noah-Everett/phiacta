@@ -11,8 +11,8 @@ Verification uses HMAC-SHA256 over the request body, matching the shared
 secret stored in ``FORGEJO_WEBHOOK_SECRET``.
 
 After verifying the push, the handler runs ingestion: fetches
-``.phiacta/entry.yaml`` and ``.phiacta/content.*`` from the new HEAD,
-validates identity, and computes the search tsvector.
+``.phiacta/content.*`` from the new HEAD and runs on_ingest hooks
+(extensions, views) to keep derived data in sync.
 """
 
 from __future__ import annotations
@@ -82,7 +82,10 @@ async def handle_forgejo_webhook(
     event_type = request.headers.get("X-Forgejo-Event", "")
 
     if event_type == "push":
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except (ValueError, KeyError):
+            raise HTTPException(status_code=400, detail="Malformed JSON payload")
         hooks = _get_on_ingest_hooks(request)
         await _handle_push(payload, db, git_service, hooks)
     else:
@@ -161,5 +164,7 @@ async def _handle_push(
         entry.current_head_sha = after_sha
     except Exception:
         logger.exception("Ingestion failed for entry %s at SHA %s", entry_id, after_sha[:12])
+        await db.rollback()
+        return
 
     await db.commit()

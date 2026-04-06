@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 class ActivityItem(BaseModel):
     id: UUID
+    actor_id: UUID
     action: str
     entity_type: str
     entity_id: UUID

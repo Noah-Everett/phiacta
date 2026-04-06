@@ -60,7 +60,9 @@ class TypeProvider(EntryDataProvider):
     ) -> None:
         repo = TypeRepository(db)
         entry_type = data["entry_type"]
-        await repo.upsert(entity_id, entry_type, user_id)
+        if not isinstance(entry_type, str) or not entry_type.strip():
+            raise ValueError("entry_type must be a non-empty string")
+        await repo.upsert(entity_id, entry_type.strip(), user_id)
 
 
 entry_data_provider = TypeProvider()

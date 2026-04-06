@@ -283,7 +283,7 @@ class TestMultipartPutFileErrors:
         authed: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Scenario: Upload to .phiacta/entry.yaml is rejected."""
+        """Scenario: Upload to .phiacta/entry.yaml is allowed (no longer protected)."""
         client, _, token = authed
         entry = await create_entry(client, token, title="Protected Path Multipart")
         entry_id = entry["id"]
@@ -294,7 +294,7 @@ class TestMultipartPutFileErrors:
             headers=auth_header(token),
             **_multipart_kwargs(b"hacked: true"),
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
 
     async def test_multipart_path_traversal_returns_400(
         self,

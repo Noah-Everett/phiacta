@@ -4,7 +4,7 @@
 """Plugin metadata endpoint — returns loaded plugin manifests.
 
 Used by the MCP server to dynamically build instructions from
-plugin descriptions without hardcoding extension/view/tool names.
+plugin descriptions without hardcoding extension/tool names.
 """
 
 from __future__ import annotations

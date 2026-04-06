@@ -22,7 +22,7 @@ class Entry(UUIDMixin, TimestampMixin, Base):
 
     # Git sync
     forgejo_repo_id: Mapped[int | None] = mapped_column(Integer, default=None)
-    repo_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    repo_name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     current_head_sha: Mapped[str | None] = mapped_column(
         String(40), default=None
     )
@@ -37,7 +37,7 @@ class Entry(UUIDMixin, TimestampMixin, Base):
 
     # Creator
     created_by: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
 
     # Relationships

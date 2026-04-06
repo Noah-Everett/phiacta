@@ -5,7 +5,6 @@
 
 Tests the visibility helper functions that determine access control
 based on entry visibility and requesting user:
-- access_condition() — SQLAlchemy clause for direct access queries
 - discovery_condition() — SQLAlchemy clause for listing/search queries
 - check_entry_access() — raises HTTPException(403) if access denied
 """
@@ -89,30 +88,6 @@ class TestCheckEntryAccess:
         assert exc_info.value.detail
 
 
-class TestAccessCondition:
-    """Tests for access_condition — SQLAlchemy WHERE clause for direct access."""
-
-    def test_no_user_returns_clause(self) -> None:
-        from phiacta.core.visibility import access_condition
-        clause = access_condition(user=None)
-        assert clause is not None
-
-    def test_with_user_returns_clause(self) -> None:
-        from phiacta.core.visibility import access_condition
-        user = MagicMock()
-        user.id = uuid4()
-        clause = access_condition(user=user)
-        assert clause is not None
-
-    def test_no_user_clause_is_different_from_user_clause(self) -> None:
-        from phiacta.core.visibility import access_condition
-        user = MagicMock()
-        user.id = uuid4()
-        clause_anon = access_condition(user=None)
-        clause_user = access_condition(user=user)
-        assert str(clause_anon) != str(clause_user)
-
-
 class TestDiscoveryCondition:
     """Tests for discovery_condition — SQLAlchemy WHERE clause for listings/search."""
 
@@ -144,11 +119,6 @@ class TestVisibilityModuleExports:
         from phiacta.core import visibility
         assert hasattr(visibility, "check_entry_access")
         assert callable(visibility.check_entry_access)
-
-    def test_exports_access_condition(self) -> None:
-        from phiacta.core import visibility
-        assert hasattr(visibility, "access_condition")
-        assert callable(visibility.access_condition)
 
     def test_exports_discovery_condition(self) -> None:
         from phiacta.core import visibility
