@@ -99,7 +99,9 @@ async def _get_writable_entry(
 
 
 @router.get("/{entry_id}/files", response_model=CursorPage[FileListItem])
+@limiter.limit("300/minute")
 async def list_entry_files(
+    request: Request,
     entry_id: UUID,
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
@@ -124,7 +126,9 @@ async def list_entry_files(
 
 
 @router.get("/{entry_id}/files/{path:path}")
+@limiter.limit("300/minute")
 async def get_entry_file_content(
+    request: Request,
     entry_id: UUID,
     path: str,
     user: User | None = Depends(get_optional_user),

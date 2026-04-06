@@ -8,7 +8,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.exc import IntegrityError
+
 from phiacta.core.api.entry_guards import (
+    get_readable_entry,
     get_writable_entry,
 )
 from phiacta.core.api.rate_limit import limiter
@@ -37,12 +40,12 @@ from phiacta.core.schemas.entry import (
     EntryUpdate,
 )
 from phiacta.core.services.entry_service import EntryService
-from phiacta.core.visibility import check_entry_access
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
 
 @router.get("", response_model=CursorPage[EntryListItem])
+@limiter.limit("300/minute")
 async def list_entries(
     request: Request,
     visibility: str = Query("all", pattern=r"^(all|public|private)$"),
@@ -96,6 +99,7 @@ async def list_entries(
 
 
 @router.get("/{entry_id}", response_model=EntryDetailResponse)
+@limiter.limit("300/minute")
 async def get_entry(
     request: Request,
     entry_id: UUID,
@@ -103,10 +107,7 @@ async def get_entry(
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> EntryDetailResponse:
-    entry = await EntryRepository(db).get_by_id(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Entry not found")
-    check_entry_access(entry, user)
+    entry = await get_readable_entry(entry_id, db, user=user)
     providers = get_providers(request)
     inc = parse_field_filter(include)
     composed = await compose_entry_response(
@@ -184,7 +185,11 @@ async def update_entry(
             payload={"entry_id": str(entry_id)},
         ))
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Concurrent update conflict")
     await db.refresh(entry)
     composed = await compose_entry_response(entry, providers, db)
     return EntryResponse(**composed)

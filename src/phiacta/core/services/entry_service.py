@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.compose import EntryDataProvider
@@ -84,6 +85,10 @@ class EntryService:
             metadata={"title": provider_fields.get("title")},
         )
 
-        await self._session.commit()
+        try:
+            await self._session.commit()
+        except IntegrityError:
+            await self._session.rollback()
+            raise ValueError("Concurrent entry creation conflict")
         await self._session.refresh(entry)
         return entry

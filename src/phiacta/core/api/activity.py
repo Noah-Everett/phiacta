@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,7 @@ from phiacta.core.pagination import (
     build_keyset_cursor,
     decode_cursor,
 )
+from phiacta.core.api.rate_limit import limiter
 from phiacta.core.repositories.activity_repository import ActivityRepository
 from phiacta.core.repositories.entity_repository import EntityRepository
 from phiacta.core.repositories.user_repository import UserRepository
@@ -34,7 +35,9 @@ router = APIRouter(prefix="/activity", tags=["activity"])
 
 
 @router.get("", response_model=CursorPage[ActivityItem])
+@limiter.limit("300/minute")
 async def get_activity(
+    request: Request,
     actor: UUID | None = Query(None, description="Filter by actor (user ID)"),
     entity: UUID | None = Query(None, description="Filter by entity ID"),
     limit: int = Query(50, ge=1, le=100),
