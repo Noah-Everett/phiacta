@@ -13,6 +13,7 @@ from phiacta.config import get_settings
 
 # Import all models so autogenerate can detect them.
 import phiacta.core.models  # noqa: F401
+import phiacta.jobs.models  # noqa: F401
 from phiacta.core.models.base import Base
 
 # Alembic Config object

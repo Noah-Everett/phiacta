@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from pydantic_settings import BaseSettings
 
     from phiacta.core.compose import EntryDataProvider
+    from phiacta.tools.base import ToolHandler
 
 # Type alias for on_ingest hook functions.
 # Signature: async def on_ingest(entry_id: UUID, content: str | None, metadata: dict, db: AsyncSession) -> None
@@ -72,6 +73,8 @@ class PluginRegistration:
     entry_data_provider: EntryDataProvider | None = None
     # Optional hook called during ingestion (content changes, reconciliation).
     on_ingest: OnIngestHook | None = None
+    # Optional tool handler for tools that run via the job worker.
+    tool_handler: ToolHandler | None = None
 
 
 # Maps PluginType to the directory name under src/phiacta/
@@ -227,6 +230,7 @@ class PluginRegistry:
         router = getattr(module, "router", None)
         edp = getattr(module, "entry_data_provider", None)
         on_ingest = getattr(module, "on_ingest", None)
+        tool_handler = getattr(module, "tool_handler", None)
 
         self._plugins[manifest.name] = PluginRegistration(
             manifest=manifest,
@@ -234,6 +238,7 @@ class PluginRegistry:
             settings=settings,
             entry_data_provider=edp,
             on_ingest=on_ingest,
+            tool_handler=tool_handler,
         )
 
     def resolve_dependencies(self) -> list[str]:
@@ -308,6 +313,16 @@ class PluginRegistry:
             for reg in self._plugins.values()
             if reg.entry_data_provider is not None
         ]
+
+    def get_tool_handlers(self) -> dict[str, ToolHandler]:
+        """Return all registered tool handlers, keyed by plugin name."""
+        from phiacta.tools.base import ToolHandler
+
+        return {
+            name: reg.tool_handler
+            for name, reg in self._plugins.items()
+            if reg.tool_handler is not None
+        }
 
     def get_on_ingest_hooks(self) -> list[OnIngestHook]:
         """Return all registered on_ingest hooks."""
