@@ -6,9 +6,15 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        libpq-dev gcc curl \
-    && curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net | sh \
-    && mv tectonic /usr/local/bin/ \
+        libpq-dev gcc curl ca-certificates \
+    && ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "arm64" ]; then TARCH="aarch64-unknown-linux-musl"; \
+       else TARCH="x86_64-unknown-linux-gnu"; fi \
+    && curl -fsSL "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-${TARCH}.tar.gz" \
+       -o /tmp/tectonic.tar.gz \
+    && tar xzf /tmp/tectonic.tar.gz -C /usr/local/bin/ tectonic \
+    && rm /tmp/tectonic.tar.gz \
+    && chmod +x /usr/local/bin/tectonic \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
