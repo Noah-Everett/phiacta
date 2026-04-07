@@ -6,7 +6,9 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        libpq-dev gcc \
+        libpq-dev gcc curl \
+    && curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net | sh \
+    && mv tectonic /usr/local/bin/ \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
