@@ -15,4 +15,4 @@ class CompileRequest(BaseModel):
 class CompileResponse(BaseModel):
     success: bool
     log: str
-    pdf_path: str | None = None
+    file_size: int | None = None

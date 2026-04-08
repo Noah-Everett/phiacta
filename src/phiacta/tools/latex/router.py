@@ -23,8 +23,8 @@ async def compile_latex(
 ) -> CompileResponse:
     """Compile an entry's LaTeX source to PDF.
 
-    Reads ``.phiacta/content.tex``, compiles with tectonic, and commits
-    the resulting PDF to ``.phiacta/output.pdf``.
+    Reads ``.phiacta/content.tex`` (or ``content/main.tex``), compiles
+    with tectonic, and stores the PDF via the compiled_content extension.
     """
     job = await worker.submit_and_wait(
         job_type="latex",
@@ -41,5 +41,5 @@ async def compile_latex(
     return CompileResponse(
         success=result.get("success", False),
         log=result.get("log", ""),
-        pdf_path=result.get("pdf_path"),
+        file_size=result.get("file_size"),
     )
