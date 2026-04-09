@@ -664,46 +664,59 @@ class ForgejoGitService:
         message: str,
         branch: str = "main",
     ) -> str:
-        """Commit one or more files via the Forgejo Contents API.
+        """Commit one or more files atomically via the Forgejo multi-file API.
 
-        Uses the ``POST /repos/{owner}/{repo}/contents/{filepath}`` and
-        ``PUT /repos/{owner}/{repo}/contents/{filepath}`` endpoints to create
-        or update files.  Each file is committed individually (Forgejo does not
-        support multi-file atomic commits via its REST API).
+        Uses ``POST /repos/{owner}/{repo}/contents`` with a ``files``
+        array to create or update all files in a single atomic commit.
 
-        Returns the SHA of the last commit created.
+        Returns the SHA of the created commit.
         """
-        repo = self._repo_path(entry_id)
-        last_sha = ""
+        if not files:
+            return ""
 
-        for i, fc in enumerate(files):
+        repo = self._repo_path(entry_id)
+
+        # Get the full file tree in one request to decide create vs update.
+        # This replaces N per-file GET requests with a single recursive tree fetch.
+        existing_paths: set[str] = set()
+        try:
+            ref_resp = await self._request(
+                "GET", f"/repos/{repo}/git/refs/heads/{branch}",
+            )
+            ref_data = ref_resp.json()
+            if isinstance(ref_data, list):
+                ref_data = ref_data[0]
+            head_sha = ref_data["object"]["sha"]
+
+            tree_resp = await self._request(
+                "GET",
+                f"/repos/{repo}/git/trees/{head_sha}",
+                params={"recursive": "true"},
+            )
+            for entry in tree_resp.json().get("tree", []):
+                if entry.get("type") == "blob":
+                    existing_paths.add(entry["path"])
+        except (RepoNotFoundError, KeyError):
+            pass  # new repo or empty branch
+
+        # Build file operations
+        file_ops = []
+        for fc in files:
             raw = fc.content if isinstance(fc.content, bytes) else fc.content.encode()
             encoded = base64.b64encode(raw).decode()
-
-            # Disambiguate commit messages when committing multiple files
-            file_msg = f"{message} ({fc.path})" if len(files) > 1 else message
-
-            # Check if the file already exists (to decide create vs update).
-            existing_sha: str | None = None
-            try:
-                resp = await self._request(
-                    "GET",
-                    f"/repos/{repo}/contents/{fc.path}",
-                    params={"ref": branch},
-                )
-                data = resp.json()
-                # Forgejo may return a list (directory listing) instead of a
-                # file object for paths containing directories.  If so, the
-                # specific file doesn't exist yet at this exact path.
-                if isinstance(data, dict):
-                    existing_sha = data.get("sha")
-            except RepoNotFoundError:
-                pass  # file does not exist yet
-
-            payload: dict = {
-                "message": file_msg,
+            file_ops.append({
+                "operation": "update" if fc.path in existing_paths else "create",
+                "path": fc.path,
                 "content": encoded,
+            })
+
+        resp = await self._request(
+            "POST",
+            f"/repos/{repo}/contents",
+            json={
+                "message": message,
                 "branch": branch,
+                "files": file_ops,
                 "author": {
                     "name": author.name,
                     "email": author.email,
@@ -712,27 +725,24 @@ class ForgejoGitService:
                     "name": "phiacta-service",
                     "email": "service@phiacta.local",
                 },
-            }
-            if existing_sha is not None:
-                payload["sha"] = existing_sha
+            },
+        )
 
-            method = "PUT" if existing_sha is not None else "POST"
-            resp = await self._request(
-                method,
-                f"/repos/{repo}/contents/{fc.path}",
-                json=payload,
-            )
-            commit_data = resp.json().get("commit", {})
-            last_sha = commit_data.get("sha", last_sha)
+        # Extract the commit SHA from the response
+        resp_data = resp.json()
+        commit_sha = ""
+        resp_files = resp_data.get("files", [])
+        if resp_files:
+            commit_sha = resp_files[0].get("last_commit_sha", "")
 
         logger.info(
             "Committed %d file(s) to %s@%s (sha=%s)",
             len(files),
             repo,
             branch,
-            last_sha[:12] if last_sha else "?",
+            commit_sha[:12] if commit_sha else "?",
         )
-        return last_sha
+        return commit_sha
 
     async def read_file(
         self, entry_id: UUID, path: str, ref: str = "main"

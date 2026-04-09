@@ -170,6 +170,73 @@ async def get_entry_file_content(
 # ---------------------------------------------------------------------------
 
 
+@router.post(
+    "/{entry_id}/files",
+    response_model=FileWriteResponse,
+)
+@limiter.limit("30/minute")
+async def post_entry_files(
+    request: Request,
+    entry_id: UUID,
+    files: list[UploadFile] = File(...),
+    paths: list[str] = Form(...),
+    message: str | None = Form(None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    git_service: GitService = Depends(get_git_service),
+    settings: Settings = Depends(get_settings),
+) -> FileWriteResponse:
+    """Upload multiple files in a single atomic commit.
+
+    Accepts parallel ``files`` and ``paths`` form fields.  Each file is
+    committed to the corresponding path in one git commit.
+    """
+    if len(files) != len(paths):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Mismatch: {len(files)} files but {len(paths)} paths",
+        )
+    if len(files) == 0:
+        raise HTTPException(status_code=422, detail="No files provided")
+
+    await _get_writable_entry(entry_id, user, db)
+
+    file_contents: list[FileContent] = []
+    for upload, path in zip(files, paths):
+        try:
+            validate_file_path(path)
+        except ValueError:
+            raise HTTPException(
+                status_code=422, detail=f"Invalid file path: {path}",
+            )
+
+        data = await upload.read()
+        if len(data) > settings.max_file_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File {path} exceeds maximum size of {settings.max_file_size_bytes} bytes",
+            )
+        file_contents.append(FileContent(path=path, content=data))
+
+    commit_message = message or f"Upload {len(file_contents)} file(s)"
+    author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
+
+    try:
+        sha = await git_service.commit_files(
+            entry_id, file_contents, author, commit_message,
+        )
+    except RepoNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="Entry repository not found",
+        ) from exc
+    except ForgejoError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+
+    return FileWriteResponse(sha=sha)
+
+
 @router.put(
     "/{entry_id}/files/{path:path}",
     response_model=FileWriteResponse,

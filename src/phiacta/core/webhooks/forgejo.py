@@ -39,6 +39,20 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
+# Paths that should trigger full ingestion when modified.
+_CONTENT_PREFIXES = (".phiacta/content.",)
+
+
+def _commits_touch_content(commits: list[dict]) -> bool:
+    """Check whether any commit modifies a content file."""
+    for commit in commits:
+        for key in ("added", "modified", "removed"):
+            for path in commit.get(key, []):
+                if any(path.startswith(p) for p in _CONTENT_PREFIXES):
+                    return True
+    # If no commit data, assume content changed (safe default)
+    return not commits
+
 
 def _verify_signature(body: bytes, signature: str, secret: str) -> bool:
     """Verify HMAC-SHA256 signature from Forgejo."""
@@ -156,11 +170,19 @@ async def _handle_push(
         logger.debug("SHA %s already ingested for entry %s, skipping", after_sha[:12], entry_id)
         return
 
-    # Run ingestion — wrapped in try/except to always return 200.
-    # Update current_head_sha only AFTER successful ingestion so that
-    # a transient failure will be retried on the next push.
+    # Check whether any content files actually changed.  If only
+    # supporting files (figures, bib, etc.) were modified, skip the
+    # expensive ingestion and just update the head SHA.
+    content_changed = _commits_touch_content(commits)
+
     try:
-        await ingest_entry(entry, after_sha, db, git_service, on_ingest_hooks=hooks)
+        if content_changed:
+            await ingest_entry(entry, after_sha, db, git_service, on_ingest_hooks=hooks)
+        else:
+            logger.debug(
+                "No content files changed for entry %s at %s, skipping ingestion",
+                entry_id, after_sha[:12],
+            )
         entry.current_head_sha = after_sha
     except Exception:
         logger.exception("Ingestion failed for entry %s at SHA %s", entry_id, after_sha[:12])
