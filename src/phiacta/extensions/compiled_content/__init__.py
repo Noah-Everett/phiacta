@@ -57,7 +57,7 @@ async def on_ingest(
         job_type="compiled_content",
         submitted_by=entry.created_by,
         input={"entry_id": str(entity_id)},
-        entry_id=entity_id,
+        entity_id=entity_id,
         timeout_seconds=180,
         max_attempts=3,
     )

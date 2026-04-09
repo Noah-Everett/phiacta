@@ -271,7 +271,7 @@ class TestOnIngestHook:
 
         stmt = select(func.count()).select_from(Job)
         if entry_id is not None:
-            stmt = stmt.where(Job.entry_id == entry_id)
+            stmt = stmt.where(Job.entity_id == entry_id)
         result = await db_session.execute(stmt)
         return result.scalar()
 
@@ -290,7 +290,7 @@ class TestOnIngestHook:
         )
 
         result = await db_session.execute(
-            select(Job).where(Job.entry_id == entry.id)
+            select(Job).where(Job.entity_id == entry.id)
         )
         job = result.scalar_one()
         assert job.job_type == "compiled_content"

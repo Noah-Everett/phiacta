@@ -15,7 +15,7 @@ class JobResponse(BaseModel):
     id: UUID
     job_type: str
     submitted_by: UUID
-    entry_id: UUID | None
+    entity_id: UUID | None
     status: str
     attempts: int
     last_error: str | None

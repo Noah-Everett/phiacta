@@ -32,7 +32,7 @@ class JobRepository:
         job_type: str,
         submitted_by: UUID,
         input: dict[str, Any],
-        entry_id: UUID | None = None,
+        entity_id: UUID | None = None,
         timeout_seconds: int = 120,
         max_attempts: int = 3,
     ) -> Job:
@@ -40,7 +40,7 @@ class JobRepository:
         job = Job(
             job_type=job_type,
             submitted_by=submitted_by,
-            entry_id=entry_id,
+            entity_id=entity_id,
             input=input,
             timeout_seconds=timeout_seconds,
             max_attempts=max_attempts,
@@ -157,6 +157,7 @@ class JobRepository:
         submitted_by: UUID | None = None,
         status: list[str] | None = None,
         job_type: str | None = None,
+        entity_id: UUID | None = None,
         cursor_created_at: str | None = None,
         cursor_id: UUID | None = None,
     ) -> list[Job]:
@@ -173,6 +174,8 @@ class JobRepository:
             stmt = stmt.where(Job.status.in_(status))
         if job_type is not None:
             stmt = stmt.where(Job.job_type == job_type)
+        if entity_id is not None:
+            stmt = stmt.where(Job.entity_id == entity_id)
         if cursor_created_at is not None and cursor_id is not None:
             cursor_dt = datetime.fromisoformat(cursor_created_at).replace(tzinfo=timezone.utc)
             stmt = stmt.where(

@@ -62,8 +62,8 @@ class TestJobCreate:
         await db_session.flush()
 
         repo = JobRepository(db_session)
-        job = await repo.create(job_type="latex", submitted_by=user.id, input={}, entry_id=entry.id)
-        assert job.entry_id == entry.id
+        job = await repo.create(job_type="latex", submitted_by=user.id, input={}, entity_id=entry.id)
+        assert job.entity_id == entry.id
 
     async def test_custom_timeout_and_max_attempts(self, db_session: AsyncSession) -> None:
         user = await _seed_user(db_session)

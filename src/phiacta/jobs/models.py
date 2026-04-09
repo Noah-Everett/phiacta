@@ -22,8 +22,8 @@ class Job(UUIDMixin, Base):
     submitted_by: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
     )
-    entry_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("entries.id", ondelete="SET NULL"), nullable=True,
+    entity_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("entities.id", ondelete="SET NULL"), nullable=True,
     )
 
     input: Mapped[dict] = mapped_column(

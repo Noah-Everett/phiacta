@@ -33,6 +33,7 @@ async def list_jobs(
         description="Comma-separated statuses to include. Defaults to pending,running.",
     ),
     job_type: str | None = Query(None),
+    entity_id: UUID | None = Query(None, description="Filter by entry ID."),
     limit: int = Query(50, ge=1, le=200),
     cursor: str | None = Query(None),
     user: User = Depends(get_current_user),
@@ -69,6 +70,7 @@ async def list_jobs(
         submitted_by=user.id,
         status=status_filter,
         job_type=job_type,
+        entity_id=entity_id,
         cursor_created_at=cursor_created_at,
         cursor_id=cursor_job_id,
     )
