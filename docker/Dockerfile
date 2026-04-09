@@ -97,49 +97,16 @@ CMD ["python", "-m", "phiacta.jobs.run_worker"]
 
 
 # ──────────────────────────────────────────
-# Stage 6: Worker LaTeX -- Tectonic + pre-cached TeX packages
+# Stage 6: Worker LaTeX -- TeX Live + git clone support
 # ──────────────────────────────────────────
 FROM worker-base AS worker-latex
 
-# Install Tectonic
-RUN ARCH=$(dpkg --print-architecture) \
-    && if [ "$ARCH" = "arm64" ]; then TARCH="aarch64-unknown-linux-musl"; \
-       else TARCH="x86_64-unknown-linux-gnu"; fi \
-    && curl -fsSL "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-${TARCH}.tar.gz" \
-       -o /tmp/tectonic.tar.gz \
-    && tar xzf /tmp/tectonic.tar.gz -C /usr/local/bin/ tectonic \
-    && rm /tmp/tectonic.tar.gz \
-    && chmod +x /usr/local/bin/tectonic
-
-# Pre-cache common TeX packages by compiling a document that uses them.
-# Tectonic downloads packages on first use; doing this at build time means
-# workers start fast and don't need network access at runtime.
-RUN mkdir -p /tmp/texcache && cd /tmp/texcache \
-    && printf '%s\n' \
-        '\documentclass{article}' \
-        '\usepackage{amsmath,amssymb,amsthm}' \
-        '\usepackage{mathtools}' \
-        '\usepackage{hyperref}' \
-        '\usepackage{graphicx}' \
-        '\usepackage{xcolor}' \
-        '\usepackage{geometry}' \
-        '\usepackage{booktabs}' \
-        '\usepackage{enumitem}' \
-        '\usepackage{natbib}' \
-        '\usepackage{tikz}' \
-        '\usepackage{pgfplots}' \
-        '\pgfplotsset{compat=1.18}' \
-        '\usepackage{algorithm2e}' \
-        '\usepackage{listings}' \
-        '\usepackage{caption,subcaption}' \
-        '\usepackage{microtype}' \
-        '\usepackage{siunitx}' \
-        '\usepackage{physics}' \
-        '\begin{document}' \
-        'Cache seed.' \
-        '\end{document}' \
-       > cache.tex \
-    && tectonic -X compile cache.tex \
-    && rm -rf /tmp/texcache
+# Install TeX Live (full scheme covers all packages arXiv papers could use)
+# and git (for fast repo cloning instead of file-by-file API fetching).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        texlive-full \
+        git \
+    && rm -rf /var/lib/apt/lists/*
 
 CMD ["python", "-m", "phiacta.jobs.run_worker"]

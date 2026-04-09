@@ -1,22 +1,34 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""LaTeX compilation core — used by the compiled_content on_ingest hook."""
+"""LaTeX compilation core.
+
+Supports two modes:
+- **git clone** (preferred): clones the entry repo and compiles in-place.
+  Fast for large multi-file projects. Requires ``git`` on PATH.
+- **API fallback**: fetches files one-by-one via the Forgejo API.
+  Used when git is not available (e.g. dev/test without git installed).
+
+Compiler priority: ``latexmk`` (TeX Live) > ``tectonic``.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID
 
+from phiacta.config import get_settings
 from phiacta.core.services.git_service import ForgejoGitService
 
 logger = logging.getLogger(__name__)
 
-_COMPILE_TIMEOUT = 120  # seconds
+_COMPILE_TIMEOUT = 300  # seconds (large papers need more time)
+_CLONE_TIMEOUT = 120  # seconds
 
 _CONTENT_DIR = ".phiacta/content/"
 
@@ -29,16 +41,82 @@ class CompileResult:
     no_source: bool = False  # True when entry has no LaTeX source at all
 
 
-async def find_latex_source(
+# ---------------------------------------------------------------------------
+# Git clone — fast path for multi-file projects
+# ---------------------------------------------------------------------------
+
+
+async def _clone_repo(entry_id: UUID, dest: Path) -> bool:
+    """Clone an entry repo into *dest*. Returns True on success."""
+    settings = get_settings()
+    user = settings.forgejo_admin_user
+    password = settings.forgejo_admin_password
+    org = settings.forgejo_org
+    base = settings.forgejo_url
+
+    # Build authenticated clone URL
+    # http://user:pass@forgejo:3000/org/repo-name.git
+    scheme_rest = base.split("://", 1)
+    clone_url = f"{scheme_rest[0]}://{user}:{password}@{scheme_rest[1]}/{org}/{entry_id}.git"
+
+    proc = await asyncio.create_subprocess_exec(
+        "git", "clone", "--depth=1", "--single-branch", clone_url, str(dest),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=_CLONE_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        logger.warning("git clone timed out for entry %s", entry_id)
+        return False
+
+    if proc.returncode != 0:
+        logger.warning(
+            "git clone failed for entry %s: %s",
+            entry_id, stderr.decode(errors="replace")[:500],
+        )
+        return False
+
+    return True
+
+
+def _has_git() -> bool:
+    return shutil.which("git") is not None
+
+
+# ---------------------------------------------------------------------------
+# Find LaTeX source
+# ---------------------------------------------------------------------------
+
+
+def _find_latex_source_on_disk(repo_dir: Path) -> tuple[str, Path | None]:
+    """Find the LaTeX entry point in a cloned repo directory."""
+    # Single-file case
+    single = repo_dir / ".phiacta" / "content.tex"
+    if single.exists():
+        return "content.tex", single
+
+    # Multi-file case
+    content_dir = repo_dir / ".phiacta" / "content"
+    if not content_dir.is_dir():
+        return "", None
+
+    for tex_file in content_dir.rglob("*.tex"):
+        text = tex_file.read_text(errors="replace")
+        if "\\documentclass" in text:
+            return str(tex_file.relative_to(content_dir)), tex_file
+
+    return "", None
+
+
+async def _find_latex_source_api(
     git: ForgejoGitService, entry_id: UUID,
 ) -> tuple[str, bytes | None]:
-    """Find the LaTeX entry point for an entry.
-
-    Checks in order:
-    1. Single-file: ``.phiacta/content.tex``
-    2. Multi-file: scan ``.phiacta/content/`` for the ``.tex`` file
-       containing ``\\documentclass``.
-    """
+    """Find the LaTeX entry point via the Forgejo API (fallback)."""
     # Single-file case
     try:
         data = await git.read_file(entry_id, ".phiacta/content.tex")
@@ -46,7 +124,7 @@ async def find_latex_source(
     except Exception:
         pass
 
-    # Multi-file case: find the .tex file with \documentclass
+    # Multi-file case
     try:
         all_paths = await git.list_tree_paths(entry_id, prefix=_CONTENT_DIR)
         tex_paths = [p for p in all_paths if p.endswith(".tex")]
@@ -65,80 +143,98 @@ async def find_latex_source(
     return "", None
 
 
-async def fetch_project_files(
-    git: ForgejoGitService, entry_id: UUID, main_path: str,
-) -> dict[str, bytes]:
-    """Fetch all files under .phiacta/content/ except the main file.
+# ---------------------------------------------------------------------------
+# Compile
+# ---------------------------------------------------------------------------
 
-    Uses the recursive git tree API so subdirectories (figures/, sections/,
-    etc.) are discovered in a single request.
-    """
-    files: dict[str, bytes] = {}
+
+async def _run_latexmk(tex_file: Path, work_dir: Path) -> CompileResult:
+    """Compile with latexmk (TeX Live). Preferred compiler."""
+    proc = await asyncio.create_subprocess_exec(
+        "latexmk", "-pdf", "-interaction=nonstopmode",
+        "-halt-on-error", str(tex_file),
+        cwd=str(work_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
     try:
-        file_paths = await git.list_tree_paths(entry_id, prefix=_CONTENT_DIR)
-        file_paths = [p for p in file_paths if p != main_path]
-
-        for fpath in file_paths:
-            try:
-                data = await git.read_file(entry_id, fpath)
-                rel = fpath.removeprefix(_CONTENT_DIR)
-                files[rel] = data
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return files
-
-
-async def run_tectonic(
-    main_filename: str,
-    source: bytes,
-    extra_files: dict[str, bytes],
-) -> CompileResult:
-    """Run tectonic and return the result."""
-    with TemporaryDirectory(prefix="phiacta-latex-") as tmpdir:
-        work = Path(tmpdir)
-
-        (work / main_filename).write_bytes(source)
-        for rel_path, data in extra_files.items():
-            dest = work / rel_path
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(data)
-        tex_file = str(work / main_filename)
-
-        proc = await asyncio.create_subprocess_exec(
-            "tectonic", "-X", "compile", tex_file,
-            cwd=str(work),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=_COMPILE_TIMEOUT,
         )
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=_COMPILE_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            return CompileResult(
-                success=False,
-                log=f"tectonic timed out after {_COMPILE_TIMEOUT}s",
-            )
-
-        log = (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()
-
-        if proc.returncode != 0:
-            return CompileResult(success=False, log=log)
-
-        pdf_name = Path(tex_file).stem + ".pdf"
-        pdf_path = work / pdf_name
-        if not pdf_path.exists():
-            return CompileResult(success=False, log=log + "\nNo PDF output produced")
-
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
         return CompileResult(
-            success=True,
-            log=log,
-            pdf_bytes=pdf_path.read_bytes(),
+            success=False,
+            log=f"latexmk timed out after {_COMPILE_TIMEOUT}s",
         )
+
+    log = (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()
+
+    pdf_path = tex_file.with_suffix(".pdf")
+    if not pdf_path.exists():
+        # Check work_dir root too (latexmk sometimes puts output there)
+        pdf_path = work_dir / tex_file.with_suffix(".pdf").name
+
+    if proc.returncode != 0 or not pdf_path.exists():
+        return CompileResult(success=False, log=log)
+
+    return CompileResult(
+        success=True,
+        log=log,
+        pdf_bytes=pdf_path.read_bytes(),
+    )
+
+
+async def _run_tectonic(tex_file: Path, work_dir: Path) -> CompileResult:
+    """Compile with Tectonic. Fallback when TeX Live is not installed."""
+    proc = await asyncio.create_subprocess_exec(
+        "tectonic", "-X", "compile", str(tex_file),
+        cwd=str(work_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=_COMPILE_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return CompileResult(
+            success=False,
+            log=f"tectonic timed out after {_COMPILE_TIMEOUT}s",
+        )
+
+    log = (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()
+
+    if proc.returncode != 0:
+        return CompileResult(success=False, log=log)
+
+    pdf_path = tex_file.with_suffix(".pdf")
+    if not pdf_path.exists():
+        return CompileResult(success=False, log=log + "\nNo PDF output produced")
+
+    return CompileResult(success=True, log=log, pdf_bytes=pdf_path.read_bytes())
+
+
+async def _compile_in_dir(main_rel: str, work_dir: Path) -> CompileResult:
+    """Compile the LaTeX source in *work_dir* using the best available compiler."""
+    tex_file = work_dir / main_rel
+
+    if shutil.which("latexmk"):
+        return await _run_latexmk(tex_file, work_dir)
+    elif shutil.which("tectonic"):
+        return await _run_tectonic(tex_file, work_dir)
+    else:
+        raise FileNotFoundError(
+            "No LaTeX compiler found (need latexmk or tectonic on PATH)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 async def compile_entry(
@@ -146,12 +242,54 @@ async def compile_entry(
 ) -> CompileResult:
     """Find LaTeX source for an entry, compile it, and return the result.
 
+    Uses git clone when available (fast), falls back to API file fetching.
     Does NOT store the PDF — the caller is responsible for that.
     """
     if git is None:
         git = ForgejoGitService()
 
-    source_path, source_bytes = await find_latex_source(git, entry_id)
+    # Fast path: git clone
+    if _has_git():
+        return await _compile_via_clone(entry_id)
+
+    # Fallback: API file fetching (one-by-one)
+    return await _compile_via_api(entry_id, git)
+
+
+async def _compile_via_clone(entry_id: UUID) -> CompileResult:
+    """Clone the repo and compile locally."""
+    with TemporaryDirectory(prefix="phiacta-latex-") as tmpdir:
+        repo_dir = Path(tmpdir) / "repo"
+
+        if not await _clone_repo(entry_id, repo_dir):
+            return CompileResult(
+                success=False,
+                log="Failed to clone entry repository",
+            )
+
+        main_rel, main_path = _find_latex_source_on_disk(repo_dir)
+        if main_path is None:
+            return CompileResult(
+                success=False,
+                log="No LaTeX source found (no .tex file with \\documentclass)",
+                no_source=True,
+            )
+
+        # Determine working directory
+        content_dir = repo_dir / ".phiacta" / "content"
+        if content_dir.is_dir() and main_path.is_relative_to(content_dir):
+            work_dir = content_dir
+        else:
+            work_dir = repo_dir / ".phiacta"
+
+        return await _compile_in_dir(main_rel, work_dir)
+
+
+async def _compile_via_api(
+    entry_id: UUID, git: ForgejoGitService,
+) -> CompileResult:
+    """Fetch files via API and compile in a temp directory (fallback)."""
+    source_path, source_bytes = await _find_latex_source_api(git, entry_id)
     if source_bytes is None:
         return CompileResult(
             success=False,
@@ -160,14 +298,30 @@ async def compile_entry(
         )
 
     is_multifile = source_path.startswith(_CONTENT_DIR)
-    extra_files: dict[str, bytes] = {}
 
-    if is_multifile:
-        # Main file is e.g. ".phiacta/content/paper.tex" → filename "paper.tex"
-        main_filename = source_path.removeprefix(_CONTENT_DIR)
-        extra_files = await fetch_project_files(git, entry_id, source_path)
-    else:
-        # Single file: ".phiacta/content.tex"
-        main_filename = "content.tex"
+    with TemporaryDirectory(prefix="phiacta-latex-") as tmpdir:
+        work = Path(tmpdir)
 
-    return await run_tectonic(main_filename, source_bytes, extra_files)
+        if is_multifile:
+            main_filename = source_path.removeprefix(_CONTENT_DIR)
+            # Fetch all project files
+            try:
+                file_paths = await git.list_tree_paths(
+                    entry_id, prefix=_CONTENT_DIR,
+                )
+                for fpath in file_paths:
+                    try:
+                        data = await git.read_file(entry_id, fpath)
+                        rel = fpath.removeprefix(_CONTENT_DIR)
+                        dest = work / rel
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        dest.write_bytes(data)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        else:
+            main_filename = "content.tex"
+            (work / main_filename).write_bytes(source_bytes)
+
+        return await _compile_in_dir(main_filename, work)
