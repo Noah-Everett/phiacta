@@ -25,6 +25,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from phiacta.core.repositories.entity_repository import EntityRepository
+from phiacta.core.repositories.activity_repository import ActivityRepository
 from phiacta.jobs.models import Job
 from phiacta.jobs.repository import JobRepository
 from phiacta.jobs.sandbox import Sandbox
@@ -155,10 +157,14 @@ class JobWorker:
                 )
                 await handler_session.commit()
 
-            # Mark completed
+            # Mark completed and log activity
             async with self._session_factory() as session:
                 repo = JobRepository(session)
                 await repo.mark_completed(job.id, result)
+                await self._log_job_activity(
+                    session, job, "job.completed",
+                    metadata={"job_type": job.job_type},
+                )
                 await session.commit()
 
             logger.info("Job %s (%s) completed", job.id, job.job_type)
@@ -175,7 +181,35 @@ class JobWorker:
             async with self._session_factory() as session:
                 repo = JobRepository(session)
                 await repo.mark_failed(job.id, str(exc))
+                await self._log_job_activity(
+                    session, job, "job.failed",
+                    metadata={"job_type": job.job_type, "error": str(exc)[:500]},
+                )
                 await session.commit()
+
+    async def _log_job_activity(
+        self,
+        session: any,
+        job: Job,
+        action: str,
+        *,
+        metadata: dict | None = None,
+    ) -> None:
+        """Log activity for a job status transition.
+
+        Skips silently if the job has no entity row (e.g. pre-registration jobs).
+        """
+        try:
+            entity = await EntityRepository(session).get_by_id(job.id)
+            if entity is not None:
+                await ActivityRepository(session).log(
+                    actor_id=job.submitted_by,
+                    action=action,
+                    entity_id=job.id,
+                    metadata=metadata,
+                )
+        except Exception:
+            logger.debug("Failed to log activity for job %s (%s)", job.id, action, exc_info=True)
 
     async def _handle_retry(self, job: Job, error: str) -> None:
         new_attempts = job.attempts + 1

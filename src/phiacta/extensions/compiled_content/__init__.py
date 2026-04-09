@@ -51,13 +51,29 @@ async def on_ingest(
     if entry is None:
         return
 
-    await JobRepository(db).create(
+    from phiacta.core.services.entity_service import EntityService
+
+    job = await JobRepository(db).create(
         job_type="compiled_content",
         submitted_by=entry.created_by,
         input={"entry_id": str(entity_id)},
         entry_id=entity_id,
         timeout_seconds=180,
         max_attempts=3,
+    )
+
+    entity_svc = EntityService(db)
+    await entity_svc.register_entity(
+        entity_type="job",
+        parent_id=entity_id,
+        created_by=entry.created_by,
+        id=job.id,
+    )
+    await entity_svc.log_activity(
+        actor_id=entry.created_by,
+        action="job.created",
+        entity_id=job.id,
+        metadata={"job_type": "compiled_content"},
     )
 
     logger.info("Submitted compilation job for entry %s", entity_id)

@@ -17,6 +17,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from phiacta.core.services.entity_service import EntityService
 from phiacta.jobs.models import Job
 from phiacta.jobs.repository import JobRepository
 
@@ -46,7 +47,7 @@ async def submit_and_wait(
     """
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    # Insert the job
+    # Insert the job and register its entity
     async with factory() as session:
         repo = JobRepository(session)
         job = await repo.create(
@@ -55,6 +56,19 @@ async def submit_and_wait(
             input=input,
             entry_id=entry_id,
             timeout_seconds=timeout_seconds,
+        )
+        entity_svc = EntityService(session)
+        await entity_svc.register_entity(
+            entity_type="job",
+            parent_id=entry_id,
+            created_by=submitted_by,
+            id=job.id,
+        )
+        await entity_svc.log_activity(
+            actor_id=submitted_by,
+            action="job.created",
+            entity_id=job.id,
+            metadata={"job_type": job_type},
         )
         await session.commit()
         job_id = job.id

@@ -13,6 +13,8 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.pagination import keyset_condition
+
 from phiacta.jobs.models import Job
 
 logger = logging.getLogger(__name__)
@@ -147,6 +149,38 @@ class JobRepository:
                 updated_at=datetime.now(UTC),
             )
         )
+
+    async def list_jobs(
+        self,
+        *,
+        limit: int = 50,
+        submitted_by: UUID | None = None,
+        status: list[str] | None = None,
+        job_type: str | None = None,
+        cursor_created_at: str | None = None,
+        cursor_id: UUID | None = None,
+    ) -> list[Job]:
+        """List jobs with optional filters, newest first (created_at DESC)."""
+        from datetime import timezone
+
+        stmt = (
+            select(Job)
+            .order_by(Job.created_at.desc(), Job.id.desc())
+        )
+        if submitted_by is not None:
+            stmt = stmt.where(Job.submitted_by == submitted_by)
+        if status is not None:
+            stmt = stmt.where(Job.status.in_(status))
+        if job_type is not None:
+            stmt = stmt.where(Job.job_type == job_type)
+        if cursor_created_at is not None and cursor_id is not None:
+            cursor_dt = datetime.fromisoformat(cursor_created_at).replace(tzinfo=timezone.utc)
+            stmt = stmt.where(
+                keyset_condition(Job.created_at, Job.id, cursor_dt, cursor_id, descending=True)
+            )
+        stmt = stmt.limit(limit)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
     async def recover_stale(self) -> int:
         """Reset jobs stuck in 'running' from a previous crash. Returns count."""
