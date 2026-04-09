@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Tests for tool_handler registration in the plugin system."""
+"""Tests for job_handler registration in the plugin system."""
 
 from __future__ import annotations
 
@@ -12,34 +12,34 @@ from typing import Any
 import pytest
 
 from phiacta.plugin import PluginManifest, PluginRegistry, PluginRegistration, PluginType
-from phiacta.tools.base import ToolContext, ToolHandler
+from phiacta.tools.base import JobContext, JobHandler
 
 
-class _DummyHandler(ToolHandler):
-    async def run(self, input: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+class _DummyHandler(JobHandler):
+    async def run(self, input: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
         return {}
 
 
-class TestPluginRegistrationToolHandler:
-    def test_tool_handler_defaults_to_none(self) -> None:
+class TestPluginRegistrationJobHandler:
+    def test_job_handler_defaults_to_none(self) -> None:
         reg = PluginRegistration(
             manifest=PluginManifest(name="test", type=PluginType.TOOL, version="1.0.0"),
         )
-        assert reg.tool_handler is None
+        assert reg.job_handler is None
 
-    def test_tool_handler_can_be_set(self) -> None:
+    def test_job_handler_can_be_set(self) -> None:
         handler = _DummyHandler()
         reg = PluginRegistration(
             manifest=PluginManifest(name="test", type=PluginType.TOOL, version="1.0.0"),
-            tool_handler=handler,
+            job_handler=handler,
         )
-        assert reg.tool_handler is handler
+        assert reg.job_handler is handler
 
 
-class TestPluginRegistryGetToolHandlers:
+class TestPluginRegistryGetJobHandlers:
     def test_returns_empty_when_no_handlers(self) -> None:
         registry = PluginRegistry(enabled_plugins=[])
-        assert registry.get_tool_handlers() == {}
+        assert registry.get_job_handlers() == {}
 
     def test_returns_registered_handlers(self) -> None:
         handler = _DummyHandler()
@@ -47,9 +47,9 @@ class TestPluginRegistryGetToolHandlers:
         # Manually register a plugin with a handler
         registry._plugins["latex"] = PluginRegistration(
             manifest=PluginManifest(name="latex", type=PluginType.TOOL, version="1.0.0"),
-            tool_handler=handler,
+            job_handler=handler,
         )
-        result = registry.get_tool_handlers()
+        result = registry.get_job_handlers()
         assert "latex" in result
         assert result["latex"] is handler
 
@@ -60,24 +60,24 @@ class TestPluginRegistryGetToolHandlers:
         )
         registry._plugins["latex"] = PluginRegistration(
             manifest=PluginManifest(name="latex", type=PluginType.TOOL, version="1.0.0"),
-            tool_handler=_DummyHandler(),
+            job_handler=_DummyHandler(),
         )
-        result = registry.get_tool_handlers()
+        result = registry.get_job_handlers()
         assert "search" not in result
         assert "latex" in result
 
 
-class TestPluginDiscoveryToolHandler:
-    """Test that discover() picks up tool_handler from plugin modules."""
+class TestPluginDiscoveryJobHandler:
+    """Test that discover() picks up job_handler from plugin modules."""
 
-    def test_discovers_tool_handler(self, tmp_path: Path) -> None:
-        """Create a fake tool plugin with a tool_handler and verify discovery."""
+    def test_discovers_job_handler(self, tmp_path: Path) -> None:
+        """Create a fake tool plugin with a job_handler and verify discovery."""
         tool_dir = tmp_path / "tools" / "fake_tool"
         tool_dir.mkdir(parents=True)
 
         (tool_dir / "__init__.py").write_text(dedent("""\
             from phiacta.plugin import PluginManifest, PluginType
-            from phiacta.tools.base import ToolHandler, ToolContext
+            from phiacta.tools.base import JobHandler, JobContext
             from typing import Any
 
             manifest = PluginManifest(
@@ -86,11 +86,11 @@ class TestPluginDiscoveryToolHandler:
                 version="1.0.0",
             )
 
-            class FakeHandler(ToolHandler):
-                async def run(self, input: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+            class FakeHandler(JobHandler):
+                async def run(self, input: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
                     return {"fake": True}
 
-            tool_handler = FakeHandler()
+            job_handler = FakeHandler()
         """))
 
         registry = PluginRegistry(
@@ -99,11 +99,11 @@ class TestPluginDiscoveryToolHandler:
         )
         registry.discover()
 
-        handlers = registry.get_tool_handlers()
+        handlers = registry.get_job_handlers()
         assert "fake_tool" in handlers
 
     def test_plugin_without_handler_still_works(self, tmp_path: Path) -> None:
-        """Existing tools without tool_handler should still load fine."""
+        """Existing tools without job_handler should still load fine."""
         tool_dir = tmp_path / "tools" / "simple_tool"
         tool_dir.mkdir(parents=True)
 
@@ -123,7 +123,7 @@ class TestPluginDiscoveryToolHandler:
         )
         registry.discover()
 
-        handlers = registry.get_tool_handlers()
+        handlers = registry.get_job_handlers()
         assert "simple_tool" not in handlers
         # But the plugin itself is registered
         assert "simple_tool" in registry.plugins

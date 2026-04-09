@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""Tests for the ToolHandler ABC, ToolContext, and exception hierarchy."""
+"""Tests for the JobHandler ABC, JobContext, and exception hierarchy."""
 
 from __future__ import annotations
 
@@ -12,35 +12,35 @@ from uuid import uuid4
 import pytest
 
 from phiacta.tools.base import (
-    ToolContext,
-    ToolError,
-    ToolHandler,
-    ToolInfraError,
-    ToolUserError,
+    JobContext,
+    JobError,
+    JobHandler,
+    JobInfraError,
+    JobUserError,
 )
 
 
-# --- ToolHandler ABC -------------------------------------------------------
+# --- JobHandler ABC -------------------------------------------------------
 
 
-class _EchoHandler(ToolHandler):
+class _EchoHandler(JobHandler):
     """Minimal concrete handler for testing."""
 
-    async def run(self, input: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    async def run(self, input: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
         return {"echo": input}
 
 
-class _FileTriggeredHandler(ToolHandler):
+class _FileTriggeredHandler(JobHandler):
     file_triggered = True
 
-    async def run(self, input: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    async def run(self, input: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
         return {}
 
 
-class TestToolHandlerABC:
+class TestJobHandlerABC:
     def test_cannot_instantiate_abstract(self) -> None:
         with pytest.raises(TypeError):
-            ToolHandler()  # type: ignore[abstract]
+            JobHandler()  # type: ignore[abstract]
 
     def test_concrete_handler_instantiates(self) -> None:
         handler = _EchoHandler()
@@ -48,7 +48,7 @@ class TestToolHandlerABC:
 
     async def test_run_returns_result(self) -> None:
         handler = _EchoHandler()
-        ctx = ToolContext(db=AsyncMock(), user_id=uuid4(), sandbox=AsyncMock())
+        ctx = JobContext(db=AsyncMock(), user_id=uuid4(), sandbox=AsyncMock())
         result = await handler.run({"key": "value"}, ctx)
         assert result == {"echo": {"key": "value"}}
 
@@ -59,15 +59,15 @@ class TestToolHandlerABC:
         assert _FileTriggeredHandler.file_triggered is True
 
 
-# --- ToolContext -------------------------------------------------------------
+# --- JobContext -------------------------------------------------------------
 
 
-class TestToolContext:
+class TestJobContext:
     def test_fields(self) -> None:
         db = AsyncMock()
         user_id = uuid4()
         sandbox = AsyncMock()
-        ctx = ToolContext(db=db, user_id=user_id, sandbox=sandbox)
+        ctx = JobContext(db=db, user_id=user_id, sandbox=sandbox)
         assert ctx.db is db
         assert ctx.user_id == user_id
         assert ctx.sandbox is sandbox
@@ -78,21 +78,21 @@ class TestToolContext:
 
 class TestExceptions:
     def test_tool_error_is_exception(self) -> None:
-        assert issubclass(ToolError, Exception)
+        assert issubclass(JobError, Exception)
 
     def test_infra_error_is_tool_error(self) -> None:
-        assert issubclass(ToolInfraError, ToolError)
+        assert issubclass(JobInfraError, JobError)
 
     def test_user_error_is_tool_error(self) -> None:
-        assert issubclass(ToolUserError, ToolError)
+        assert issubclass(JobUserError, JobError)
 
     def test_infra_error_not_user_error(self) -> None:
-        assert not issubclass(ToolInfraError, ToolUserError)
+        assert not issubclass(JobInfraError, JobUserError)
 
     def test_catch_tool_error_catches_infra(self) -> None:
-        with pytest.raises(ToolError):
-            raise ToolInfraError("docker down")
+        with pytest.raises(JobError):
+            raise JobInfraError("docker down")
 
     def test_catch_tool_error_catches_user(self) -> None:
-        with pytest.raises(ToolError):
-            raise ToolUserError("bad input")
+        with pytest.raises(JobError):
+            raise JobUserError("bad input")

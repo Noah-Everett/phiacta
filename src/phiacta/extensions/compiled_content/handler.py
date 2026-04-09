@@ -15,15 +15,15 @@ from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.services.git_service import ForgejoGitService, ForgejoUnavailableError
 from phiacta.extensions.compiled_content.compile import compile_entry
 from phiacta.extensions.compiled_content.repository import CompiledContentRepository
-from phiacta.tools.base import ToolContext, ToolHandler, ToolInfraError, ToolUserError
+from phiacta.tools.base import JobContext, JobHandler, JobInfraError, JobUserError
 
 logger = logging.getLogger(__name__)
 
 
-class CompileHandler(ToolHandler):
+class CompileHandler(JobHandler):
     """Compiles LaTeX entries and stores the resulting PDF."""
 
-    async def run(self, input: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    async def run(self, input: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
         entry_id = UUID(input["entry_id"])
 
         # Check entry still exists
@@ -38,15 +38,15 @@ class CompileHandler(ToolHandler):
             git = ForgejoGitService()
             result = await compile_entry(entry_id, git=git)
         except (ForgejoUnavailableError, httpx.ConnectError, httpx.TimeoutException) as exc:
-            raise ToolInfraError(f"Git service unavailable: {exc}") from exc
+            raise JobInfraError(f"Git service unavailable: {exc}") from exc
         except FileNotFoundError as exc:
-            raise ToolInfraError(f"tectonic binary not found: {exc}") from exc
+            raise JobInfraError(f"tectonic binary not found: {exc}") from exc
 
         if result.no_source:
             return {"status": "skipped", "reason": "no_latex_source"}
 
         if not result.success or result.pdf_bytes is None:
-            raise ToolUserError(f"LaTeX compilation failed: {result.log[:500]}")
+            raise JobUserError(f"LaTeX compilation failed: {result.log[:500]}")
 
         # Guard against stale overwrites: if the entry has moved on since
         # this job was submitted, skip the upsert.

@@ -16,37 +16,37 @@ from uuid import uuid4
 import pytest
 
 from phiacta.jobs.worker import JobWorker, _backoff_seconds
-from phiacta.tools.base import ToolContext, ToolHandler, ToolInfraError
+from phiacta.tools.base import JobContext, JobHandler, JobInfraError
 
 
 # --- Helpers ----------------------------------------------------------------
 
 
-class _SuccessHandler(ToolHandler):
+class _SuccessHandler(JobHandler):
     """Handler that always succeeds."""
 
-    async def run(self, input: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    async def run(self, input: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
         return {"status": "ok", **input}
 
 
-class _FailHandler(ToolHandler):
+class _FailHandler(JobHandler):
     """Handler that always raises a permanent error."""
 
-    async def run(self, input: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    async def run(self, input: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
         raise ValueError("bad input")
 
 
-class _InfraFailHandler(ToolHandler):
+class _InfraFailHandler(JobHandler):
     """Handler that always raises an infrastructure error."""
 
-    async def run(self, input: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
-        raise ToolInfraError("docker daemon unreachable")
+    async def run(self, input: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
+        raise JobInfraError("docker daemon unreachable")
 
 
-class _SlowHandler(ToolHandler):
+class _SlowHandler(JobHandler):
     """Handler that takes longer than the job timeout."""
 
-    async def run(self, input: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    async def run(self, input: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
         await asyncio.sleep(999)
         return {}
 

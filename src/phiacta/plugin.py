@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from pydantic_settings import BaseSettings
 
     from phiacta.core.compose import EntryDataProvider
-    from phiacta.tools.base import ToolHandler
+    from phiacta.tools.base import JobHandler
 
 # Type alias for on_ingest hook functions.
 # Signature: async def on_ingest(entry_id: UUID, content: str | None, metadata: dict, db: AsyncSession) -> None
@@ -74,7 +74,7 @@ class PluginRegistration:
     # Optional hook called during ingestion (content changes, reconciliation).
     on_ingest: OnIngestHook | None = None
     # Optional tool handler for tools that run via the job worker.
-    tool_handler: ToolHandler | None = None
+    job_handler: JobHandler | None = None
 
 
 # Maps PluginType to the directory name under src/phiacta/
@@ -230,7 +230,7 @@ class PluginRegistry:
         router = getattr(module, "router", None)
         edp = getattr(module, "entry_data_provider", None)
         on_ingest = getattr(module, "on_ingest", None)
-        tool_handler = getattr(module, "tool_handler", None)
+        job_handler = getattr(module, "job_handler", None)
 
         self._plugins[manifest.name] = PluginRegistration(
             manifest=manifest,
@@ -238,7 +238,7 @@ class PluginRegistry:
             settings=settings,
             entry_data_provider=edp,
             on_ingest=on_ingest,
-            tool_handler=tool_handler,
+            job_handler=job_handler,
         )
 
     def resolve_dependencies(self) -> list[str]:
@@ -314,14 +314,14 @@ class PluginRegistry:
             if reg.entry_data_provider is not None
         ]
 
-    def get_tool_handlers(self) -> dict[str, ToolHandler]:
-        """Return all registered tool handlers, keyed by plugin name."""
-        from phiacta.tools.base import ToolHandler
+    def get_job_handlers(self) -> dict[str, JobHandler]:
+        """Return all registered job handlers, keyed by plugin name."""
+        from phiacta.tools.base import JobHandler
 
         return {
-            name: reg.tool_handler
+            name: reg.job_handler
             for name, reg in self._plugins.items()
-            if reg.tool_handler is not None
+            if reg.job_handler is not None
         }
 
     def get_on_ingest_hooks(self) -> list[OnIngestHook]:

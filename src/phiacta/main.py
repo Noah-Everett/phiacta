@@ -46,9 +46,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     on_ingest_hooks = registry.get_on_ingest_hooks()
     outbox_worker = await start_outbox_worker(engine, on_ingest_hooks=on_ingest_hooks)
 
-    # Start job worker for sandboxed tool execution
-    tool_handlers = registry.get_tool_handlers()
-    job_worker = await start_job_worker(engine, handlers=tool_handlers)
+    # Start job worker for async job execution
+    job_handlers = registry.get_job_handlers()
+    job_worker = await start_job_worker(engine, handlers=job_handlers)
 
     # Store on app state for access in endpoints
     app.state.engine = engine

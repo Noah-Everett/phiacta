@@ -9,7 +9,7 @@ for safe concurrent polling. Provides ``submit_and_wait`` for tool
 routers that need to block until a job completes.
 
 Retry policy:
-    - **Infrastructure errors** (ToolInfraError): retried with exponential
+    - **Infrastructure errors** (JobInfraError): retried with exponential
       backoff up to ``max_attempts``, then marked as ``failed``.
     - **User/input errors** (all other exceptions): marked as ``failed``
       immediately — no retry.
@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from phiacta.jobs.models import Job
 from phiacta.jobs.repository import JobRepository
 from phiacta.jobs.sandbox import Sandbox
-from phiacta.tools.base import ToolContext, ToolHandler, ToolInfraError
+from phiacta.tools.base import JobContext, JobHandler, JobInfraError
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class JobWorker:
     def __init__(
         self,
         engine: AsyncEngine,
-        handlers: dict[str, ToolHandler],
+        handlers: dict[str, JobHandler],
     ) -> None:
         self._engine = engine
         self._session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -195,7 +195,7 @@ class JobWorker:
         try:
             # Run the handler with a fresh DB session
             async with self._session_factory() as handler_session:
-                ctx = ToolContext(
+                ctx = JobContext(
                     db=handler_session,
                     user_id=job.submitted_by,
                     sandbox=self._sandbox,
@@ -214,7 +214,7 @@ class JobWorker:
 
             logger.info("Job %s (%s) completed", job.id, job.job_type)
 
-        except ToolInfraError as exc:
+        except JobInfraError as exc:
             await self._handle_retry(job, str(exc))
 
         except asyncio.TimeoutError:
@@ -260,7 +260,7 @@ class JobWorker:
 
 async def start_job_worker(
     engine: AsyncEngine,
-    handlers: dict[str, ToolHandler] | None = None,
+    handlers: dict[str, JobHandler] | None = None,
 ) -> JobWorker:
     """Create and start a job worker. Returns the worker for shutdown."""
     worker = JobWorker(engine, handlers or {})

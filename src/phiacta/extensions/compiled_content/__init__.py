@@ -29,7 +29,7 @@ manifest = PluginManifest(
 )
 
 entry_data_provider = CompiledContentProvider()
-tool_handler = CompileHandler()
+job_handler = CompileHandler()
 
 
 async def on_ingest(
@@ -63,4 +63,4 @@ async def on_ingest(
     logger.info("Submitted compilation job for entry %s", entity_id)
 
 
-__all__ = ["manifest", "router", "entry_data_provider", "tool_handler", "on_ingest"]
+__all__ = ["manifest", "router", "entry_data_provider", "job_handler", "on_ingest"]

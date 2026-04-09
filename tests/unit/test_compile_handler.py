@@ -14,14 +14,14 @@ import pytest
 
 from phiacta.extensions.compiled_content.handler import CompileHandler
 from phiacta.jobs.models import Job  # noqa: F401 — registers table with Base.metadata
-from phiacta.tools.base import ToolContext, ToolInfraError, ToolUserError
+from phiacta.tools.base import JobContext, JobInfraError, JobUserError
 
 
 # --- Helpers ----------------------------------------------------------------
 
 
-def _make_ctx(db: AsyncMock | None = None) -> ToolContext:
-    return ToolContext(
+def _make_ctx(db: AsyncMock | None = None) -> JobContext:
+    return JobContext(
         db=db or AsyncMock(),
         user_id=uuid4(),
         sandbox=MagicMock(),
@@ -194,7 +194,7 @@ class TestCompileHandlerErrors:
                 "phiacta.extensions.compiled_content.handler.ForgejoGitService",
             ),
         ):
-            with pytest.raises(ToolUserError, match="LaTeX compilation failed"):
+            with pytest.raises(JobUserError, match="LaTeX compilation failed"):
                 await handler.run({"entry_id": str(entry.id)}, ctx)
 
     async def test_forgejo_unavailable_raises_infra_error(self) -> None:
@@ -220,7 +220,7 @@ class TestCompileHandlerErrors:
                 "phiacta.extensions.compiled_content.handler.ForgejoGitService",
             ),
         ):
-            with pytest.raises(ToolInfraError, match="Git service unavailable"):
+            with pytest.raises(JobInfraError, match="Git service unavailable"):
                 await handler.run({"entry_id": str(entry.id)}, ctx)
 
     async def test_missing_tectonic_raises_infra_error(self) -> None:
@@ -244,7 +244,7 @@ class TestCompileHandlerErrors:
                 "phiacta.extensions.compiled_content.handler.ForgejoGitService",
             ),
         ):
-            with pytest.raises(ToolInfraError, match="tectonic binary not found"):
+            with pytest.raises(JobInfraError, match="tectonic binary not found"):
                 await handler.run({"entry_id": str(entry.id)}, ctx)
 
 
