@@ -32,21 +32,19 @@ entry_data_provider = CompiledContentProvider()
 async def on_ingest(
     entity_id: UUID, content: str | None, metadata: dict, db: AsyncSession,
 ) -> None:
-    """Compile LaTeX source on ingestion and store the PDF."""
+    """Compile LaTeX source on ingestion and store the PDF.
+
+    Silently returns if the entry has no LaTeX source.
+    """
     from phiacta.core.repositories.entry_repository import EntryRepository
     from phiacta.core.services.git_service import ForgejoGitService
     from phiacta.extensions.compiled_content.compile import compile_entry
     from phiacta.extensions.compiled_content.repository import CompiledContentRepository
 
-    git = ForgejoGitService()
+    result = await compile_entry(entity_id, git=ForgejoGitService())
 
-    # Quick check: does this entry have LaTeX source at all?
-    from phiacta.extensions.compiled_content.compile import find_latex_source
-    source_path, source_bytes = await find_latex_source(git, entity_id)
-    if source_bytes is None:
+    if result.no_source:
         return  # Not a LaTeX entry — nothing to compile
-
-    result = await compile_entry(entity_id, git=git)
 
     if not result.success or result.pdf_bytes is None:
         logger.warning(

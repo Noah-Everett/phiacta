@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Phiacta Contributors
 
-"""LaTeX compilation core — shared by the on_ingest hook and the manual
-compile tool endpoint."""
+"""LaTeX compilation core — used by the compiled_content on_ingest hook."""
 
 from __future__ import annotations
 
@@ -19,11 +18,7 @@ logger = logging.getLogger(__name__)
 
 _COMPILE_TIMEOUT = 120  # seconds
 
-# Paths to check for LaTeX source (in priority order)
-_SOURCE_PATHS = [
-    ".phiacta/content.tex",
-    ".phiacta/content/main.tex",
-]
+_CONTENT_DIR = ".phiacta/content/"
 
 
 @dataclass
@@ -31,39 +26,62 @@ class CompileResult:
     success: bool
     log: str
     pdf_bytes: bytes | None = None
+    no_source: bool = False  # True when entry has no LaTeX source at all
 
 
 async def find_latex_source(
     git: ForgejoGitService, entry_id: UUID,
 ) -> tuple[str, bytes | None]:
-    """Try each source path and return the first that exists."""
-    for path in _SOURCE_PATHS:
+    """Find the LaTeX entry point for an entry.
+
+    Checks in order:
+    1. Single-file: ``.phiacta/content.tex``
+    2. Multi-file: scan ``.phiacta/content/`` for the ``.tex`` file
+       containing ``\\documentclass``.
+    """
+    # Single-file case
+    try:
+        data = await git.read_file(entry_id, ".phiacta/content.tex")
+        return ".phiacta/content.tex", data
+    except Exception:
+        pass
+
+    # Multi-file case: find the .tex file with \documentclass
+    try:
+        all_paths = await git.list_tree_paths(entry_id, prefix=_CONTENT_DIR)
+        tex_paths = [p for p in all_paths if p.endswith(".tex")]
+    except Exception:
+        return "", None
+
+    for tex_path in tex_paths:
         try:
-            data = await git.read_file(entry_id, path)
-            return path, data
+            data = await git.read_file(entry_id, tex_path)
+            text = data.decode("utf-8", errors="replace")
+            if "\\documentclass" in text:
+                return tex_path, data
         except Exception:
             continue
+
     return "", None
 
 
 async def fetch_project_files(
-    git: ForgejoGitService, entry_id: UUID,
+    git: ForgejoGitService, entry_id: UUID, main_path: str,
 ) -> dict[str, bytes]:
-    """Fetch all files under .phiacta/content/ for multi-file projects.
+    """Fetch all files under .phiacta/content/ except the main file.
 
     Uses the recursive git tree API so subdirectories (figures/, sections/,
     etc.) are discovered in a single request.
     """
-    prefix = ".phiacta/content/"
     files: dict[str, bytes] = {}
     try:
-        file_paths = await git.list_tree_paths(entry_id, prefix=prefix)
-        file_paths = [p for p in file_paths if p != f"{prefix}main.tex"]
+        file_paths = await git.list_tree_paths(entry_id, prefix=_CONTENT_DIR)
+        file_paths = [p for p in file_paths if p != main_path]
 
         for fpath in file_paths:
             try:
                 data = await git.read_file(entry_id, fpath)
-                rel = fpath.removeprefix(prefix)
+                rel = fpath.removeprefix(_CONTENT_DIR)
                 files[rel] = data
             except Exception:
                 pass
@@ -73,24 +91,20 @@ async def fetch_project_files(
 
 
 async def run_tectonic(
+    main_filename: str,
     source: bytes,
     extra_files: dict[str, bytes],
-    is_multifile: bool,
 ) -> CompileResult:
     """Run tectonic and return the result."""
     with TemporaryDirectory(prefix="phiacta-latex-") as tmpdir:
         work = Path(tmpdir)
 
-        if is_multifile:
-            (work / "main.tex").write_bytes(source)
-            for rel_path, data in extra_files.items():
-                dest = work / rel_path
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(data)
-            tex_file = str(work / "main.tex")
-        else:
-            (work / "content.tex").write_bytes(source)
-            tex_file = str(work / "content.tex")
+        (work / main_filename).write_bytes(source)
+        for rel_path, data in extra_files.items():
+            dest = work / rel_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+        tex_file = str(work / main_filename)
 
         proc = await asyncio.create_subprocess_exec(
             "tectonic", "-X", "compile", tex_file,
@@ -141,12 +155,19 @@ async def compile_entry(
     if source_bytes is None:
         return CompileResult(
             success=False,
-            log=f"No LaTeX source found. Checked: {', '.join(_SOURCE_PATHS)}",
+            log="No LaTeX source found (no .tex file with \\documentclass)",
+            no_source=True,
         )
 
-    is_multifile = "content/" in source_path
+    is_multifile = source_path.startswith(_CONTENT_DIR)
     extra_files: dict[str, bytes] = {}
-    if is_multifile:
-        extra_files = await fetch_project_files(git, entry_id)
 
-    return await run_tectonic(source_bytes, extra_files, is_multifile)
+    if is_multifile:
+        # Main file is e.g. ".phiacta/content/paper.tex" → filename "paper.tex"
+        main_filename = source_path.removeprefix(_CONTENT_DIR)
+        extra_files = await fetch_project_files(git, entry_id, source_path)
+    else:
+        # Single file: ".phiacta/content.tex"
+        main_filename = "content.tex"
+
+    return await run_tectonic(main_filename, source_bytes, extra_files)
