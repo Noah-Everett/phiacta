@@ -48,10 +48,13 @@ class JobWorker:
         self,
         engine: AsyncEngine,
         handlers: dict[str, JobHandler],
+        *,
+        job_types: list[str] | None = None,
     ) -> None:
         self._engine = engine
         self._session_factory = async_sessionmaker(engine, expire_on_commit=False)
         self._handlers = handlers
+        self._job_types = job_types
         self._sandbox = Sandbox()
         self._running = False
         self._task: asyncio.Task[None] | None = None
@@ -82,9 +85,11 @@ class JobWorker:
 
         self._running = True
         self._task = asyncio.create_task(self._poll_loop())
+        type_info = f", job_types: {self._job_types}" if self._job_types else ""
         logger.info(
-            "Job worker started (handlers: %s)",
+            "Job worker started (handlers: %s%s)",
             ", ".join(self._handlers) or "none",
+            type_info,
         )
 
     async def stop(self) -> None:
@@ -171,7 +176,7 @@ class JobWorker:
         async with self._session_factory() as session:
             async with session.begin():
                 repo = JobRepository(session)
-                jobs = await repo.claim_batch(limit=1)
+                jobs = await repo.claim_batch(limit=1, job_types=self._job_types)
 
         if not jobs:
             return 0
@@ -261,8 +266,10 @@ class JobWorker:
 async def start_job_worker(
     engine: AsyncEngine,
     handlers: dict[str, JobHandler] | None = None,
+    *,
+    job_types: list[str] | None = None,
 ) -> JobWorker:
     """Create and start a job worker. Returns the worker for shutdown."""
-    worker = JobWorker(engine, handlers or {})
+    worker = JobWorker(engine, handlers or {}, job_types=job_types)
     await worker.start()
     return worker

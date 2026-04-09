@@ -50,11 +50,17 @@ class JobRepository:
     async def get(self, job_id: UUID) -> Job | None:
         return await self._session.get(Job, job_id)
 
-    async def claim_batch(self, limit: int = 1) -> list[Job]:
+    async def claim_batch(
+        self, limit: int = 1, job_types: list[str] | None = None,
+    ) -> list[Job]:
         """Claim up to ``limit`` pending jobs atomically.
 
         Uses SELECT FOR UPDATE SKIP LOCKED so multiple workers can
         run concurrently without processing the same job.
+
+        If ``job_types`` is provided, only jobs matching those types are
+        claimed.  This allows dedicated worker containers to handle
+        specific job types.
         """
         now = datetime.now(UTC)
         stmt = (
@@ -67,6 +73,8 @@ class JobRepository:
             .limit(limit)
             .with_for_update(skip_locked=True)
         )
+        if job_types is not None:
+            stmt = stmt.where(Job.job_type.in_(job_types))
         result = await self._session.execute(stmt)
         jobs = list(result.scalars().all())
 

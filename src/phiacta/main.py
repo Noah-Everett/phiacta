@@ -15,7 +15,6 @@ from phiacta.core.api.router import v1_router
 from phiacta.core.db.session import get_engine
 from phiacta.core.services.git_service_dep import close_git_service
 from phiacta.core.services.outbox_worker import start_outbox_worker
-from phiacta.jobs.worker import start_job_worker
 from phiacta.core.webhooks.forgejo import router as webhook_router
 from phiacta.plugin import PluginRegistry
 
@@ -46,19 +45,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     on_ingest_hooks = registry.get_on_ingest_hooks()
     outbox_worker = await start_outbox_worker(engine, on_ingest_hooks=on_ingest_hooks)
 
-    # Start job worker for async job execution
-    job_handlers = registry.get_job_handlers()
-    job_worker = await start_job_worker(engine, handlers=job_handlers)
-
     # Store on app state for access in endpoints
     app.state.engine = engine
     app.state.outbox_worker = outbox_worker
-    app.state.job_worker = job_worker
 
     yield
 
     # Shutdown: cleanup
-    await job_worker.stop()
     await outbox_worker.stop()
     await close_git_service()
     await engine.dispose()
