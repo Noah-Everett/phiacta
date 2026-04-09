@@ -2,11 +2,14 @@
 # Copyright (C) 2026 Phiacta Contributors
 
 """Job worker: background asyncio task that polls the jobs table and
-dispatches to registered tool handlers.
+dispatches to registered job handlers.
 
 Modeled after the outbox worker. Uses SELECT FOR UPDATE SKIP LOCKED
-for safe concurrent polling. Provides ``submit_and_wait`` for tool
-routers that need to block until a job completes.
+for safe concurrent polling.
+
+For submitting jobs from an API endpoint and waiting for completion,
+see ``phiacta.jobs.submit.submit_and_wait`` — it uses cross-process
+DB polling instead of in-memory events.
 
 Retry policy:
     - **Infrastructure errors** (JobInfraError): retried with exponential
@@ -20,9 +23,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
-from uuid import UUID
-
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from phiacta.jobs.models import Job
@@ -58,8 +58,6 @@ class JobWorker:
         self._sandbox = Sandbox()
         self._running = False
         self._task: asyncio.Task[None] | None = None
-        # In-process coordination: tool routers await these events
-        self._waiters: dict[UUID, asyncio.Event] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -104,59 +102,6 @@ class JobWorker:
         logger.info("Job worker stopped")
 
     # ------------------------------------------------------------------
-    # Public API for tool routers
-    # ------------------------------------------------------------------
-
-    async def submit_and_wait(
-        self,
-        *,
-        job_type: str,
-        input: dict[str, Any],
-        submitted_by: UUID,
-        entry_id: UUID | None = None,
-        timeout_seconds: int = 120,
-    ) -> Job:
-        """Submit a job and block until it completes or times out.
-
-        Returns the final Job row (completed or failed).
-        """
-        if job_type not in self._handlers:
-            raise ValueError(f"Unknown job type: {job_type!r}")
-
-        # Insert the job
-        async with self._session_factory() as session:
-            repo = JobRepository(session)
-            job = await repo.create(
-                job_type=job_type,
-                submitted_by=submitted_by,
-                input=input,
-                entry_id=entry_id,
-                timeout_seconds=timeout_seconds,
-            )
-            await session.commit()
-            job_id = job.id
-
-        # Register a waiter so the poll loop can notify us
-        event = asyncio.Event()
-        self._waiters[job_id] = event
-
-        try:
-            # Buffer: job timeout + 30s for overhead
-            await asyncio.wait_for(event.wait(), timeout=timeout_seconds + 30)
-        except asyncio.TimeoutError:
-            logger.warning("submit_and_wait timed out for job %s", job_id)
-        finally:
-            self._waiters.pop(job_id, None)
-
-        # Return the final state
-        async with self._session_factory() as session:
-            repo = JobRepository(session)
-            final = await repo.get(job_id)
-            if final is None:
-                raise RuntimeError(f"Job {job_id} disappeared from the database")
-            return final
-
-    # ------------------------------------------------------------------
     # Poll loop
     # ------------------------------------------------------------------
 
@@ -194,7 +139,6 @@ class JobWorker:
                 repo = JobRepository(session)
                 await repo.mark_failed(job.id, f"No handler for job type: {job.job_type!r}")
                 await session.commit()
-            self._notify(job.id)
             return
 
         try:
@@ -233,9 +177,6 @@ class JobWorker:
                 await repo.mark_failed(job.id, str(exc))
                 await session.commit()
 
-        finally:
-            self._notify(job.id)
-
     async def _handle_retry(self, job: Job, error: str) -> None:
         new_attempts = job.attempts + 1
         retry_at = datetime.now(UTC) + timedelta(seconds=_backoff_seconds(new_attempts))
@@ -255,13 +196,6 @@ class JobWorker:
                 "Job %s (%s) infra error, retry %d/%d: %s",
                 job.id, job.job_type, new_attempts, job.max_attempts, error[:200],
             )
-
-    def _notify(self, job_id: UUID) -> None:
-        """Wake up any ``submit_and_wait`` caller waiting on this job."""
-        event = self._waiters.get(job_id)
-        if event is not None:
-            event.set()
-
 
 async def start_job_worker(
     engine: AsyncEngine,

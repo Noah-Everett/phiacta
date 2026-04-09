@@ -6,6 +6,7 @@
 from phiacta.jobs.models import Job
 from phiacta.jobs.sandbox import Sandbox, SandboxResult
 from phiacta.jobs.security import SecurityPolicy
+from phiacta.jobs.submit import submit_and_wait
 from phiacta.jobs.worker import JobWorker, start_job_worker
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "SandboxResult",
     "SecurityPolicy",
     "start_job_worker",
+    "submit_and_wait",
 ]
