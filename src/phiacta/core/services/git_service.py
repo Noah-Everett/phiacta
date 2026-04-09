@@ -204,6 +204,12 @@ class GitService(Protocol):
         """List files and directories at a given path and ref."""
         ...
 
+    async def list_tree_paths(
+        self, entry_id: UUID, prefix: str = "", ref: str = "main"
+    ) -> list[str]:
+        """List all file paths recursively, optionally filtered by prefix."""
+        ...
+
     # --- History ---
 
     async def list_commits(
@@ -784,6 +790,37 @@ class ForgejoGitService:
             )
             for item in items
         ]
+
+    async def list_tree_paths(
+        self, entry_id: UUID, prefix: str = "", ref: str = "main"
+    ) -> list[str]:
+        """List all file paths recursively via the git tree API.
+
+        Returns blob paths optionally filtered to those starting with *prefix*.
+        Uses a single API call regardless of directory depth.
+        """
+        repo = self._repo_path(entry_id)
+        # Resolve ref to a SHA
+        ref_resp = await self._request(
+            "GET", f"/repos/{repo}/git/refs/heads/{ref}",
+        )
+        ref_data = ref_resp.json()
+        if isinstance(ref_data, list):
+            ref_data = ref_data[0]
+        head_sha = ref_data["object"]["sha"]
+
+        tree_resp = await self._request(
+            "GET",
+            f"/repos/{repo}/git/trees/{head_sha}",
+            params={"recursive": "true"},
+        )
+        paths = []
+        for entry in tree_resp.json().get("tree", []):
+            if entry.get("type") == "blob":
+                p = entry["path"]
+                if not prefix or p.startswith(prefix):
+                    paths.append(p)
+        return paths
 
     async def delete_file(
         self,

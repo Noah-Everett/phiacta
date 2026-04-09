@@ -40,7 +40,7 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 # Paths that should trigger full ingestion when modified.
-_CONTENT_PREFIXES = (".phiacta/content.",)
+_CONTENT_PREFIXES = (".phiacta/content.", ".phiacta/content/")
 
 
 def _commits_touch_content(commits: list[dict]) -> bool:
