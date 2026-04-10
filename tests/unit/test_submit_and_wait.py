@@ -185,7 +185,7 @@ class TestSubmitAndWait:
         """Verifies job is created with the exact parameters passed in."""
         job = _make_job(status="completed")
         user_id = uuid4()
-        entry_id = uuid4()
+        entity_id = uuid4()
 
         mock_repo = AsyncMock()
         mock_repo.create.return_value = job
@@ -198,7 +198,7 @@ class TestSubmitAndWait:
                 job_type="compiled_content",
                 input={"entry_id": "abc"},
                 submitted_by=user_id,
-                entry_id=entry_id,
+                entity_id=entity_id,
                 timeout_seconds=60,
                 poll_interval=0.01,
             )
@@ -207,7 +207,7 @@ class TestSubmitAndWait:
             job_type="compiled_content",
             submitted_by=user_id,
             input={"entry_id": "abc"},
-            entry_id=entry_id,
+            entity_id=entity_id,
             timeout_seconds=60,
         )
 
@@ -231,8 +231,8 @@ class TestSubmitAndWait:
 
         mock_session.commit.assert_called()
 
-    async def test_entry_id_defaults_to_none(self) -> None:
-        """entry_id is optional and defaults to None."""
+    async def test_entity_id_defaults_to_none(self) -> None:
+        """entity_id is optional and defaults to None."""
         job = _make_job(status="completed")
 
         mock_repo = AsyncMock()
@@ -254,6 +254,6 @@ class TestSubmitAndWait:
             job_type="test",
             submitted_by=user_id,
             input={},
-            entry_id=None,
+            entity_id=None,
             timeout_seconds=120,
         )

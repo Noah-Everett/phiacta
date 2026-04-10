@@ -32,7 +32,7 @@ async def submit_and_wait(
     job_type: str,
     input: dict[str, Any],
     submitted_by: UUID,
-    entry_id: UUID | None = None,
+    entity_id: UUID | None = None,
     timeout_seconds: int = 120,
     poll_interval: float = _POLL_INTERVAL,
 ) -> Job:
@@ -54,13 +54,13 @@ async def submit_and_wait(
             job_type=job_type,
             submitted_by=submitted_by,
             input=input,
-            entry_id=entry_id,
+            entity_id=entity_id,
             timeout_seconds=timeout_seconds,
         )
         entity_svc = EntityService(session)
         await entity_svc.register_entity(
             entity_type="job",
-            parent_id=entry_id,
+            parent_id=entity_id,
             created_by=submitted_by,
             id=job.id,
         )
