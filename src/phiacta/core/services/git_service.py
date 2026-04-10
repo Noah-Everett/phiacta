@@ -509,8 +509,10 @@ class ForgejoGitService:
 
         if resp.status_code == 404:
             raise RepoNotFoundError(f"Not found: {method} {path}")
-        if resp.status_code == 503:
-            raise ForgejoUnavailableError("Forgejo returned 503 Service Unavailable")
+        if resp.status_code in (429, 503):
+            raise ForgejoUnavailableError(
+                f"Forgejo returned {resp.status_code} on {method} {path}"
+            )
         if resp.status_code >= 400:
             detail = resp.text[:500] if resp.text else str(resp.status_code)
             raise ForgejoError(
