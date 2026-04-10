@@ -59,7 +59,7 @@ class CompileHandler(JobHandler):
             return {"status": "skipped", "reason": "stale_sha"}
 
         await CompiledContentRepository(ctx.db).upsert(
-            entry_id=entry_id,
+            entity_id=entry_id,
             format="pdf",
             data=result.pdf_bytes,
             source_sha=source_sha,

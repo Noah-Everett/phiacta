@@ -11,8 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from phiacta.core.tool_deps import get_db, get_optional_user
+from phiacta.core.auth.dependencies import get_optional_user
+from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
+from phiacta.core.shared_deps import get_readable_entry
 from phiacta.extensions.compiled_content.repository import CompiledContentRepository
 
 router = APIRouter()
@@ -32,6 +34,8 @@ async def get_compiled_content(
     Returns the raw binary (e.g. PDF) with the appropriate content-type.
     Updates ``accessed_at`` for LRU eviction tracking.
     """
+    await get_readable_entry(entry_id, db, user=user)
+
     repo = CompiledContentRepository(db)
     row = await repo.get_by_entry(entry_id, format)
     if row is None:
@@ -47,6 +51,6 @@ async def get_compiled_content(
         media_type=mime,
         headers={
             "Content-Disposition": f'inline; filename="output.{format}"',
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": "private, no-store",
         },
     )

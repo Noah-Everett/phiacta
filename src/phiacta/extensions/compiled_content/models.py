@@ -15,7 +15,7 @@ from phiacta.core.models.base import Base, UUIDMixin
 class CompiledOutput(UUIDMixin, Base):
     __tablename__ = "compiled_outputs"
 
-    entry_id: Mapped[UUID] = mapped_column(
+    entity_id: Mapped[UUID] = mapped_column(
         ForeignKey("entities.id", ondelete="CASCADE"), nullable=False,
     )
     format: Mapped[str] = mapped_column(String(10), nullable=False, default="pdf")
@@ -30,5 +30,5 @@ class CompiledOutput(UUIDMixin, Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("entry_id", "format", name="uq_compiled_outputs_entry_format"),
+        UniqueConstraint("entity_id", "format", name="uq_compiled_outputs_entity_format"),
     )

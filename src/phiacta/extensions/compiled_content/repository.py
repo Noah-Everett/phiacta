@@ -20,7 +20,7 @@ class CompiledContentRepository:
     async def upsert(
         self,
         *,
-        entry_id: UUID,
+        entity_id: UUID,
         format: str,
         data: bytes,
         source_sha: str,
@@ -28,7 +28,7 @@ class CompiledContentRepository:
         """Insert or update a compiled output for an entry."""
         now = datetime.now(UTC)
         stmt = pg_insert(CompiledOutput).values(
-            entry_id=entry_id,
+            entity_id=entity_id,
             format=format,
             data=data,
             source_sha=source_sha,
@@ -37,7 +37,7 @@ class CompiledContentRepository:
             accessed_at=now,
         )
         stmt = stmt.on_conflict_do_update(
-            constraint="uq_compiled_outputs_entry_format",
+            constraint="uq_compiled_outputs_entity_format",
             set_={
                 "data": stmt.excluded.data,
                 "source_sha": stmt.excluded.source_sha,
@@ -52,41 +52,41 @@ class CompiledContentRepository:
         # Fetch the upserted row
         result = await self._session.execute(
             select(CompiledOutput).where(
-                CompiledOutput.entry_id == entry_id,
+                CompiledOutput.entity_id == entity_id,
                 CompiledOutput.format == format,
             )
         )
         return result.scalar_one()
 
     async def get_by_entry(
-        self, entry_id: UUID, format: str = "pdf",
+        self, entity_id: UUID, format: str = "pdf",
     ) -> CompiledOutput | None:
         result = await self._session.execute(
             select(CompiledOutput).where(
-                CompiledOutput.entry_id == entry_id,
+                CompiledOutput.entity_id == entity_id,
                 CompiledOutput.format == format,
             )
         )
         return result.scalar_one_or_none()
 
     async def get_metadata_by_entries(
-        self, entry_ids: list[UUID],
+        self, entity_ids: list[UUID],
     ) -> dict[UUID, dict]:
         """Bulk fetch metadata (no data blob) for entry list composition."""
-        if not entry_ids:
+        if not entity_ids:
             return {}
         result = await self._session.execute(
             select(
-                CompiledOutput.entry_id,
+                CompiledOutput.entity_id,
                 CompiledOutput.format,
                 CompiledOutput.file_size,
                 CompiledOutput.compiled_at,
                 CompiledOutput.source_sha,
-            ).where(CompiledOutput.entry_id.in_(entry_ids))
+            ).where(CompiledOutput.entity_id.in_(entity_ids))
         )
         out: dict[UUID, dict] = {}
         for row in result.all():
-            out[row.entry_id] = {
+            out[row.entity_id] = {
                 "format": row.format,
                 "file_size": row.file_size,
                 "compiled_at": row.compiled_at.isoformat(),
@@ -94,23 +94,23 @@ class CompiledContentRepository:
             }
         return out
 
-    async def touch_accessed(self, entry_id: UUID, format: str = "pdf") -> None:
+    async def touch_accessed(self, entity_id: UUID, format: str = "pdf") -> None:
         """Update accessed_at timestamp (for LRU eviction)."""
         await self._session.execute(
             update(CompiledOutput)
             .where(
-                CompiledOutput.entry_id == entry_id,
+                CompiledOutput.entity_id == entity_id,
                 CompiledOutput.format == format,
             )
             .values(accessed_at=datetime.now(UTC))
         )
 
-    async def delete(self, entry_id: UUID, format: str = "pdf") -> None:
+    async def delete(self, entity_id: UUID, format: str = "pdf") -> None:
         from sqlalchemy import delete as sa_delete
 
         await self._session.execute(
             sa_delete(CompiledOutput).where(
-                CompiledOutput.entry_id == entry_id,
+                CompiledOutput.entity_id == entity_id,
                 CompiledOutput.format == format,
             )
         )
