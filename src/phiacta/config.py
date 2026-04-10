@@ -33,7 +33,10 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
 
     # File upload limits
-    max_file_size_bytes: int = 25 * 1024 * 1024  # 25 MB
+    max_file_size_bytes: int = 25 * 1024 * 1024  # 25 MB per file
+    max_upload_files: int = 10_000  # max files per upload request
+    max_upload_size_bytes: int = 500 * 1024 * 1024  # 500 MB total per request
+    max_repo_size_bytes: int = 1024 * 1024 * 1024  # 1 GB per repo
 
     # Plugins
     enabled_plugins: list[str] = Field(default_factory=list)

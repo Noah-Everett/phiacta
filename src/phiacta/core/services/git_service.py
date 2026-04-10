@@ -359,6 +359,10 @@ class GitService(Protocol):
         """
         ...
 
+    async def get_repo_size(self, entry_id: UUID) -> int:
+        """Return the repository size in bytes."""
+        ...
+
     # --- Health / Lifecycle ---
 
     async def health_check(self) -> bool:
@@ -461,7 +465,7 @@ class ForgejoGitService:
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
-            timeout=httpx.Timeout(30.0, connect=10.0),
+            timeout=httpx.Timeout(120.0, connect=10.0),
             limits=httpx.Limits(
                 max_connections=20,
                 max_keepalive_connections=10,
@@ -1321,6 +1325,14 @@ class ForgejoGitService:
             return commit.get("id") or commit.get("sha")
         except RepoNotFoundError:
             return None
+
+    async def get_repo_size(self, entry_id: UUID) -> int:
+        """Return the repository size in bytes."""
+        resp = await self._request(
+            "GET", f"/repos/{self._repo_path(entry_id)}",
+        )
+        # Forgejo returns size in KiB
+        return resp.json().get("size", 0) * 1024
 
     # ------------------------------------------------------------------
     # Health

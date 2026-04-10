@@ -51,9 +51,28 @@ async def on_ingest(
     if entry is None:
         return
 
+    repo = JobRepository(db)
+
+    # Cancel any pending compilation jobs for this entry — superseded by this
+    # upload. Running jobs are left alone; the stale-SHA guard in the handler
+    # skips stale writes safely.
+    pending = await repo.list_jobs(
+        entity_id=entity_id,
+        job_type="compiled_content",
+        status=["pending"],
+        limit=10,
+    )
+    for old_job in pending:
+        await repo.mark_failed(
+            old_job.id,
+            "Superseded by newer upload",
+            increment_attempts=False,
+        )
+        logger.info("Cancelled superseded compilation job %s for entry %s", old_job.id, entity_id)
+
     from phiacta.core.services.entity_service import EntityService
 
-    job = await JobRepository(db).create(
+    job = await repo.create(
         job_type="compiled_content",
         submitted_by=entry.created_by,
         input={"entry_id": str(entity_id)},

@@ -178,9 +178,6 @@ async def get_entry_file_content(
 async def post_entry_files(
     request: Request,
     entry_id: UUID,
-    files: list[UploadFile] = File(...),
-    paths: list[str] = Form(...),
-    message: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     git_service: GitService = Depends(get_git_service),
@@ -190,7 +187,20 @@ async def post_entry_files(
 
     Accepts parallel ``files`` and ``paths`` form fields.  Each file is
     committed to the corresponding path in one git commit.
+
+    Parses the multipart form manually to raise Starlette's default
+    ``max_files=1000`` / ``max_fields=1000`` / ``max_part_size=1MB``
+    limits.
     """
+    form = await request.form(
+        max_files=settings.max_upload_files,
+        max_fields=settings.max_upload_files,
+        max_part_size=settings.max_file_size_bytes,
+    )
+    files: list[UploadFile] = form.getlist("files")  # type: ignore[assignment]
+    paths: list[str] = form.getlist("paths")  # type: ignore[assignment]
+    message: str | None = form.get("message")  # type: ignore[assignment]
+
     if len(files) != len(paths):
         raise HTTPException(
             status_code=422,
@@ -202,6 +212,7 @@ async def post_entry_files(
     await _get_writable_entry(entry_id, user, db)
 
     file_contents: list[FileContent] = []
+    total_size = 0
     for upload, path in zip(files, paths):
         try:
             validate_file_path(path)
@@ -216,7 +227,24 @@ async def post_entry_files(
                 status_code=400,
                 detail=f"File {path} exceeds maximum size of {settings.max_file_size_bytes} bytes",
             )
+        total_size += len(data)
+        if total_size > settings.max_upload_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Total upload size exceeds maximum of {settings.max_upload_size_bytes} bytes",
+            )
         file_contents.append(FileContent(path=path, content=data))
+
+    # Check repo size limit
+    try:
+        repo_size = await git_service.get_repo_size(entry_id)
+        if repo_size + total_size > settings.max_repo_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Upload would exceed repository size limit of {settings.max_repo_size_bytes} bytes",
+            )
+    except RepoNotFoundError:
+        pass  # new repo, no size to check
 
     commit_message = message or f"Upload {len(file_contents)} file(s)"
     author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
@@ -265,6 +293,17 @@ async def put_entry_file(
         )
 
     await _get_writable_entry(entry_id, user, db)
+
+    # Check repo size limit
+    try:
+        repo_size = await git_service.get_repo_size(entry_id)
+        if repo_size + len(data) > settings.max_repo_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Upload would exceed repository size limit of {settings.max_repo_size_bytes} bytes",
+            )
+    except RepoNotFoundError:
+        pass
 
     commit_message = message or f"Update {path}"
     author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
