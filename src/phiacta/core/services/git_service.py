@@ -1480,9 +1480,8 @@ class ForgejoGitService:
         #    silently swallowed, so existing users aren't org members.
         team_members = await self._paginate_all(f"/teams/{team_id}/members")
         team_member_names = {m["login"] for m in team_members}
-        org_members = await self._paginate_all(f"/orgs/{self._org}/members")
-        # Also list all Forgejo users to catch provisioned users that aren't
-        # even in the org yet (the 405 bug meant they were never added).
+        # List all Forgejo users to catch provisioned users that aren't
+        # in the team yet (the 405 bug meant they were never added).
         all_users = await self._paginate_all("/admin/users")
         # Provisioned users have the synthetic email pattern.
         provisioned = [
