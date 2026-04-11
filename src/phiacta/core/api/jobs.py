@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.api.rate_limit import limiter
-from phiacta.core.auth.dependencies import get_current_user
+from phiacta.core.auth.dependencies import get_current_user, get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
 from phiacta.core.pagination import CursorPage, build_keyset_cursor, decode_keyset_cursor
@@ -36,14 +36,17 @@ async def list_jobs(
     entity_id: UUID | None = Query(None, description="Filter by entity ID."),
     limit: int = Query(50, ge=1, le=200),
     cursor: str | None = Query(None),
-    user: User = Depends(get_current_user),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> CursorPage[JobResponse]:
-    """List jobs submitted by the calling user. Requires authentication.
+    """List jobs. Requires authentication to see your own jobs;
+    returns an empty list for unauthenticated requests.
 
     ``status`` accepts a comma-separated list, e.g. ``pending,running``.
     Defaults to ``pending,running`` when omitted.
     """
+    if user is None:
+        return CursorPage(items=[], limit=limit, has_more=False, next_cursor=None)
     if status is not None:
         requested = [s.strip() for s in status.split(",") if s.strip()]
         invalid = set(requested) - _VALID_STATUSES
