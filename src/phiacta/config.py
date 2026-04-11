@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Auth
     jwt_secret_key: str
-    access_token_expire_minutes: int = 1440
+    access_token_expire_minutes: int = 43200  # 30 days
 
     # Forgejo (git backend)
     forgejo_url: str = "http://forgejo:3000"
