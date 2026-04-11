@@ -1433,10 +1433,12 @@ class TestPaginationRegression:
     async def test_entry_get_still_works(
         self,
         authed: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """GET /v1/entries/{id} still returns a single entry (not paginated)."""
         client, _, token = authed
         entry = await create_entry(client, token, title="Still Fetchable")
+        await set_entry_repo_status(e2e_session_factory, entry["id"], "ready")
 
         resp = await client.get(f"/v1/entries/{entry['id']}")
         assert resp.status_code == 200

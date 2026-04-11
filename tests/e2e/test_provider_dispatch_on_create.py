@@ -29,7 +29,7 @@ import phiacta.extensions.types.models  # noqa: F401
 import phiacta.extensions.tags.models  # noqa: F401
 import phiacta.extensions.references.models  # noqa: F401
 
-from tests.e2e.conftest import auth_header, register_user
+from tests.e2e.conftest import auth_header, register_user, set_entry_repo_status
 
 type AuthedFixture = tuple[httpx.AsyncClient, dict, str]
 
@@ -270,6 +270,7 @@ class TestGetAfterCreate:
 
     async def test_get_entry_after_create_returns_extension_fields(
         self, authed: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Create entry with title+summary+entry_type+tags, then GET it.
         Verify all fields are present and correct in the detail response."""
@@ -289,6 +290,7 @@ class TestGetAfterCreate:
         )
         assert create_resp.status_code == 201
         entry_id = create_resp.json()["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         # GET detail
         get_resp = await client.get(f"/v1/entries/{entry_id}")

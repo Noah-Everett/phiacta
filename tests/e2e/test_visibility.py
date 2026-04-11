@@ -318,6 +318,7 @@ class TestCreateWithVisibility:
     async def test_create_entry_with_visibility_private(
         self,
         owner: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """POST /entries with visibility=private creates a private entry."""
         client, _, token = owner
@@ -336,6 +337,7 @@ class TestCreateWithVisibility:
         assert data["visibility"] == "private"
 
         # Verify persisted: GET by owner
+        await set_entry_repo_status(e2e_session_factory, data["id"], "ready")
         resp = await client.get(
             f"/v1/entries/{data['id']}",
             headers=auth_header(token),
