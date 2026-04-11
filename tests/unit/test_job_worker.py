@@ -9,8 +9,10 @@ Uses mocked session factories and handlers to test worker logic in isolation.
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -19,6 +21,38 @@ from phiacta.tools.base import JobContext, JobHandler, JobInfraError
 
 
 # --- Helpers ----------------------------------------------------------------
+
+
+def _make_job(
+    *,
+    job_type: str = "test",
+    timeout_seconds: float = 120,
+    attempts: int = 0,
+    max_attempts: int = 3,
+) -> MagicMock:
+    """Create a mock Job with the attributes _process_job reads."""
+    job = MagicMock()
+    job.id = uuid4()
+    job.job_type = job_type
+    job.input = {"key": "value"}
+    job.submitted_by = uuid4()
+    job.timeout_seconds = timeout_seconds
+    job.attempts = attempts
+    job.max_attempts = max_attempts
+    return job
+
+
+def _mock_session_factory() -> AsyncMock:
+    """Return a mock async_sessionmaker that yields a mock session."""
+    session = AsyncMock()
+    session.commit = AsyncMock()
+
+    @asynccontextmanager
+    async def _factory():
+        yield session
+
+    factory = MagicMock(side_effect=_factory)
+    return factory, session
 
 
 class _SuccessHandler(JobHandler):
@@ -102,23 +136,97 @@ class TestJobTypes:
         assert worker._job_types is None
 
 
-# --- No _waiters or _notify ------------------------------------------------
+# --- _process_job -----------------------------------------------------------
 
 
-class TestNoInMemoryEvents:
-    """Verify that the in-memory event mechanism has been removed."""
+class TestProcessJob:
+    """Test _process_job dispatch, failure paths, and retry logic."""
 
-    def test_no_waiters_attribute(self) -> None:
+    async def test_unknown_handler_marks_failed(self) -> None:
+        """Job with unregistered job_type is immediately failed."""
         engine = AsyncMock()
-        worker = JobWorker(engine, handlers={})
-        assert not hasattr(worker, "_waiters")
+        worker = JobWorker(engine, handlers={"latex": _SuccessHandler()})
+        factory, session = _mock_session_factory()
+        worker._session_factory = factory
 
-    def test_no_notify_method(self) -> None:
-        engine = AsyncMock()
-        worker = JobWorker(engine, handlers={})
-        assert not hasattr(worker, "_notify")
+        mock_repo = AsyncMock()
+        job = _make_job(job_type="unknown_type")
 
-    def test_no_submit_and_wait_method(self) -> None:
+        with patch("phiacta.jobs.worker.JobRepository", return_value=mock_repo):
+            await worker._process_job(job)
+
+        mock_repo.mark_failed.assert_awaited_once()
+        call_args = mock_repo.mark_failed.call_args
+        assert "No handler" in call_args[0][1]
+
+    async def test_timeout_triggers_retry(self) -> None:
+        """Handler that exceeds timeout triggers _handle_retry."""
         engine = AsyncMock()
-        worker = JobWorker(engine, handlers={})
-        assert not hasattr(worker, "submit_and_wait")
+        worker = JobWorker(engine, handlers={"slow": _SlowHandler()})
+        factory, session = _mock_session_factory()
+        worker._session_factory = factory
+
+        job = _make_job(job_type="slow", timeout_seconds=0.01)
+
+        with patch.object(worker, "_handle_retry", new_callable=AsyncMock) as mock_retry:
+            await worker._process_job(job)
+
+        mock_retry.assert_awaited_once()
+        assert job is mock_retry.call_args[0][0]
+        assert "timed out" in mock_retry.call_args[0][1]
+
+    async def test_permanent_failure_marks_failed_no_retry(self) -> None:
+        """Non-JobInfraError exception marks job as failed without retry."""
+        engine = AsyncMock()
+        worker = JobWorker(engine, handlers={"fail": _FailHandler()})
+        factory, session = _mock_session_factory()
+        worker._session_factory = factory
+
+        mock_repo = AsyncMock()
+        job = _make_job(job_type="fail")
+
+        with (
+            patch("phiacta.jobs.worker.JobRepository", return_value=mock_repo),
+            patch.object(worker, "_handle_retry", new_callable=AsyncMock) as mock_retry,
+        ):
+            await worker._process_job(job)
+
+        mock_repo.mark_failed.assert_awaited_once()
+        mock_retry.assert_not_awaited()
+
+    async def test_infra_error_triggers_retry(self) -> None:
+        """JobInfraError triggers _handle_retry (retryable)."""
+        engine = AsyncMock()
+        worker = JobWorker(engine, handlers={"infra": _InfraFailHandler()})
+        factory, session = _mock_session_factory()
+        worker._session_factory = factory
+
+        job = _make_job(job_type="infra")
+
+        with patch.object(worker, "_handle_retry", new_callable=AsyncMock) as mock_retry:
+            await worker._process_job(job)
+
+        mock_retry.assert_awaited_once()
+        assert "docker daemon unreachable" in mock_retry.call_args[0][1]
+
+    async def test_success_marks_completed(self) -> None:
+        """Successful handler run marks job as completed with result."""
+        engine = AsyncMock()
+        worker = JobWorker(engine, handlers={"ok": _SuccessHandler()})
+        factory, session = _mock_session_factory()
+        worker._session_factory = factory
+
+        mock_repo = AsyncMock()
+        job = _make_job(job_type="ok")
+
+        with (
+            patch("phiacta.jobs.worker.JobRepository", return_value=mock_repo),
+            patch("phiacta.jobs.worker.EntityRepository"),
+            patch("phiacta.jobs.worker.ActivityRepository"),
+        ):
+            await worker._process_job(job)
+
+        mock_repo.mark_completed.assert_awaited_once()
+        result = mock_repo.mark_completed.call_args[0][1]
+        assert result["status"] == "ok"
+

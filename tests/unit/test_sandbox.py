@@ -149,6 +149,115 @@ class TestSandboxRun:
         assert written_files["figs/fig1.png"] == b"PNG"
 
 
+class TestRunContainer:
+    """Tests for Sandbox._run_container — start, wait, timeout, output."""
+
+    async def test_start_failure(self) -> None:
+        """docker start returning non-zero → immediate failure."""
+        sandbox = Sandbox()
+
+        with patch.object(sandbox, "_exec", new_callable=AsyncMock, return_value=1):
+            result = await sandbox._run_container(
+                "container123", Path("/tmp/output"), SecurityPolicy(),
+            )
+
+        assert result.exit_code == -1
+        assert "Failed to start container" in result.stderr
+
+    async def test_timeout_kills_container(self) -> None:
+        """docker wait exceeding timeout → kill + timeout result."""
+        sandbox = Sandbox()
+        sec = SecurityPolicy(timeout_seconds=0.01)
+
+        # docker start succeeds
+        exec_calls: list[tuple] = []
+
+        async def _mock_exec(*cmd):
+            exec_calls.append(cmd)
+            return 0
+
+        # docker wait hangs forever
+        hang_proc = AsyncMock()
+        hang_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+
+        with (
+            patch.object(sandbox, "_exec", side_effect=_mock_exec),
+            patch("asyncio.create_subprocess_exec", return_value=hang_proc),
+            patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()),
+        ):
+            result = await sandbox._run_container(
+                "container123", Path("/tmp/output"), sec,
+            )
+
+        assert result.exit_code == -1
+        assert "Timeout" in result.stderr
+        # Verify docker kill was called
+        kill_calls = [c for c in exec_calls if len(c) >= 2 and c[1] == "kill"]
+        assert len(kill_calls) == 1
+
+    async def test_collects_output_files(self, tmp_path: Path) -> None:
+        """Output files in the bind mount appear in result.files."""
+        sandbox = Sandbox()
+        output_path = tmp_path / "output"
+        output_path.mkdir()
+        (output_path / "result.txt").write_bytes(b"hello")
+        sub = output_path / "sub"
+        sub.mkdir()
+        (sub / "data.bin").write_bytes(b"\x00\x01")
+
+        # docker start succeeds, docker wait returns 0, docker logs returns output
+        async def _mock_exec(*cmd, **kwargs):
+            if "wait" in cmd:
+                return _mock_process(stdout=b"0\n")
+            if "logs" in cmd:
+                return _mock_process(stdout=b"log output", stderr=b"")
+            return _mock_process()
+
+        with (
+            patch.object(sandbox, "_exec", new_callable=AsyncMock, return_value=0),
+            patch("asyncio.create_subprocess_exec", side_effect=_mock_exec),
+        ):
+            result = await sandbox._run_container(
+                "container123", output_path, SecurityPolicy(),
+            )
+
+        assert result.exit_code == 0
+        assert result.files["result.txt"] == b"hello"
+        assert result.files["sub/data.bin"] == b"\x00\x01"
+
+    async def test_normal_execution(self, tmp_path: Path) -> None:
+        """Normal run: start, wait, collect logs, return exit code."""
+        sandbox = Sandbox()
+        output_path = tmp_path / "output"
+        output_path.mkdir()
+
+        wait_proc = _mock_process(stdout=b"42\n")
+        log_proc = _mock_process(stdout=b"stdout log", stderr=b"stderr log")
+
+        call_count = 0
+
+        async def _mock_exec(*cmd, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if "wait" in cmd:
+                return wait_proc
+            if "logs" in cmd:
+                return log_proc
+            return _mock_process()
+
+        with (
+            patch.object(sandbox, "_exec", new_callable=AsyncMock, return_value=0),
+            patch("asyncio.create_subprocess_exec", side_effect=_mock_exec),
+        ):
+            result = await sandbox._run_container(
+                "container123", output_path, SecurityPolicy(),
+            )
+
+        assert result.exit_code == 42
+        assert "stdout log" in result.stdout
+        assert "stderr log" in result.stderr
+
+
 class TestSandboxKillOrphans:
     async def test_kills_listed_containers(self) -> None:
         sandbox = Sandbox()

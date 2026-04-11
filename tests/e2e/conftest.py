@@ -148,6 +148,27 @@ class FakeGitService:
             raise RepoNotFoundError(f"Path not found: {path} in repo {entry_id}")
         return result
 
+    async def list_tree_paths(
+        self, entry_id: UUID, prefix: str = "", ref: str = "main",
+    ) -> list[str]:
+        """Return all file paths recursively, optionally filtered by prefix."""
+        self._check_error()
+        result: list[str] = []
+        for (eid, fpath) in self.files:
+            if eid != entry_id:
+                continue
+            if prefix and not fpath.startswith(prefix):
+                continue
+            result.append(fpath)
+        return result
+
+    async def get_repo_size(self, entry_id: UUID) -> int:
+        """Return total size of all files for an entry."""
+        return sum(
+            len(data) for (eid, _), data in self.files.items()
+            if eid == entry_id
+        )
+
     # Remaining protocol methods -- not needed for file-read tests.
     async def create_repo(self, entry_id: UUID) -> int:
         raise NotImplementedError

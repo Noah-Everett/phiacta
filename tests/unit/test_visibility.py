@@ -110,17 +110,3 @@ class TestDiscoveryCondition:
         clause_anon = discovery_condition(user=None)
         clause_user = discovery_condition(user=user)
         assert str(clause_anon) != str(clause_user)
-
-
-class TestVisibilityModuleExports:
-    """Verify the visibility module exports the expected functions."""
-
-    def test_exports_check_entry_access(self) -> None:
-        from phiacta.core import visibility
-        assert hasattr(visibility, "check_entry_access")
-        assert callable(visibility.check_entry_access)
-
-    def test_exports_discovery_condition(self) -> None:
-        from phiacta.core import visibility
-        assert hasattr(visibility, "discovery_condition")
-        assert callable(visibility.discovery_condition)
