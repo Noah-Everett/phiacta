@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func as sa_func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.pagination import keyset_condition
@@ -52,6 +52,16 @@ class JobRepository:
     async def get(self, job_id: UUID) -> Job | None:
         return await self._session.get(Job, job_id)
 
+    async def count_active_by_user(self, user_id: UUID) -> int:
+        """Count pending + running jobs for a user."""
+        stmt = (
+            select(sa_func.count())
+            .select_from(Job)
+            .where(Job.submitted_by == user_id, Job.status.in_(["pending", "running"]))
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
+
     async def claim_batch(
         self, limit: int = 1, job_types: list[str] | None = None,
     ) -> list[Job]:
@@ -85,7 +95,7 @@ class JobRepository:
             await self._session.execute(
                 update(Job)
                 .where(Job.id.in_(job_ids))
-                .values(status="running", claimed_at=now, started_at=now)
+                .values(status="running", claimed_at=now, started_at=now, updated_at=now)
             )
 
         return jobs
@@ -186,12 +196,40 @@ class JobRepository:
         return list(result.scalars().all())
 
     async def recover_stale(self) -> int:
-        """Reset jobs stuck in 'running' from a previous crash. Returns count."""
-        result = await self._session.execute(
+        """Reset jobs stuck in 'running' from a previous crash. Returns count.
+
+        Increments ``attempts`` so that jobs which repeatedly crash the
+        worker eventually hit ``max_attempts`` and fail permanently.
+        """
+        now = datetime.now(UTC)
+
+        # Fail jobs that have exhausted their attempts
+        failed = await self._session.execute(
             update(Job)
-            .where(Job.status == "running")
-            .values(status="pending", process_after=None)
+            .where(Job.status == "running", Job.attempts + 1 >= Job.max_attempts)
+            .values(
+                status="failed",
+                attempts=Job.attempts + 1,
+                last_error="Worker crashed — max attempts exceeded",
+                completed_at=now,
+                updated_at=now,
+            )
             .returning(Job.id)
         )
-        rows = result.all()
-        return len(rows)
+        failed_count = len(failed.all())
+
+        # Return remaining running jobs to pending with incremented attempts
+        retried = await self._session.execute(
+            update(Job)
+            .where(Job.status == "running")
+            .values(
+                status="pending",
+                attempts=Job.attempts + 1,
+                process_after=None,
+                updated_at=now,
+            )
+            .returning(Job.id)
+        )
+        retried_count = len(retried.all())
+
+        return failed_count + retried_count

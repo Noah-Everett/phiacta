@@ -296,7 +296,7 @@ class TestOnIngestHook:
         assert job.job_type == "compiled_content"
         assert job.input == {"entry_id": str(entry.id)}
         assert job.submitted_by == user.id
-        assert job.timeout_seconds == 180
+        assert job.timeout_seconds == 480
         assert job.status == "pending"
 
     async def test_skips_plain_markdown(self, db_session) -> None:

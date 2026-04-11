@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from phiacta.core.repositories.entity_repository import EntityRepository
 from phiacta.core.repositories.activity_repository import ActivityRepository
@@ -189,7 +189,7 @@ class JobWorker:
 
     async def _log_job_activity(
         self,
-        session: any,
+        session: AsyncSession,
         job: Job,
         action: str,
         *,

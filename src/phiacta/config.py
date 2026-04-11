@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     max_upload_size_bytes: int = 500 * 1024 * 1024  # 500 MB total per request
     max_repo_size_bytes: int = 1024 * 1024 * 1024  # 1 GB per repo
 
+    # Jobs
+    max_active_jobs_per_user: int = 10
+
     # Plugins
     enabled_plugins: list[str] = Field(default_factory=list)
 

@@ -19,6 +19,7 @@ class JobResponse(BaseModel):
     status: str
     attempts: int
     last_error: str | None
+    result: dict | None = None
     created_at: datetime
     updated_at: datetime
     started_at: datetime | None

@@ -12,7 +12,7 @@ from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text,
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from phiacta.core.models.base import Base, UUIDMixin
+from phiacta.core.models.base import Base, UUIDMixin, _utcnow
 
 
 class Job(UUIDMixin, Base):
@@ -54,10 +54,11 @@ class Job(UUIDMixin, Base):
     process_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(),
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(),
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now(),
+        onupdate=_utcnow,
     )
 
     __table_args__ = (
@@ -65,5 +66,11 @@ class Job(UUIDMixin, Base):
             "ix_jobs_poll",
             "created_at",
             postgresql_where=text("status = 'pending'"),
+        ),
+        Index("ix_jobs_submitted_by", "submitted_by"),
+        Index(
+            "ix_jobs_entity_id",
+            "entity_id",
+            postgresql_where=text("entity_id IS NOT NULL"),
         ),
     )

@@ -53,6 +53,16 @@ async def on_ingest(
 
     repo = JobRepository(db)
 
+    # Per-user job queue depth limit
+    from phiacta.config import get_settings as _get_settings
+    active = await repo.count_active_by_user(entry.created_by)
+    if active >= _get_settings().max_active_jobs_per_user:
+        logger.warning(
+            "Skipping compilation for entry %s — user %s has %d active jobs",
+            entity_id, entry.created_by, active,
+        )
+        return
+
     # Cancel any pending compilation jobs for this entry — superseded by this
     # upload. Running jobs are left alone; the stale-SHA guard in the handler
     # skips stale writes safely.
@@ -77,7 +87,7 @@ async def on_ingest(
         submitted_by=entry.created_by,
         input={"entry_id": str(entity_id)},
         entity_id=entity_id,
-        timeout_seconds=180,
+        timeout_seconds=480,  # clone (120) + compile (300) + buffer (60)
         max_attempts=3,
     )
 

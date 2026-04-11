@@ -395,6 +395,12 @@ async def merge_edit_proposal(
             status_code=502, detail="Git service unavailable",
         ) from exc
 
+    # Clean up the proposal branch (best-effort)
+    try:
+        await git_service.delete_branch(entry_id, pr.head_branch)
+    except Exception:
+        logger.debug("Failed to delete branch %s after merge", pr.head_branch, exc_info=True)
+
     # Log activity via service
     entity_service = EntityService(db)
     try:
@@ -443,6 +449,17 @@ async def close_edit_proposal(
         )
 
     try:
+        pr = await git_service.get_pull_request(entry_id, number)
+    except RepoNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="Edit proposal not found",
+        ) from exc
+    except ForgejoError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+
+    try:
         await git_service.close_pull_request(entry_id, number)
     except RepoNotFoundError as exc:
         raise HTTPException(
@@ -452,6 +469,12 @@ async def close_edit_proposal(
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
+
+    # Clean up the proposal branch (best-effort)
+    try:
+        await git_service.delete_branch(entry_id, pr.head_branch)
+    except Exception:
+        logger.debug("Failed to delete branch %s after close", pr.head_branch, exc_info=True)
 
     # Log activity via service
     entity_service = EntityService(db)
