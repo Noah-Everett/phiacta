@@ -13,11 +13,12 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.api.rate_limit import limiter
 from phiacta.core.tool_deps import get_db, get_optional_user
 from phiacta.core.services.graph_query import (
     enrich_nodes,
@@ -70,7 +71,9 @@ def _parse_csv(raw: str | None) -> list[str] | None:
 
 
 @router.get("/", response_model=GraphResponse)
+@limiter.limit("30/minute")
 async def get_graph(
+    request: Request,
     entry_ids: str = Query(..., description="Comma-separated seed entry UUIDs"),
     mode: str = Query("ref", description="Graph mode"),
     depth: int = Query(2, ge=0, le=5),

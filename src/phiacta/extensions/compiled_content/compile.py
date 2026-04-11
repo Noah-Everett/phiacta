@@ -32,6 +32,22 @@ _CLONE_TIMEOUT = 120  # seconds
 
 _CONTENT_DIR = ".phiacta/content/"
 
+# Environment variables to restrict TeX Live file access (paranoid mode).
+# openin_any=p: only read files in the working tree and $TEXMF directories.
+# openout_any=p: only write files in the working tree.
+_LATEX_SAFE_ENV: dict[str, str] = {
+    "openin_any": "p",
+    "openout_any": "p",
+}
+
+
+def _redact_credentials(text: str) -> str:
+    """Strip the Forgejo admin password from text before logging."""
+    password = get_settings().forgejo_admin_password
+    if password:
+        text = text.replace(password, "***")
+    return text
+
 
 @dataclass
 class CompileResult:
@@ -77,7 +93,7 @@ async def _clone_repo(entry_id: UUID, dest: Path) -> bool:
     if proc.returncode != 0:
         logger.warning(
             "git clone failed for entry %s: %s",
-            entry_id, stderr.decode(errors="replace")[:500],
+            entry_id, _redact_credentials(stderr.decode(errors="replace")[:500]),
         )
         return False
 
@@ -150,12 +166,16 @@ async def _find_latex_source_api(
 
 async def _run_latexmk(tex_file: Path, work_dir: Path) -> CompileResult:
     """Compile with latexmk (TeX Live). Preferred compiler."""
+    import os
+
+    env = {**os.environ, **_LATEX_SAFE_ENV}
     proc = await asyncio.create_subprocess_exec(
         "latexmk", "-pdf", "-interaction=nonstopmode",
-        "-halt-on-error", str(tex_file),
+        "-halt-on-error", "-no-shell-escape", str(tex_file),
         cwd=str(work_dir),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=env,
     )
     try:
         stdout, stderr = await asyncio.wait_for(
@@ -188,11 +208,15 @@ async def _run_latexmk(tex_file: Path, work_dir: Path) -> CompileResult:
 
 async def _run_tectonic(tex_file: Path, work_dir: Path) -> CompileResult:
     """Compile with Tectonic. Fallback when TeX Live is not installed."""
+    import os
+
+    env = {**os.environ, **_LATEX_SAFE_ENV}
     proc = await asyncio.create_subprocess_exec(
         "tectonic", "-X", "compile", str(tex_file),
         cwd=str(work_dir),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=env,
     )
     try:
         stdout, stderr = await asyncio.wait_for(

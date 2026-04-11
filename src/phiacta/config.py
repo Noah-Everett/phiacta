@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # Rate limiting
     rate_limit_enabled: bool = True
+    max_json_body_bytes: int = 1 * 1024 * 1024  # 1 MB for JSON bodies
 
     # File upload limits
     max_file_size_bytes: int = 25 * 1024 * 1024  # 25 MB per file

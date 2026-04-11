@@ -93,6 +93,10 @@ COPY pyproject.toml .
 COPY src/ src/
 RUN uv pip install --system --no-cache .
 
+# Non-root user for workers (mirrors the production API stage)
+RUN groupadd -r phiacta && useradd -r -g phiacta -d /app phiacta
+USER phiacta
+
 CMD ["python", "-m", "phiacta.jobs.run_worker"]
 
 
@@ -100,6 +104,7 @@ CMD ["python", "-m", "phiacta.jobs.run_worker"]
 # Stage 6: Worker LaTeX -- TeX Live + git clone support
 # ──────────────────────────────────────────
 FROM worker-base AS worker-latex
+USER root
 
 # Install TeX Live (full scheme covers all packages arXiv papers could use)
 # and git (for fast repo cloning instead of file-by-file API fetching).
@@ -108,5 +113,6 @@ RUN apt-get update \
         texlive-full \
         git \
     && rm -rf /var/lib/apt/lists/*
+USER phiacta
 
 CMD ["python", "-m", "phiacta.jobs.run_worker"]

@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.api.rate_limit import limiter
 from phiacta.core.auth.dependencies import get_optional_user
 from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
@@ -23,7 +24,9 @@ _MIME = {"pdf": "application/pdf"}
 
 
 @router.get("/{entry_id}")
+@limiter.limit("120/minute")
 async def get_compiled_content(
+    request: Request,
     entry_id: UUID,
     format: str = "pdf",
     db: AsyncSession = Depends(get_db),

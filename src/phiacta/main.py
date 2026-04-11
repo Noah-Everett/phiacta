@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
+from phiacta.core.middleware import ContentSizeLimitMiddleware
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from phiacta.config import get_settings
@@ -74,6 +75,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE", "PUT", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+app.add_middleware(ContentSizeLimitMiddleware, max_bytes=get_settings().max_json_body_bytes)
 
 app.include_router(v1_router, prefix="/v1")
 app.include_router(webhook_router)

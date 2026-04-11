@@ -100,23 +100,47 @@ async def get_activity(
     # Collect entry IDs referenced by activity items (directly or via parent)
     # to filter out items referencing private entries the caller can't see.
     candidate_entry_ids: set[UUID] = set()
+    parent_ids_to_resolve: set[UUID] = set()
+
     for a in items:
         ent = entities_by_id.get(a.entity_id)
         if ent is not None:
             if ent.entity_type == "entry":
                 candidate_entry_ids.add(a.entity_id)
             elif ent.parent_id is not None:
-                candidate_entry_ids.add(ent.parent_id)
+                parent_ids_to_resolve.add(ent.parent_id)
+
+    # Resolve parent_ids: some are entry UUIDs (issues/edits), some are
+    # intermediate entity UUIDs (comments → issue). We need the root entry.
+    resolved_entry_for_parent: dict[UUID, UUID] = {}
+    if parent_ids_to_resolve:
+        stmt = select(Entry).where(Entry.id.in_(list(parent_ids_to_resolve)))
+        result = await db.execute(stmt)
+        direct_entries = {e.id for e in result.scalars().all()}
+
+        candidate_entry_ids.update(direct_entries)
+        for pid in direct_entries:
+            resolved_entry_for_parent[pid] = pid
+
+        # For parent_ids that are NOT entries (e.g. issue entities for
+        # comments), traverse one level up to find the entry.
+        unresolved = parent_ids_to_resolve - direct_entries
+        if unresolved:
+            unresolved_entities = await entity_repo.get_by_ids(list(unresolved))
+            for uid, parent_ent in unresolved_entities.items():
+                if parent_ent.parent_id is not None:
+                    candidate_entry_ids.add(parent_ent.parent_id)
+                    resolved_entry_for_parent[uid] = parent_ent.parent_id
 
     # Batch-load entries for visibility checks
     visible_entries: dict[UUID, bool] = {}
     if candidate_entry_ids:
         stmt = select(Entry).where(Entry.id.in_(list(candidate_entry_ids)))
         result = await db.execute(stmt)
-        entries_by_id = {e.id: e for e in result.scalars().all()}
+        found_entries = {e.id: e for e in result.scalars().all()}
 
         for eid in candidate_entry_ids:
-            entry_obj = entries_by_id.get(eid)
+            entry_obj = found_entries.get(eid)
             if entry_obj is None:
                 visible_entries[eid] = True  # entry deleted, allow activity
             else:
@@ -132,8 +156,10 @@ async def get_activity(
         if ent is not None:
             if ent.entity_type == "entry" and not visible_entries.get(a.entity_id, True):
                 continue
-            if ent.parent_id is not None and not visible_entries.get(ent.parent_id, True):
-                continue
+            if ent.parent_id is not None:
+                entry_uuid = resolved_entry_for_parent.get(ent.parent_id, ent.parent_id)
+                if not visible_entries.get(entry_uuid, True):
+                    continue
         result_items.append(ActivityItem(
             id=a.id,
             actor_id=a.actor_id,
