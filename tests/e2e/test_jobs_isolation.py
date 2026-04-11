@@ -86,12 +86,13 @@ class TestJobsUserIsolation:
         assert resp.status_code == 200
         assert resp.json()["items"] == []
 
-    async def test_unauthenticated_returns_401(
+    async def test_unauthenticated_returns_empty_list(
         self,
         client: httpx.AsyncClient,
     ) -> None:
         resp = await client.get("/v1/jobs")
-        assert resp.status_code == 401
+        assert resp.status_code == 200
+        assert resp.json()["items"] == []
 
     async def test_status_filter(
         self,
