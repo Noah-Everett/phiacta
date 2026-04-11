@@ -110,9 +110,8 @@ async def create_issue(
     """Create an issue on an entry's repository."""
     entry = await get_proposable_entry(entry_id, db, user=user)
 
-    await git_service.ensure_forgejo_user(user, db)
-
     try:
+        await git_service.ensure_forgejo_user(user, db)
         issue = await git_service.create_issue(
             entry_id,
             title=body.title,

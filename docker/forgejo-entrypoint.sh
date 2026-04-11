@@ -32,6 +32,15 @@ set -eu
         -d "{\"username\":\"${ORG_NAME}\",\"visibility\":\"private\"}" \
         "http://localhost:3000/api/v1/orgs" >/dev/null 2>&1 \
         || true
+
+    # Create "Members" team for provisioned users (idempotent).
+    # Users get write access to issues only; they interact via Sudo headers.
+    curl -sf \
+        -u "${ADMIN_USER}:${ADMIN_PASS}" \
+        -H "Content-Type: application/json" \
+        -d '{"name":"Members","permission":"write","units":["repo.issues"],"includes_all_repositories":true}' \
+        "http://localhost:3000/api/v1/orgs/${ORG_NAME}/teams" >/dev/null 2>&1 \
+        || true
 ) &
 
 # Start Forgejo via its original entrypoint (PID 1 for proper signal handling)

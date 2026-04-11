@@ -491,6 +491,7 @@ class ForgejoGitService:
                 max_keepalive_connections=10,
             ),
         )
+        self._members_team_id: int | None = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -499,6 +500,20 @@ class ForgejoGitService:
     def _repo_path(self, entry_id: UUID) -> str:
         """Return the ``owner/repo`` slug for an entry."""
         return f"{self._org}/{entry_id}"
+
+    async def _get_members_team_id(self) -> int:
+        """Return the Forgejo team ID for the org's 'Members' team (cached)."""
+        if self._members_team_id is not None:
+            return self._members_team_id
+        resp = await self._request("GET", f"/orgs/{self._org}/teams")
+        for team in resp.json():
+            if team["name"] == "Members":
+                self._members_team_id = team["id"]
+                return self._members_team_id
+        raise ForgejoError(
+            f"No 'Members' team found in org '{self._org}'. "
+            "Ensure the Forgejo entrypoint creates it."
+        )
 
     async def _request(
         self,
@@ -615,6 +630,17 @@ class ForgejoGitService:
         repo_data = resp.json()
         repo_id: int = repo_data["id"]
         logger.info("Created repo %s/%s (id=%d)", self._org, repo_name, repo_id)
+
+        # Grant the Members team access to the new repo.
+        try:
+            team_id = await self._get_members_team_id()
+            await self._request(
+                "PUT",
+                f"/teams/{team_id}/repos/{self._org}/{repo_name}",
+            )
+        except (ForgejoError, RepoNotFoundError):
+            logger.warning("Failed to add repo %s to Members team", repo_name)
+
         return repo_id
 
     async def archive_repo(self, entry_id: UUID) -> None:
@@ -1264,14 +1290,9 @@ class ForgejoGitService:
                 logger.error("Failed to create or find Forgejo user %s", username)
                 raise
 
-        # Step 2: Add user to the phiacta org (idempotent).
-        try:
-            await self._request("PUT", f"/orgs/{self._org}/members/{username}")
-        except ForgejoError:
-            logger.warning(
-                "Failed to add %s to org %s (may already be a member)",
-                username, self._org,
-            )
+        # Step 2: Add user to the org's Members team (idempotent).
+        team_id = await self._get_members_team_id()
+        await self._request("PUT", f"/teams/{team_id}/members/{username}")
 
         # Step 3: Store Forgejo user ID on the Phiacta user record.
         user.forgejo_user_id = forgejo_user_id

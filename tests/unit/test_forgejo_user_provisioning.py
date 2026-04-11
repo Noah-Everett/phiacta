@@ -89,13 +89,14 @@ class TestEnsureForgejoUser:
 
     async def test_creates_forgejo_user_and_stores_id(self) -> None:
         svc = _make_service()
+        svc._members_team_id = 2  # pre-cache to avoid extra lookup
         user = _make_user()
         db = AsyncMock()
 
-        # Mock _request to return success for user creation and org membership
+        # Mock _request to return success for user creation and team membership
         create_resp = MagicMock()
         create_resp.json.return_value = {"id": 99}
-        org_resp = MagicMock()
+        team_resp = MagicMock()
 
         call_count = 0
         async def fake_request(method, path, **kwargs):
@@ -103,8 +104,8 @@ class TestEnsureForgejoUser:
             call_count += 1
             if method == "POST" and path == "/admin/users":
                 return create_resp
-            if method == "PUT" and "/members/" in path:
-                return org_resp
+            if method == "PUT" and path == "/teams/2/members/testuser":
+                return team_resp
             raise AssertionError(f"Unexpected call: {method} {path}")
 
         svc._request = fake_request
@@ -117,6 +118,7 @@ class TestEnsureForgejoUser:
 
     async def test_reuses_existing_forgejo_user_on_conflict(self) -> None:
         svc = _make_service()
+        svc._members_team_id = 2
         user = _make_user()
         db = AsyncMock()
 
@@ -124,15 +126,15 @@ class TestEnsureForgejoUser:
         # second call (GET /users/{username}) returns existing user
         lookup_resp = MagicMock()
         lookup_resp.json.return_value = {"id": 77}
-        org_resp = MagicMock()
+        team_resp = MagicMock()
 
         async def fake_request(method, path, **kwargs):
             if method == "POST" and path == "/admin/users":
                 raise ForgejoError("422: user already exists")
             if method == "GET" and path == f"/users/{user.username}":
                 return lookup_resp
-            if method == "PUT" and "/members/" in path:
-                return org_resp
+            if method == "PUT" and path == "/teams/2/members/testuser":
+                return team_resp
             raise AssertionError(f"Unexpected call: {method} {path}")
 
         svc._request = fake_request
@@ -162,8 +164,9 @@ class TestEnsureForgejoUser:
         assert user.forgejo_user_id is None
         db.flush.assert_not_awaited()
 
-    async def test_org_add_failure_does_not_block_provisioning(self) -> None:
+    async def test_team_add_failure_raises(self) -> None:
         svc = _make_service()
+        svc._members_team_id = 2
         user = _make_user()
         db = AsyncMock()
 
@@ -173,34 +176,36 @@ class TestEnsureForgejoUser:
         async def fake_request(method, path, **kwargs):
             if method == "POST" and path == "/admin/users":
                 return create_resp
-            if method == "PUT" and "/members/" in path:
+            if method == "PUT" and path == "/teams/2/members/testuser":
                 raise ForgejoError("500: internal error")
             raise AssertionError(f"Unexpected call: {method} {path}")
 
         svc._request = fake_request
 
-        await svc.ensure_forgejo_user(user, db)
+        with pytest.raises(ForgejoError):
+            await svc.ensure_forgejo_user(user, db)
 
-        # User should still be provisioned despite org add failure
-        assert user.forgejo_user_id == 55
-        db.flush.assert_awaited_once()
+        # User should NOT be provisioned if team membership fails
+        assert user.forgejo_user_id is None
+        db.flush.assert_not_awaited()
 
     async def test_creates_user_with_synthetic_email(self) -> None:
         svc = _make_service()
+        svc._members_team_id = 2
         user = _make_user()
         db = AsyncMock()
 
         captured_payload: dict = {}
         create_resp = MagicMock()
         create_resp.json.return_value = {"id": 10}
-        org_resp = MagicMock()
+        team_resp = MagicMock()
 
         async def fake_request(method, path, **kwargs):
             if method == "POST" and path == "/admin/users":
                 captured_payload.update(kwargs.get("json", {}))
                 return create_resp
-            if method == "PUT" and "/members/" in path:
-                return org_resp
+            if method == "PUT" and path == "/teams/2/members/testuser":
+                return team_resp
             raise AssertionError(f"Unexpected call: {method} {path}")
 
         svc._request = fake_request
