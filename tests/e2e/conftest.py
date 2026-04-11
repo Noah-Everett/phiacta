@@ -289,6 +289,7 @@ class FakeGitService:
         head_branch: str,
         base_branch: str = "main",
         author_name: str = "",
+        sudo_username: str | None = None,
     ) -> PullRequestInfo:
         """Create a fake pull request and return its info."""
         if entry_id not in self._pr_counter:
@@ -437,7 +438,8 @@ class FakeGitService:
         )
 
     async def merge_pull_request(
-        self, entry_id: UUID, number: int, merge_style: str = "merge"
+        self, entry_id: UUID, number: int, merge_style: str = "merge",
+        sudo_username: str | None = None,
     ) -> str:
         """Merge a fake pull request and return the merge commit SHA."""
         prs = self.pull_requests.get(entry_id, [])
@@ -465,7 +467,7 @@ class FakeGitService:
                 return merge_sha
         raise RepoNotFoundError(f"PR #{number} not found in repo {entry_id}")
 
-    async def close_pull_request(self, entry_id: UUID, number: int) -> None:
+    async def close_pull_request(self, entry_id: UUID, number: int, sudo_username: str | None = None) -> None:
         """Close a fake pull request without merging.
 
         Idempotent: closing an already-closed PR is a no-op.
@@ -485,8 +487,13 @@ class FakeGitService:
 
     # --- Issues (fake) ---
 
+    async def ensure_forgejo_user(self, user: object, db: object) -> None:
+        """No-op in tests -- Forgejo provisioning is skipped."""
+        pass
+
     async def create_issue(
         self, entry_id: UUID, title: str, body: str, author_name: str = "",
+        sudo_username: str | None = None,
     ) -> "IssueInfo":
         from phiacta.core.services.git_service import IssueInfo
         issues = self.issues.setdefault(entry_id, [])  # type: ignore[attr-defined]
@@ -525,6 +532,7 @@ class FakeGitService:
 
     async def create_issue_comment(
         self, entry_id: UUID, number: int, body: str,
+        sudo_username: str | None = None,
     ) -> "IssueCommentInfo":
         from phiacta.core.services.git_service import IssueCommentInfo
         for i in getattr(self, "issues", {}).get(entry_id, []):
@@ -539,7 +547,7 @@ class FakeGitService:
         from phiacta.core.services.git_service import RepoNotFoundError as RNF
         raise RNF(f"Issue #{number} not found")
 
-    async def close_issue(self, entry_id: UUID, number: int) -> None:
+    async def close_issue(self, entry_id: UUID, number: int, sudo_username: str | None = None) -> None:
         from phiacta.core.services.git_service import IssueInfo, RepoNotFoundError as RNF
         issues = getattr(self, "issues", {}).get(entry_id, [])
         for idx, i in enumerate(issues):

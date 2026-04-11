@@ -12,10 +12,16 @@ from __future__ import annotations
 
 import base64
 import logging
+import secrets
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from phiacta.core.models.user import User
 
 import httpx
 
@@ -260,6 +266,7 @@ class GitService(Protocol):
         head_branch: str,
         base_branch: str = "main",
         author_name: str = "",
+        sudo_username: str | None = None,
     ) -> PullRequestInfo:
         """Create a pull request and return its info."""
         ...
@@ -287,13 +294,15 @@ class GitService(Protocol):
         ...
 
     async def merge_pull_request(
-        self, entry_id: UUID, number: int, merge_style: str = "merge"
+        self, entry_id: UUID, number: int, merge_style: str = "merge",
+        sudo_username: str | None = None,
     ) -> str:
         """Merge a pull request. Returns the merge commit SHA."""
         ...
 
     async def close_pull_request(
-        self, entry_id: UUID, number: int
+        self, entry_id: UUID, number: int,
+        sudo_username: str | None = None,
     ) -> None:
         """Close a pull request without merging."""
         ...
@@ -306,6 +315,7 @@ class GitService(Protocol):
         title: str,
         body: str,
         author_name: str = "",
+        sudo_username: str | None = None,
     ) -> IssueInfo:
         """Create an issue on an entry's repository."""
         ...
@@ -333,15 +343,25 @@ class GitService(Protocol):
         ...
 
     async def create_issue_comment(
-        self, entry_id: UUID, number: int, body: str
+        self, entry_id: UUID, number: int, body: str,
+        sudo_username: str | None = None,
     ) -> IssueCommentInfo:
         """Add a comment to an issue."""
         ...
 
     async def close_issue(
-        self, entry_id: UUID, number: int
+        self, entry_id: UUID, number: int,
+        sudo_username: str | None = None,
     ) -> None:
         """Close an issue."""
+        ...
+
+    # --- User provisioning ---
+
+    async def ensure_forgejo_user(
+        self, user: User, db: AsyncSession,
+    ) -> None:
+        """Provision a Forgejo account for the user if one does not exist."""
         ...
 
     # --- Reconciliation ---
@@ -488,8 +508,12 @@ class ForgejoGitService:
         json: dict | list | None = None,
         params: dict | None = None,
         content: bytes | None = None,
+        sudo_username: str | None = None,
     ) -> httpx.Response:
         """Send a request and translate HTTP errors to domain exceptions."""
+        headers: dict[str, str] | None = None
+        if sudo_username:
+            headers = {"Sudo": sudo_username}
         try:
             resp = await self._client.request(
                 method,
@@ -497,6 +521,7 @@ class ForgejoGitService:
                 json=json,
                 params=params,
                 content=content,
+                headers=headers,
             )
         except httpx.ConnectError as exc:
             raise ForgejoUnavailableError(
@@ -1054,6 +1079,7 @@ class ForgejoGitService:
         head_branch: str,
         base_branch: str = "main",
         author_name: str = "",
+        sudo_username: str | None = None,
     ) -> PullRequestInfo:
         """Create a pull request on a repo."""
         repo = self._repo_path(entry_id)
@@ -1066,6 +1092,7 @@ class ForgejoGitService:
                 "head": head_branch,
                 "base": base_branch,
             },
+            sudo_username=sudo_username,
         )
         pr = self._parse_pull_request(resp.json())
         logger.info("Created PR #%d on %s (%s -> %s)", pr.number, repo, head_branch, base_branch)
@@ -1153,6 +1180,7 @@ class ForgejoGitService:
 
     async def merge_pull_request(
         self, entry_id: UUID, number: int, merge_style: str = "merge",
+        sudo_username: str | None = None,
     ) -> str:
         """Merge a pull request. Returns the merge commit SHA."""
         repo = self._repo_path(entry_id)
@@ -1160,6 +1188,7 @@ class ForgejoGitService:
             "POST",
             f"/repos/{repo}/pulls/{number}/merge",
             json={"Do": merge_style},
+            sudo_username=sudo_username,
         )
         # Forgejo may return 204 (no body) on some merge styles.
         sha = ""
@@ -1176,6 +1205,7 @@ class ForgejoGitService:
 
     async def close_pull_request(
         self, entry_id: UUID, number: int,
+        sudo_username: str | None = None,
     ) -> None:
         """Close a pull request without merging."""
         repo = self._repo_path(entry_id)
@@ -1183,8 +1213,74 @@ class ForgejoGitService:
             "PATCH",
             f"/repos/{repo}/pulls/{number}",
             json={"state": "closed"},
+            sudo_username=sudo_username,
         )
         logger.info("Closed PR #%d on %s", number, repo)
+
+    # ------------------------------------------------------------------
+    # User provisioning
+    # ------------------------------------------------------------------
+
+    async def ensure_forgejo_user(
+        self, user: User, db: AsyncSession,
+    ) -> None:
+        """Lazily provision a Forgejo user account for a Phiacta user.
+
+        Idempotent: if ``user.forgejo_user_id`` is already set, this is a
+        no-op.  Creates the Forgejo user via the admin API, adds them to
+        the org, and stores the Forgejo user ID on the Phiacta user record.
+        """
+        if user.forgejo_user_id is not None:
+            return
+
+        username = user.username
+        email = f"{user.id}@phiacta.local"
+        password = secrets.token_urlsafe(32)
+
+        # Step 1: Create Forgejo user via admin API.
+        try:
+            resp = await self._request(
+                "POST",
+                "/admin/users",
+                json={
+                    "username": username,
+                    "email": email,
+                    "password": password,
+                    "must_change_password": False,
+                    "visibility": "private",
+                },
+            )
+            forgejo_user_id: int = resp.json()["id"]
+        except ForgejoError:
+            # Username may already exist (prior partial provisioning).
+            try:
+                resp = await self._request("GET", f"/users/{username}")
+                forgejo_user_id = resp.json()["id"]
+                logger.info(
+                    "Forgejo user %s already exists (id=%d), reusing",
+                    username, forgejo_user_id,
+                )
+            except (RepoNotFoundError, ForgejoError):
+                logger.error("Failed to create or find Forgejo user %s", username)
+                raise
+
+        # Step 2: Add user to the phiacta org (idempotent).
+        try:
+            await self._request("PUT", f"/orgs/{self._org}/members/{username}")
+        except ForgejoError:
+            logger.warning(
+                "Failed to add %s to org %s (may already be a member)",
+                username, self._org,
+            )
+
+        # Step 3: Store Forgejo user ID on the Phiacta user record.
+        user.forgejo_user_id = forgejo_user_id
+        db.add(user)
+        await db.flush()
+        logger.info(
+            "Provisioned Forgejo user %s (forgejo_id=%d) for Phiacta user %s",
+            username, forgejo_user_id, user.id,
+        )
 
     # ------------------------------------------------------------------
     # Issues
@@ -1222,6 +1318,7 @@ class ForgejoGitService:
         title: str,
         body: str,
         author_name: str = "",
+        sudo_username: str | None = None,
     ) -> IssueInfo:
         """Create an issue on an entry's repository."""
         repo = self._repo_path(entry_id)
@@ -1229,6 +1326,7 @@ class ForgejoGitService:
             "POST",
             f"/repos/{repo}/issues",
             json={"title": title, "body": body},
+            sudo_username=sudo_username,
         )
         issue = self._parse_issue(resp.json())
         logger.info("Created issue #%d on %s", issue.number, repo)
@@ -1277,6 +1375,7 @@ class ForgejoGitService:
 
     async def create_issue_comment(
         self, entry_id: UUID, number: int, body: str,
+        sudo_username: str | None = None,
     ) -> IssueCommentInfo:
         """Add a comment to an issue."""
         repo = self._repo_path(entry_id)
@@ -1284,6 +1383,7 @@ class ForgejoGitService:
             "POST",
             f"/repos/{repo}/issues/{number}/comments",
             json={"body": body},
+            sudo_username=sudo_username,
         )
         comment = self._parse_issue_comment(resp.json())
         logger.info("Added comment #%d to issue #%d on %s", comment.id, number, repo)
@@ -1291,6 +1391,7 @@ class ForgejoGitService:
 
     async def close_issue(
         self, entry_id: UUID, number: int,
+        sudo_username: str | None = None,
     ) -> None:
         """Close an issue."""
         repo = self._repo_path(entry_id)
@@ -1298,6 +1399,7 @@ class ForgejoGitService:
             "PATCH",
             f"/repos/{repo}/issues/{number}",
             json={"state": "closed"},
+            sudo_username=sudo_username,
         )
         logger.info("Closed issue #%d on %s", number, repo)
 

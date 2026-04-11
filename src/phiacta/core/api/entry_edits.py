@@ -135,6 +135,8 @@ async def create_edit_proposal(
     """Create an edit proposal (branch + PR) for an entry."""
     entry = await get_proposable_entry(entry_id, db, user=user)
 
+    await git_service.ensure_forgejo_user(user, db)
+
     # Validate all file paths before touching Forgejo.
     for fc in body.files:
         try:
@@ -194,6 +196,7 @@ async def create_edit_proposal(
             head_branch=branch_name,
             base_branch="main",
             author_name=user.username,
+            sudo_username=user.username,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
         await _cleanup_branch(git_service, entry_id, branch_name)
@@ -341,6 +344,8 @@ async def merge_edit_proposal(
     """Merge an edit proposal. Only the entry owner can merge."""
     await get_writable_entry(entry_id, user, db)
 
+    await git_service.ensure_forgejo_user(user, db)
+
     # Verify the PR exists and is open.
     try:
         pr = await git_service.get_pull_request(entry_id, number)
@@ -384,7 +389,7 @@ async def merge_edit_proposal(
 
     # Merge.
     try:
-        sha = await git_service.merge_pull_request(entry_id, number)
+        sha = await git_service.merge_pull_request(entry_id, number, sudo_username=user.username)
     except RepoNotFoundError as exc:
         raise HTTPException(
             status_code=409,
@@ -443,6 +448,8 @@ async def close_edit_proposal(
     """Close/reject an edit proposal. Only the entry owner can close."""
     entry = await get_owned_entry(entry_id, user, db)
 
+    await git_service.ensure_forgejo_user(user, db)
+
     if entry.repo_status != "ready":
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",
@@ -460,7 +467,7 @@ async def close_edit_proposal(
         ) from exc
 
     try:
-        await git_service.close_pull_request(entry_id, number)
+        await git_service.close_pull_request(entry_id, number, sudo_username=user.username)
     except RepoNotFoundError as exc:
         raise HTTPException(
             status_code=404, detail="Edit proposal not found",
