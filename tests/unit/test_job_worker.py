@@ -101,41 +101,6 @@ class TestBackoff:
         assert _backoff_seconds(100) == 300.0
 
 
-# --- Handler dispatch -------------------------------------------------------
-
-
-class TestHandlerLookup:
-    def test_handlers_stored(self) -> None:
-        handler = _SuccessHandler()
-        engine = AsyncMock()
-        worker = JobWorker(engine, handlers={"latex": handler})
-        assert worker._handlers["latex"] is handler
-
-    def test_empty_handlers(self) -> None:
-        engine = AsyncMock()
-        worker = JobWorker(engine, handlers={})
-        assert len(worker._handlers) == 0
-
-
-# --- Job types filtering ---------------------------------------------------
-
-
-class TestJobTypes:
-    def test_stores_job_types(self) -> None:
-        engine = AsyncMock()
-        worker = JobWorker(
-            engine,
-            handlers={"latex": _SuccessHandler()},
-            job_types=["latex"],
-        )
-        assert worker._job_types == ["latex"]
-
-    def test_default_no_filter(self) -> None:
-        engine = AsyncMock()
-        worker = JobWorker(engine, handlers={})
-        assert worker._job_types is None
-
-
 # --- _process_job -----------------------------------------------------------
 
 
@@ -210,23 +175,81 @@ class TestProcessJob:
         assert "docker daemon unreachable" in mock_retry.call_args[0][1]
 
     async def test_success_marks_completed(self) -> None:
-        """Successful handler run marks job as completed with result."""
+        """Successful handler run marks job as completed and logs activity."""
         engine = AsyncMock()
         worker = JobWorker(engine, handlers={"ok": _SuccessHandler()})
         factory, session = _mock_session_factory()
         worker._session_factory = factory
 
         mock_repo = AsyncMock()
+        mock_entity_repo = AsyncMock()
+        mock_entity_repo.get_by_id = AsyncMock(return_value=MagicMock())  # truthy entity
+        mock_activity_repo = AsyncMock()
         job = _make_job(job_type="ok")
 
         with (
             patch("phiacta.jobs.worker.JobRepository", return_value=mock_repo),
-            patch("phiacta.jobs.worker.EntityRepository"),
-            patch("phiacta.jobs.worker.ActivityRepository"),
+            patch("phiacta.jobs.worker.EntityRepository", return_value=mock_entity_repo),
+            patch("phiacta.jobs.worker.ActivityRepository", return_value=mock_activity_repo),
         ):
             await worker._process_job(job)
 
+        # Verify mark_completed with handler result
         mock_repo.mark_completed.assert_awaited_once()
         result = mock_repo.mark_completed.call_args[0][1]
         assert result["status"] == "ok"
+
+        # Verify activity logging was called with correct arguments
+        mock_entity_repo.get_by_id.assert_awaited_once_with(job.id)
+        mock_activity_repo.log.assert_awaited_once_with(
+            actor_id=job.submitted_by,
+            action="job.completed",
+            entity_id=job.id,
+            metadata={"job_type": job.job_type},
+        )
+
+
+# --- _handle_retry ----------------------------------------------------------
+
+
+class TestHandleRetry:
+    """Test _handle_retry delegates to repo.mark_retry correctly."""
+
+    async def test_retry_below_threshold(self) -> None:
+        """Job with attempts below max → mark_retry called, mark_failed not."""
+        engine = AsyncMock()
+        worker = JobWorker(engine, handlers={})
+        factory, session = _mock_session_factory()
+        worker._session_factory = factory
+
+        mock_repo = AsyncMock()
+        job = _make_job(attempts=0, max_attempts=3)
+
+        with patch("phiacta.jobs.worker.JobRepository", return_value=mock_repo):
+            await worker._handle_retry(job, "infra error")
+
+        mock_repo.mark_retry.assert_awaited_once()
+        args = mock_repo.mark_retry.call_args[0]
+        assert args[0] == job.id
+        assert args[1] == "infra error"
+        mock_repo.mark_failed.assert_not_awaited()
+
+    async def test_retry_at_threshold_delegates_to_repo(self) -> None:
+        """Job at max attempts → mark_retry still called (repo decides fail)."""
+        engine = AsyncMock()
+        worker = JobWorker(engine, handlers={})
+        factory, session = _mock_session_factory()
+        worker._session_factory = factory
+
+        mock_repo = AsyncMock()
+        job = _make_job(attempts=2, max_attempts=3)
+
+        with patch("phiacta.jobs.worker.JobRepository", return_value=mock_repo):
+            await worker._handle_retry(job, "final infra error")
+
+        # Worker always calls mark_retry; the repository decides retry vs fail
+        mock_repo.mark_retry.assert_awaited_once()
+        args = mock_repo.mark_retry.call_args[0]
+        assert args[0] == job.id
+        assert args[1] == "final infra error"
 

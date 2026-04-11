@@ -74,6 +74,17 @@ class TestFindLatexSourceOnDisk:
         assert rel == ""
         assert path is None
 
+    def test_tex_files_without_documentclass(self, tmp_path: Path) -> None:
+        """Multi-file case: .tex files exist but none contain \\documentclass."""
+        content_dir = tmp_path / ".phiacta" / "content"
+        content_dir.mkdir(parents=True)
+        (content_dir / "helper.tex").write_text(r"\input{macros}" + "\n" + r"\newcommand{\foo}{bar}")
+        (content_dir / "macros.tex").write_text(r"\newcommand{\baz}{qux}")
+
+        rel, path = _find_latex_source_on_disk(tmp_path)
+        assert rel == ""
+        assert path is None
+
     def test_single_file_wins_over_multi_file(self, tmp_path: Path) -> None:
         """When both content.tex and content/main.tex exist, single-file wins."""
         phiacta = tmp_path / ".phiacta"
@@ -117,7 +128,7 @@ class TestCompileInDir:
             result = await _compile_in_dir("main.tex", tmp_path)
 
         assert result is expected
-        mock_latexmk.assert_awaited_once()
+        mock_latexmk.assert_awaited_once_with(tmp_path / "main.tex", tmp_path)
         mock_tectonic.assert_not_awaited()
 
     async def test_falls_back_to_tectonic(self, tmp_path: Path) -> None:
@@ -145,7 +156,7 @@ class TestCompileInDir:
 
         assert result is expected
         mock_latexmk.assert_not_awaited()
-        mock_tectonic.assert_awaited_once()
+        mock_tectonic.assert_awaited_once_with(tmp_path / "main.tex", tmp_path)
 
     async def test_raises_when_no_compiler(self, tmp_path: Path) -> None:
         """When neither latexmk nor tectonic is available."""

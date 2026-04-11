@@ -27,18 +27,6 @@ def _mock_process(stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0)
     return proc
 
 
-class TestSandboxResult:
-    def test_defaults(self) -> None:
-        r = SandboxResult(exit_code=0, stdout="hello", stderr="")
-        assert r.exit_code == 0
-        assert r.stdout == "hello"
-        assert r.files == {}
-
-    def test_with_files(self) -> None:
-        r = SandboxResult(exit_code=0, stdout="", stderr="", files={"out.pdf": b"PDF"})
-        assert r.files["out.pdf"] == b"PDF"
-
-
 class TestSandboxCreateContainer:
     async def test_builds_correct_docker_create_args(self) -> None:
         """Verify that docker create is called with security constraints."""
@@ -149,6 +137,37 @@ class TestSandboxRun:
         assert written_files["figs/fig1.png"] == b"PNG"
 
 
+    async def test_run_happy_path_cleans_up_container(self) -> None:
+        """Full run: create → run → cleanup (docker rm -f)."""
+        sandbox = Sandbox()
+        expected_result = SandboxResult(exit_code=0, stdout="ok", stderr="")
+
+        exec_calls: list[tuple] = []
+
+        async def _mock_exec(*cmd):
+            exec_calls.append(cmd)
+            return 0
+
+        with (
+            patch.object(
+                sandbox, "_create_container",
+                new_callable=AsyncMock,
+                return_value="container-abc",
+            ),
+            patch.object(
+                sandbox, "_run_container",
+                new_callable=AsyncMock,
+                return_value=expected_result,
+            ),
+            patch.object(sandbox, "_exec", side_effect=_mock_exec),
+        ):
+            result = await sandbox.run(image="test:latest", command=["true"])
+
+        assert result is expected_result
+        # Verify cleanup: docker rm -f <container_id>
+        assert ("docker", "rm", "-f", "container-abc") in exec_calls
+
+
 class TestRunContainer:
     """Tests for Sandbox._run_container — start, wait, timeout, output."""
 
@@ -169,21 +188,24 @@ class TestRunContainer:
         sandbox = Sandbox()
         sec = SecurityPolicy(timeout_seconds=0.01)
 
-        # docker start succeeds
         exec_calls: list[tuple] = []
 
         async def _mock_exec(*cmd):
             exec_calls.append(cmd)
             return 0
 
-        # docker wait hangs forever
+        # docker wait hangs forever — let real asyncio.wait_for timeout
         hang_proc = AsyncMock()
-        hang_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+
+        async def _hang():
+            await asyncio.sleep(999)
+            return (b"0\n", b"")
+
+        hang_proc.communicate = _hang
 
         with (
             patch.object(sandbox, "_exec", side_effect=_mock_exec),
             patch("asyncio.create_subprocess_exec", return_value=hang_proc),
-            patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()),
         ):
             result = await sandbox._run_container(
                 "container123", Path("/tmp/output"), sec,
@@ -191,9 +213,12 @@ class TestRunContainer:
 
         assert result.exit_code == -1
         assert "Timeout" in result.stderr
-        # Verify docker kill was called
+        # Verify docker start was called with correct container_id
+        start_calls = [c for c in exec_calls if len(c) >= 2 and c[1] == "start"]
+        assert start_calls == [("docker", "start", "container123")]
+        # Verify docker kill was called with correct container_id
         kill_calls = [c for c in exec_calls if len(c) >= 2 and c[1] == "kill"]
-        assert len(kill_calls) == 1
+        assert kill_calls == [("docker", "kill", "container123")]
 
     async def test_collects_output_files(self, tmp_path: Path) -> None:
         """Output files in the bind mount appear in result.files."""

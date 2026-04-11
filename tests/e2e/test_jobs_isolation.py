@@ -112,6 +112,20 @@ class TestJobsUserIsolation:
         )
         assert resp.status_code == 200
         items = resp.json()["items"]
+        assert len(items) == 1, f"Expected exactly 1 completed job, got {len(items)}"
         job_ids = {j["id"] for j in items}
         assert completed_job in job_ids
         assert pending_job not in job_ids
+
+    async def test_invalid_status_returns_400(
+        self,
+        client: httpx.AsyncClient,
+    ) -> None:
+        """Requesting an invalid status value returns 400."""
+        user = await register_user(client, username=f"badstatus-{uuid4().hex[:8]}")
+        resp = await client.get(
+            "/v1/jobs?status=bogus",
+            headers=auth_header(user["access_token"]),
+        )
+        assert resp.status_code == 400
+        assert "Invalid status" in resp.json()["detail"]

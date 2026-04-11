@@ -75,6 +75,7 @@ class TestCompiledContentVisibility:
 
         resp = await client.get(f"/v1/extensions/compiled_content/{entry['id']}")
         assert resp.status_code == 403
+        assert "do not have access" in resp.json()["detail"]
 
     async def test_private_entry_other_user_returns_403(
         self,
@@ -93,6 +94,7 @@ class TestCompiledContentVisibility:
             headers=auth_header(other["access_token"]),
         )
         assert resp.status_code == 403
+        assert "do not have access" in resp.json()["detail"]
 
     async def test_private_entry_owner_returns_200(
         self,
