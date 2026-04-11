@@ -625,6 +625,7 @@ class ForgejoGitService:
                 "private": True,
                 "auto_init": False,
                 "default_branch": "main",
+                "has_pull_requests": True,
             },
         )
         repo_data = resp.json()
@@ -1432,6 +1433,74 @@ class ForgejoGitService:
         """List all repository names in the organisation."""
         raw_list = await self._paginate_all(f"/orgs/{self._org}/repos")
         return [r["name"] for r in raw_list]
+
+    async def run_startup_migrations(self) -> dict[str, int]:
+        """Fix Forgejo repo/user settings that were missed by older code.
+
+        Idempotent — safe to call on every startup.  Returns counts of
+        patched resources keyed by migration name.
+        """
+        counts: dict[str, int] = {}
+
+        team_id = await self._get_members_team_id()
+
+        # 1. Enable pull requests on repos created before has_pull_requests
+        #    was added to the create-repo payload.
+        repos = await self._paginate_all(f"/orgs/{self._org}/repos")
+        pr_patched = 0
+        for repo in repos:
+            if not repo.get("has_pull_requests"):
+                await self._request(
+                    "PATCH",
+                    f"/repos/{self._org}/{repo['name']}",
+                    json={"has_pull_requests": True},
+                )
+                logger.info("Enabled pull requests on %s/%s", self._org, repo["name"])
+                pr_patched += 1
+        counts["pull_requests_enabled"] = pr_patched
+
+        # 2. Add repos to the Members team.  Repos created before team-based
+        #    provisioning were never added, so Sudo-based issue creation
+        #    fails on them.
+        team_repos = await self._paginate_all(f"/teams/{team_id}/repos")
+        team_repo_names = {r["name"] for r in team_repos}
+        repos_added = 0
+        for repo in repos:
+            if repo["name"] not in team_repo_names:
+                await self._request(
+                    "PUT",
+                    f"/teams/{team_id}/repos/{self._org}/{repo['name']}",
+                )
+                logger.info("Added %s/%s to Members team", self._org, repo["name"])
+                repos_added += 1
+        counts["repos_added_to_team"] = repos_added
+
+        # 3. Add provisioned users to the Members team.  The old code used
+        #    PUT /orgs/{org}/members/{username} which returned 405 and was
+        #    silently swallowed, so existing users aren't org members.
+        team_members = await self._paginate_all(f"/teams/{team_id}/members")
+        team_member_names = {m["login"] for m in team_members}
+        org_members = await self._paginate_all(f"/orgs/{self._org}/members")
+        # Also list all Forgejo users to catch provisioned users that aren't
+        # even in the org yet (the 405 bug meant they were never added).
+        all_users = await self._paginate_all("/admin/users")
+        # Provisioned users have the synthetic email pattern.
+        provisioned = [
+            u for u in all_users
+            if u.get("email", "").endswith(f"@{self._org}.local")
+            and u["login"] not in team_member_names
+        ]
+        users_added = 0
+        for user in provisioned:
+            await self._request(
+                "PUT",
+                f"/teams/{team_id}/members/{user['login']}",
+            )
+            logger.info("Added user %s to Members team", user["login"])
+            users_added += 1
+        counts["users_added_to_team"] = users_added
+
+        return counts
 
     async def get_repo_head_sha(
         self, entry_id: UUID, branch: str = "main"
