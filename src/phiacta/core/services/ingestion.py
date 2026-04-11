@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Coroutine
+from fnmatch import fnmatch
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,6 +107,23 @@ async def ingest_entry(
                     getattr(hook, "__name__", hook),
                     context.trigger.value,
                     {t.value for t in hook_triggers},
+                )
+                continue
+        # Path filtering: skip hooks whose declared path_patterns don't
+        # match any changed file.  Hooks without ``path_patterns`` run on
+        # all file changes.  When changed_paths is empty (outbox,
+        # reconciliation), path filtering is skipped.
+        hook_patterns = getattr(hook, "path_patterns", None)
+        if hook_patterns is not None and context is not None and context.changed_paths:
+            if not any(
+                fnmatch(path, pat)
+                for path in context.changed_paths
+                for pat in hook_patterns
+            ):
+                logger.debug(
+                    "Skipping hook %s — no changed paths match %s",
+                    getattr(hook, "__name__", hook),
+                    hook_patterns,
                 )
                 continue
         try:

@@ -21,6 +21,7 @@ import hashlib
 import hmac
 import logging
 import re
+from fnmatch import fnmatch
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -40,19 +41,35 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
-# Paths that should trigger full ingestion when modified.
-_CONTENT_PREFIXES = (".phiacta/content.", ".phiacta/content/")
+def _any_hook_matches(commits: list[dict], hooks: list) -> bool:
+    """Check whether any hook's path_patterns match the changed files.
 
+    Returns True if:
+    - any hook lacks a ``path_patterns`` attribute (wants all files), OR
+    - any changed path matches any hook's declared patterns (via fnmatch).
 
-def _commits_touch_content(commits: list[dict]) -> bool:
-    """Check whether any commit modifies a content file."""
+    When no commits are provided, returns True (safe default).
+    """
+    if not commits:
+        return True
+
+    # Collect all patterns; if any hook has no path_patterns, match everything.
+    all_patterns: list[str] = []
+    for hook in hooks:
+        patterns = getattr(hook, "path_patterns", None)
+        if patterns is None:
+            return True  # This hook wants all file changes
+        all_patterns.extend(patterns)
+
+    if not all_patterns:
+        return True  # No hooks with patterns = nothing to filter
+
     for commit in commits:
         for key in ("added", "modified", "removed"):
             for path in commit.get(key, []):
-                if any(path.startswith(p) for p in _CONTENT_PREFIXES):
+                if any(fnmatch(path, pat) for pat in all_patterns):
                     return True
-    # If no commit data, assume content changed (safe default)
-    return not commits
+    return False
 
 
 def _verify_signature(body: bytes, signature: str, secret: str) -> bool:
@@ -171,10 +188,10 @@ async def _handle_push(
         logger.debug("SHA %s already ingested for entry %s, skipping", after_sha[:12], entry_id)
         return
 
-    # Check whether any content files actually changed.  If only
-    # supporting files (figures, bib, etc.) were modified, skip the
-    # expensive ingestion and just update the head SHA.
-    content_changed = _commits_touch_content(commits)
+    # Check whether any hook cares about the changed files.  Each hook
+    # declares path_patterns (glob); if none match, skip ingestion and
+    # just update the head SHA.
+    content_changed = _any_hook_matches(commits, hooks)
 
     try:
         if content_changed:
