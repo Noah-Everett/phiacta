@@ -42,6 +42,7 @@ from phiacta.core.services.git_service import (
     ForgejoUnavailableError,
 )
 from phiacta.core.services.ingestion import ingest_entry
+from phiacta.plugin import IngestContext, IngestTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +354,7 @@ class OutboxWorker:
             await ingest_entry(
                 entry, entry.current_head_sha, session, self._git,
                 on_ingest_hooks=self._on_ingest_hooks,
+                context=IngestContext(trigger=IngestTrigger.METADATA_CHANGED),
             )
             await session.commit()
 
@@ -448,6 +450,7 @@ class OutboxWorker:
                 await ingest_entry(
                     entry, sha, session, self._git,
                     on_ingest_hooks=self._on_ingest_hooks,
+                    context=IngestContext(trigger=IngestTrigger.INITIAL_PROVISION),
                 )
             await session.commit()
 
@@ -490,6 +493,7 @@ class OutboxWorker:
                 await ingest_entry(
                     entry, sha, session, self._git,
                     on_ingest_hooks=self._on_ingest_hooks,
+                    context=IngestContext(trigger=IngestTrigger.CONTENT_CHANGED),
                 )
             await session.commit()
 

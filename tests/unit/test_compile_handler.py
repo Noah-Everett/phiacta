@@ -299,12 +299,16 @@ class TestOnIngestHook:
         assert job.timeout_seconds == 480
         assert job.status == "pending"
 
-    async def test_skips_plain_markdown(self, db_session) -> None:
+    async def test_declares_trigger_filtering(self) -> None:
+        """compiled_content hook only runs on CONTENT_CHANGED and RECONCILIATION."""
         from phiacta.extensions.compiled_content import on_ingest
+        from phiacta.plugin import IngestTrigger
 
-        entry, _ = await self._create_entry(db_session)
-        await on_ingest(entry.id, "# Just markdown", {}, db_session)
-        assert await self._count_jobs(db_session, entry.id) == 0
+        assert hasattr(on_ingest, "triggers")
+        assert on_ingest.triggers == {
+            IngestTrigger.CONTENT_CHANGED,
+            IngestTrigger.RECONCILIATION,
+        }
 
     async def test_submits_job_when_content_is_none(self, db_session) -> None:
         """content=None might be a multi-file LaTeX project."""

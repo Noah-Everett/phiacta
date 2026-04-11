@@ -32,6 +32,7 @@ from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.services.git_service import GitService
 from phiacta.core.services.git_service_dep import get_git_service
 from phiacta.core.services.ingestion import ingest_entry
+from phiacta.plugin import IngestContext, IngestTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +178,18 @@ async def _handle_push(
 
     try:
         if content_changed:
-            await ingest_entry(entry, after_sha, db, git_service, on_ingest_hooks=hooks)
+            paths: set[str] = set()
+            for commit in commits:
+                for key in ("added", "modified", "removed"):
+                    paths.update(commit.get(key, []))
+            context = IngestContext(
+                trigger=IngestTrigger.CONTENT_CHANGED,
+                changed_paths=frozenset(paths),
+            )
+            await ingest_entry(
+                entry, after_sha, db, git_service,
+                on_ingest_hooks=hooks, context=context,
+            )
         else:
             logger.debug(
                 "No content files changed for entry %s at %s, skipping ingestion",

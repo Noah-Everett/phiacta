@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.services.git_service import ForgejoUnavailableError, GitService
 from phiacta.core.services.ingestion import ingest_entry
+from phiacta.plugin import IngestContext, IngestTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,7 @@ class ReconciliationService:
             await ingest_entry(
                 entry, forgejo_sha, session, self._git_service,
                 on_ingest_hooks=self._on_ingest_hooks,
+                context=IngestContext(trigger=IngestTrigger.RECONCILIATION),
             )
 
             # Only update SHA after successful ingest

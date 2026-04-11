@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from phiacta.extensions.compiled_content.handler import CompileHandler
 from phiacta.extensions.compiled_content.provider import CompiledContentProvider
 from phiacta.extensions.compiled_content.router import router
-from phiacta.plugin import PluginManifest, PluginType
+from phiacta.plugin import IngestTrigger, PluginManifest, PluginType
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +35,15 @@ job_handler = CompileHandler()
 async def on_ingest(
     entity_id: UUID, content: str | None, metadata: dict, db: AsyncSession,
 ) -> None:
-    """Submit a compilation job if the entry might contain LaTeX.
+    """Submit a compilation job when content changes.
 
-    Uses a lightweight heuristic to skip obviously non-LaTeX entries.
-    The handler does the authoritative check via ``compile_entry()``.
+    Trigger filtering (``on_ingest.triggers``) ensures this hook only runs
+    on ``CONTENT_CHANGED`` and ``RECONCILIATION`` — not during initial
+    provisioning or metadata-only changes.  The handler does the
+    authoritative LaTeX-presence check via ``compile_entry()``.
     """
     from phiacta.core.repositories.entry_repository import EntryRepository
     from phiacta.jobs.repository import JobRepository
-
-    # Heuristic: skip if content is clearly not LaTeX
-    if content is not None and "\\documentclass" not in content:
-        return
 
     entry = await EntryRepository(db).get_by_id(entity_id)
     if entry is None:
@@ -107,5 +105,7 @@ async def on_ingest(
 
     logger.info("Submitted compilation job for entry %s", entity_id)
 
+
+on_ingest.triggers = {IngestTrigger.CONTENT_CHANGED, IngestTrigger.RECONCILIATION}  # type: ignore[attr-defined]
 
 __all__ = ["manifest", "router", "entry_data_provider", "job_handler", "on_ingest"]

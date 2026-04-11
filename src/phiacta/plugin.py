@@ -49,6 +49,28 @@ class PluginType(Enum):
     TOOL = "tool"
 
 
+class IngestTrigger(Enum):
+    """What kind of change prompted ingestion.
+
+    Hooks declare which triggers they respond to via an ``on_ingest.triggers``
+    attribute.  Hooks without the attribute run on every trigger (backward
+    compatible default).
+    """
+
+    CONTENT_CHANGED = "content_changed"
+    METADATA_CHANGED = "metadata_changed"
+    INITIAL_PROVISION = "initial_provision"
+    RECONCILIATION = "reconciliation"
+
+
+@dataclass(frozen=True)
+class IngestContext:
+    """Describes why ingestion is happening and what changed."""
+
+    trigger: IngestTrigger
+    changed_paths: frozenset[str] = frozenset()
+
+
 @dataclass(frozen=True)
 class PluginManifest:
     """Metadata for a plugin. Each plugin module exposes a ``manifest`` instance."""

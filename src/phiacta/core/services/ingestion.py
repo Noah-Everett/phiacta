@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from phiacta.core.models.entry import Entry
 from phiacta.core.services.git_service import GitService, RepoNotFoundError
+from phiacta.plugin import IngestContext
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ async def ingest_entry(
     git_service: GitService,
     *,
     on_ingest_hooks: list[OnIngestHook] | None = None,
+    context: IngestContext | None = None,
 ) -> None:
     """Ingest an entry from git and call all registered extension hooks.
 
@@ -73,6 +75,9 @@ async def ingest_entry(
         git_service: Git service for reading files.
         on_ingest_hooks: Extension hooks to call after reading content.
             If None, falls back to hardcoded search_tsv (for backwards compat).
+        context: Describes why ingestion was triggered.  Hooks that declare
+            a ``triggers`` attribute are skipped when the context trigger is
+            not in their set.
     """
     entry_id = entry.id
 
@@ -90,6 +95,19 @@ async def ingest_entry(
             hooks = []
 
     for hook in hooks:
+        # Trigger filtering: skip hooks whose declared triggers don't
+        # match the current context.  Hooks without a ``triggers``
+        # attribute run unconditionally (backward compatible default).
+        hook_triggers = getattr(hook, "triggers", None)
+        if hook_triggers is not None and context is not None:
+            if context.trigger not in hook_triggers:
+                logger.debug(
+                    "Skipping hook %s — trigger %s not in %s",
+                    getattr(hook, "__name__", hook),
+                    context.trigger.value,
+                    {t.value for t in hook_triggers},
+                )
+                continue
         try:
             await hook(entry_id, content, metadata, db)
         except Exception:
