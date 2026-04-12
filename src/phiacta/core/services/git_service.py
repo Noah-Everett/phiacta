@@ -1444,6 +1444,25 @@ class ForgejoGitService:
 
         team_id = await self._get_members_team_id()
 
+        # 0. Ensure Members team has required units (repo.code needed for PR
+        #    creation, repo.pulls for PR access, repo.issues for issue access).
+        required_units = {"repo.code", "repo.issues", "repo.pulls"}
+        resp = await self._request("GET", f"/teams/{team_id}")
+        team_data = resp.json()
+        team_units = set(team_data.get("units", []))
+        missing = required_units - team_units
+        if missing:
+            team_units |= missing
+            await self._request(
+                "PATCH",
+                f"/teams/{team_id}",
+                json={"units": sorted(team_units)},
+            )
+            logger.info("Added repo.pulls unit to Members team")
+            counts["team_units_patched"] = 1
+        else:
+            counts["team_units_patched"] = 0
+
         # 1. Enable pull requests on repos created before has_pull_requests
         #    was added to the create-repo payload.
         repos = await self._paginate_all(f"/orgs/{self._org}/repos")

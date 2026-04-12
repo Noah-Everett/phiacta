@@ -32,6 +32,12 @@ def _ok(data: list | dict) -> MagicMock:
     return resp
 
 
+# Default team data — units already correct (no patch needed)
+_TEAM_OK = {"units": ["repo.code", "repo.issues", "repo.pulls"]}
+# Team missing repo.pulls — needs patching
+_TEAM_MISSING_PULLS = {"units": ["repo.issues"]}
+
+
 class TestRunStartupMigrations:
     async def test_patches_repos_missing_pull_requests(self) -> None:
         svc = _make_service()
@@ -46,10 +52,11 @@ class TestRunStartupMigrations:
 
         async def fake_request(method, path, **kwargs):
             calls.append((method, path))
+            if method == "GET" and path == "/teams/2":
+                return _ok(_TEAM_OK)
             if method == "GET" and path == "/orgs/phiacta/repos":
                 return _ok(repos)
             if method == "GET" and path == "/teams/2/repos":
-                # All repos already in team
                 return _ok([{"name": "repo-a"}, {"name": "repo-b"}])
             if method == "GET" and path == "/teams/2/members":
                 return _ok([])
@@ -67,6 +74,40 @@ class TestRunStartupMigrations:
         assert ("PATCH", "/repos/phiacta/repo-b") in calls
         assert ("PATCH", "/repos/phiacta/repo-a") not in calls
 
+    async def test_patches_team_units_when_pulls_missing(self) -> None:
+        svc = _make_service()
+        svc._members_team_id = 2
+
+        calls: list[tuple[str, str, dict]] = []
+
+        async def fake_request(method, path, **kwargs):
+            calls.append((method, path, kwargs.get("json", {})))
+            if method == "GET" and path == "/teams/2":
+                return _ok(_TEAM_MISSING_PULLS)
+            if method == "GET" and path == "/orgs/phiacta/repos":
+                return _ok([])
+            if method == "GET" and path == "/teams/2/repos":
+                return _ok([])
+            if method == "GET" and path == "/teams/2/members":
+                return _ok([])
+            if method == "GET" and path == "/admin/users":
+                return _ok([])
+            if method == "PATCH":
+                return _ok({})
+            raise AssertionError(f"Unexpected: {method} {path}")
+
+        svc._request = fake_request
+
+        counts = await svc.run_startup_migrations()
+
+        assert counts["team_units_patched"] == 1
+        # Find the PATCH call to /teams/2
+        patch_calls = [(m, p, j) for m, p, j in calls if m == "PATCH" and p == "/teams/2"]
+        assert len(patch_calls) == 1
+        patched_units = set(patch_calls[0][2]["units"])
+        assert "repo.pulls" in patched_units
+        assert "repo.issues" in patched_units
+
     async def test_adds_repos_to_members_team(self) -> None:
         svc = _make_service()
         svc._members_team_id = 2
@@ -80,10 +121,11 @@ class TestRunStartupMigrations:
 
         async def fake_request(method, path, **kwargs):
             calls.append((method, path))
+            if method == "GET" and path == "/teams/2":
+                return _ok(_TEAM_OK)
             if method == "GET" and path == "/orgs/phiacta/repos":
                 return _ok(repos)
             if method == "GET" and path == "/teams/2/repos":
-                # Only old-repo is in the team
                 return _ok([{"name": "old-repo"}])
             if method == "GET" and path == "/teams/2/members":
                 return _ok([])
@@ -108,22 +150,21 @@ class TestRunStartupMigrations:
         users = [
             {"login": "alice", "email": "abc@phiacta.local"},
             {"login": "bob", "email": "def@phiacta.local"},
-            {"login": "phiacta-admin", "email": "admin@example.com"},  # not provisioned
+            {"login": "phiacta-admin", "email": "admin@example.com"},
         ]
 
         calls: list[tuple[str, str]] = []
 
         async def fake_request(method, path, **kwargs):
             calls.append((method, path))
+            if method == "GET" and path == "/teams/2":
+                return _ok(_TEAM_OK)
             if method == "GET" and path == "/orgs/phiacta/repos":
                 return _ok([])
             if method == "GET" and path == "/teams/2/repos":
                 return _ok([])
             if method == "GET" and path == "/teams/2/members":
-                # Bob is already in the team
                 return _ok([{"login": "bob"}])
-            if method == "GET" and path == "/orgs/phiacta/members":
-                return _ok([])
             if method == "GET" and path == "/admin/users":
                 return _ok(users)
             if method == "PUT":
@@ -150,13 +191,13 @@ class TestRunStartupMigrations:
         async def fake_request(method, path, **kwargs):
             if method in ("PATCH", "PUT"):
                 mutation_calls.append((method, path))
+            if method == "GET" and path == "/teams/2":
+                return _ok(_TEAM_OK)
             if method == "GET" and path == "/orgs/phiacta/repos":
                 return _ok(repos)
             if method == "GET" and path == "/teams/2/repos":
                 return _ok([{"name": "repo-a"}])
             if method == "GET" and path == "/teams/2/members":
-                return _ok([])
-            if method == "GET" and path == "/orgs/phiacta/members":
                 return _ok([])
             if method == "GET" and path == "/admin/users":
                 return _ok([])
@@ -167,6 +208,7 @@ class TestRunStartupMigrations:
         counts = await svc.run_startup_migrations()
 
         assert counts == {
+            "team_units_patched": 0,
             "pull_requests_enabled": 0,
             "repos_added_to_team": 0,
             "users_added_to_team": 0,
@@ -188,14 +230,13 @@ class TestRunStartupMigrations:
         ]
 
         async def fake_request(method, path, **kwargs):
+            if method == "GET" and path == "/teams/2":
+                return _ok(_TEAM_MISSING_PULLS)
             if method == "GET" and path == "/orgs/phiacta/repos":
                 return _ok(repos)
             if method == "GET" and path == "/teams/2/repos":
-                # r3 already in team
                 return _ok([{"name": "r3"}])
             if method == "GET" and path == "/teams/2/members":
-                return _ok([])
-            if method == "GET" and path == "/orgs/phiacta/members":
                 return _ok([])
             if method == "GET" and path == "/admin/users":
                 return _ok(users)
@@ -205,6 +246,7 @@ class TestRunStartupMigrations:
 
         counts = await svc.run_startup_migrations()
 
+        assert counts["team_units_patched"] == 1
         assert counts["pull_requests_enabled"] == 2
         assert counts["repos_added_to_team"] == 2
         assert counts["users_added_to_team"] == 2

@@ -34,11 +34,11 @@ set -eu
         || true
 
     # Create "Members" team for provisioned users (idempotent).
-    # Users get write access to issues only; they interact via Sudo headers.
+    # Users need issues + pulls access for Sudo-based edit proposals.
     curl -sf \
         -u "${ADMIN_USER}:${ADMIN_PASS}" \
         -H "Content-Type: application/json" \
-        -d '{"name":"Members","permission":"write","units":["repo.issues"],"includes_all_repositories":true}' \
+        -d '{"name":"Members","permission":"write","units":["repo.code","repo.issues","repo.pulls"],"includes_all_repositories":true}' \
         "http://localhost:3000/api/v1/orgs/${ORG_NAME}/teams" >/dev/null 2>&1 \
         || true
 ) &
