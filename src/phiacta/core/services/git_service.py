@@ -743,6 +743,7 @@ class ForgejoGitService:
         # Get the full file tree in one request to decide create vs update.
         # This replaces N per-file GET requests with a single recursive tree fetch.
         existing_paths: set[str] = set()
+        tree_truncated = False
         try:
             ref_resp = await self._request(
                 "GET", f"/repos/{repo}/git/refs/heads/{branch}",
@@ -757,9 +758,15 @@ class ForgejoGitService:
                 f"/repos/{repo}/git/trees/{head_sha}",
                 params={"recursive": "true"},
             )
-            for entry in tree_resp.json().get("tree", []):
+            tree_data = tree_resp.json()
+            for entry in tree_data.get("tree", []):
                 if entry.get("type") == "blob":
                     existing_paths.add(entry["path"])
+            # Forgejo caps recursive tree responses at 1000 entries.
+            # If truncated, files beyond the cutoff would be mis-classified
+            # as "create" instead of "update".  Fall back to per-file HEAD
+            # requests for any file not found in the partial tree.
+            tree_truncated = tree_data.get("truncated", False)
         except (RepoNotFoundError, KeyError):
             pass  # new repo or empty branch
 
@@ -768,8 +775,25 @@ class ForgejoGitService:
         for fc in files:
             raw = fc.content if isinstance(fc.content, bytes) else fc.content.encode()
             encoded = base64.b64encode(raw).decode()
+            # Determine operation: if the file is in the tree, update it.
+            # If the tree was truncated and the file wasn't found, check
+            # individually via HEAD request to avoid mis-classifying.
+            if fc.path in existing_paths:
+                op = "update"
+            elif tree_truncated:
+                try:
+                    await self._request(
+                        "GET",
+                        f"/repos/{repo}/contents/{fc.path}",
+                        params={"ref": branch},
+                    )
+                    op = "update"
+                except (RepoNotFoundError, ForgejoError):
+                    op = "create"
+            else:
+                op = "create"
             file_ops.append({
-                "operation": "update" if fc.path in existing_paths else "create",
+                "operation": op,
                 "path": fc.path,
                 "content": encoded,
             })

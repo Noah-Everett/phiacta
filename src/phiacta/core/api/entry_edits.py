@@ -181,6 +181,8 @@ async def create_edit_proposal(
             entry_id, validated_files, author, message, branch=branch_name,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
+        import logging
+        logging.getLogger(__name__).error("Edit proposal commit failed: %s", exc)
         await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
