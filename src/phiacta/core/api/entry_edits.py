@@ -34,11 +34,16 @@ from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
 from phiacta.core.schemas.entry_edit import (
     EditProposalCloseResponse,
+    EditProposalCommentCreate,
     EditProposalCreate,
     EditProposalDetail,
     EditProposalFileDiff,
     EditProposalListItem,
     EditProposalMergeResponse,
+)
+from phiacta.core.schemas.entry_issue import (
+    IssueAuthor,
+    IssueCommentResponse,
 )
 from phiacta.core.services.entity_service import EntityService
 from phiacta.core.services.git_service import (
@@ -47,6 +52,7 @@ from phiacta.core.services.git_service import (
     ForgejoError,
     ForgejoUnavailableError,
     GitService,
+    IssueCommentInfo,
     PullRequestInfo,
     RepoNotFoundError,
 )
@@ -110,6 +116,18 @@ async def _cleanup_branch(
         logger.warning(
             "Failed to clean up branch %s on entry %s", branch_name, entry_id,
         )
+
+
+def _comment_to_response(
+    comment: IssueCommentInfo, user_username: str | None = None,
+) -> IssueCommentResponse:
+    return IssueCommentResponse(
+        id=comment.id,
+        body=comment.body,
+        author=IssueAuthor(username=user_username or comment.author_name),
+        created_at=comment.created_at,
+        updated_at=comment.updated_at,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -321,8 +339,17 @@ async def get_edit_proposal_detail(
                 deletions=fd.deletions,
             ))
 
+    try:
+        comments = await git_service.get_issue_comments(entry_id, number)
+    except (RepoNotFoundError, ForgejoError):
+        comments = []
+
     base = _pr_to_list_item(pr)
-    return EditProposalDetail(**base.model_dump(), diff=diff_files)
+    return EditProposalDetail(
+        **base.model_dump(),
+        diff=diff_files,
+        comments=[_comment_to_response(c) for c in comments],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -503,3 +530,60 @@ async def close_edit_proposal(
         )
 
     return EditProposalCloseResponse(detail="Edit proposal closed")
+
+
+# ---------------------------------------------------------------------------
+# Add comment to proposal
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{entry_id}/edits/{number}/comments",
+    response_model=IssueCommentResponse,
+    status_code=201,
+)
+@limiter.limit("30/minute")
+async def add_edit_proposal_comment(
+    request: Request,
+    entry_id: UUID,
+    number: int,
+    body: EditProposalCommentCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    git_service: GitService = Depends(get_git_service),
+) -> IssueCommentResponse:
+    """Add a comment to an edit proposal."""
+    await get_readable_entry(entry_id, db, user=user)
+
+    await git_service.ensure_forgejo_user(user, db)
+
+    try:
+        comment = await git_service.create_issue_comment(
+            entry_id, number, body=body.body,
+            sudo_username=user.username,
+        )
+    except ForgejoUnavailableError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+    except (RepoNotFoundError, ForgejoError) as exc:
+        raise HTTPException(
+            status_code=404, detail="Edit proposal not found",
+        ) from exc
+
+    entity_service = EntityService(db)
+    try:
+        await entity_service.register_comment_and_log(
+            parent_id=entry_id,
+            issue_external_ref=f"pulls/{number}",
+            created_by=user.id,
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "Comment entity registration failed for edit PR %d on entry %s",
+            number, entry_id,
+        )
+
+    return _comment_to_response(comment, user.username)
