@@ -208,6 +208,153 @@ class TestProcessJob:
             metadata={"job_type": job.job_type},
         )
 
+    async def test_handler_writes_and_mark_completed_share_a_transaction(self) -> None:
+        """Handler's session writes and mark_completed run in the same session.
+
+        Regression test: previously the handler committed its result in one
+        transaction and then mark_completed ran in a SEPARATE session. If
+        the second commit failed, the handler's result was already
+        persisted but the job was stuck running — permanently inconsistent.
+
+        We assert that mark_completed is invoked on the SAME session
+        object that the handler ran on, so a single commit covers both.
+        """
+        engine = AsyncMock()
+
+        # Capture the session the handler sees via ctx.db.
+        seen_handler_sessions: list[Any] = []
+
+        class _CaptureHandler(JobHandler):
+            async def run(
+                self, input: dict[str, Any], ctx: JobContext,
+            ) -> dict[str, Any]:
+                seen_handler_sessions.append(ctx.db)
+                return {"status": "ok"}
+
+        worker = JobWorker(engine, handlers={"capture": _CaptureHandler()})
+
+        # Each context manager entry yields a NEW session (so we can
+        # detect if mark_completed is run against a different one).
+        sessions_handed_out: list[AsyncMock] = []
+
+        @asynccontextmanager
+        async def _factory():
+            session = AsyncMock()
+            session.commit = AsyncMock()
+            sessions_handed_out.append(session)
+            yield session
+
+        worker._session_factory = MagicMock(side_effect=_factory)
+
+        seen_repo_sessions: list[Any] = []
+
+        def _make_repo(s):
+            seen_repo_sessions.append(s)
+            return AsyncMock()
+
+        mock_entity_repo = AsyncMock()
+        mock_entity_repo.get_by_id = AsyncMock(return_value=None)
+
+        with (
+            patch("phiacta.jobs.worker.JobRepository", side_effect=_make_repo),
+            patch("phiacta.jobs.worker.EntityRepository", return_value=mock_entity_repo),
+            patch("phiacta.jobs.worker.ActivityRepository", return_value=AsyncMock()),
+        ):
+            await worker._process_job(_make_job(job_type="capture"))
+
+        assert len(seen_handler_sessions) == 1, "handler ran exactly once"
+        # On the success path the worker should open EXACTLY ONE session
+        # — the handler's — and run mark_completed against it.
+        assert len(sessions_handed_out) == 1, (
+            "expected single session for handler+mark_completed; "
+            "found %d (suggests handler and mark_completed are on "
+            "separate transactions)" % len(sessions_handed_out)
+        )
+        assert len(seen_repo_sessions) == 1
+        assert seen_repo_sessions[0] is seen_handler_sessions[0], (
+            "mark_completed must use the handler's session, not a fresh one"
+        )
+
+    async def test_mark_completed_failure_rolls_back_handler_writes(self) -> None:
+        """If mark_completed raises, the handler's session is NOT committed.
+
+        Regression test: previously mark_completed ran in a separate
+        session that was already committed for the result. Now they share
+        a session, so a mark_completed failure rolls back the result
+        write and the job ends up in 'failed' (handled by the outer
+        except). The system stays in a consistent state.
+        """
+        engine = AsyncMock()
+
+        # A handler that "writes" something to the session and returns.
+        handler_session_holder: dict[str, Any] = {}
+
+        class _WriteHandler(JobHandler):
+            async def run(
+                self, input: dict[str, Any], ctx: JobContext,
+            ) -> dict[str, Any]:
+                handler_session_holder["session"] = ctx.db
+                return {"status": "ok"}
+
+        worker = JobWorker(engine, handlers={"write": _WriteHandler()})
+
+        # Each call to the session factory yields a fresh session.
+        sessions_handed_out: list[AsyncMock] = []
+
+        @asynccontextmanager
+        async def _factory():
+            session = AsyncMock()
+            session.commit = AsyncMock()
+            sessions_handed_out.append(session)
+            yield session
+
+        worker._session_factory = MagicMock(side_effect=_factory)
+
+        # First JobRepository call (mark_completed on handler_session) raises.
+        # Second JobRepository call (mark_failed on a fresh bookkeeping
+        # session) captures so we can verify the failure path was hit.
+        mark_completed_repo = AsyncMock()
+        mark_completed_repo.mark_completed = AsyncMock(
+            side_effect=RuntimeError("simulated DB failure on status update"),
+        )
+        mark_failed_repo = AsyncMock()
+
+        repo_constructor_calls: list[Any] = []
+
+        def _repo_factory(s):
+            repo_constructor_calls.append(s)
+            return mark_completed_repo if len(repo_constructor_calls) == 1 else mark_failed_repo
+
+        mock_entity_repo = AsyncMock()
+        mock_entity_repo.get_by_id = AsyncMock(return_value=None)
+
+        with (
+            patch("phiacta.jobs.worker.JobRepository", side_effect=_repo_factory),
+            patch("phiacta.jobs.worker.EntityRepository", return_value=mock_entity_repo),
+            patch("phiacta.jobs.worker.ActivityRepository", return_value=AsyncMock()),
+        ):
+            await worker._process_job(_make_job(job_type="write"))
+
+        # The handler session was NEVER successfully committed (because
+        # mark_completed raised before commit was reached). This is what
+        # rolls back any handler-staged writes (e.g. compiled PDF blob).
+        handler_session = handler_session_holder["session"]
+        handler_session.commit.assert_not_awaited()
+
+        # mark_completed was attempted on the handler session.
+        mark_completed_repo.mark_completed.assert_awaited_once()
+
+        # The job was then marked failed via the outer except handler in
+        # a separate bookkeeping session — keeping the row consistent.
+        mark_failed_repo.mark_failed.assert_awaited_once()
+        # Two distinct sessions: handler+mark_completed (rolled back) and
+        # the bookkeeping session for mark_failed (committed).
+        assert len(sessions_handed_out) == 2
+        assert sessions_handed_out[0] is not sessions_handed_out[1]
+        assert sessions_handed_out[1].commit.await_count == 1, (
+            "mark_failed bookkeeping session must commit"
+        )
+
 
 # --- _handle_retry ----------------------------------------------------------
 

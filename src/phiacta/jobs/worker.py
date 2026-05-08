@@ -144,7 +144,16 @@ class JobWorker:
             return
 
         try:
-            # Run the handler with a fresh DB session
+            # Run the handler AND record completion in a single transaction.
+            # The handler stages its writes (e.g. compiled PDF blob) on
+            # ``handler_session``; we then call ``mark_completed`` on the
+            # SAME session and commit once. If anything fails between the
+            # handler returning and commit, the handler's writes are rolled
+            # back together with the status update, keeping the row
+            # consistent. (Previously the handler's result was committed
+            # separately from mark_completed, so a failure to record
+            # completion would leave the result in DB but the job stuck
+            # in 'running'.)
             async with self._session_factory() as handler_session:
                 ctx = JobContext(
                     db=handler_session,
@@ -155,17 +164,13 @@ class JobWorker:
                     handler.run(job.input, ctx),
                     timeout=job.timeout_seconds,
                 )
-                await handler_session.commit()
-
-            # Mark completed and log activity
-            async with self._session_factory() as session:
-                repo = JobRepository(session)
+                repo = JobRepository(handler_session)
                 await repo.mark_completed(job.id, result)
                 await self._log_job_activity(
-                    session, job, "job.completed",
+                    handler_session, job, "job.completed",
                     metadata={"job_type": job.job_type},
                 )
-                await session.commit()
+                await handler_session.commit()
 
             logger.info("Job %s (%s) completed", job.id, job.job_type)
 
@@ -176,7 +181,10 @@ class JobWorker:
             await self._handle_retry(job, f"Handler timed out after {job.timeout_seconds}s")
 
         except Exception as exc:
-            # Permanent failure — no retry
+            # Permanent failure — no retry. Run through retry path so the
+            # bookkeeping is consistent (any handler writes were rolled
+            # back automatically when handler_session exited without a
+            # successful commit).
             logger.exception("Job %s (%s) failed permanently", job.id, job.job_type)
             async with self._session_factory() as session:
                 repo = JobRepository(session)
