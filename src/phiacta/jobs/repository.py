@@ -248,7 +248,8 @@ class JobRepository:
             .values(
                 status="pending",
                 attempts=Job.attempts + 1,
-                process_after=None,
+                # Preserve the process_after backoff so poison jobs don't
+                # immediately re-execute and burn through max_attempts.
                 updated_at=now,
             )
             .returning(Job.id)

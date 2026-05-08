@@ -263,12 +263,12 @@ class TestProcessJob:
             await worker._process_job(_make_job(job_type="capture"))
 
         assert len(seen_handler_sessions) == 1, "handler ran exactly once"
-        # On the success path the worker should open EXACTLY ONE session
-        # — the handler's — and run mark_completed against it.
-        assert len(sessions_handed_out) == 1, (
-            "expected single session for handler+mark_completed; "
-            "found %d (suggests handler and mark_completed are on "
-            "separate transactions)" % len(sessions_handed_out)
+        # Success path opens TWO sessions: one for handler+mark_completed
+        # (same transaction), one for auxiliary activity logging (separate
+        # so a failure there can't roll back the handler's result).
+        assert len(sessions_handed_out) == 2, (
+            "expected 2 sessions (handler+mark_completed, then activity); "
+            "found %d" % len(sessions_handed_out)
         )
         assert len(seen_repo_sessions) == 1
         assert seen_repo_sessions[0] is seen_handler_sessions[0], (

@@ -166,11 +166,22 @@ class JobWorker:
                 )
                 repo = JobRepository(handler_session)
                 await repo.mark_completed(job.id, result)
-                await self._log_job_activity(
-                    handler_session, job, "job.completed",
-                    metadata={"job_type": job.job_type},
-                )
+                # Commit handler writes + status together. Activity logging
+                # runs in a separate session so a failure there can't
+                # poison handler_session and roll back the result.
                 await handler_session.commit()
+
+            # Activity logging in its own session — auxiliary, not
+            # transactional with the handler's result.
+            try:
+                async with self._session_factory() as activity_session:
+                    await self._log_job_activity(
+                        activity_session, job, "job.completed",
+                        metadata={"job_type": job.job_type},
+                    )
+                    await activity_session.commit()
+            except Exception:
+                logger.debug("Failed to commit job.completed activity for %s", job.id, exc_info=True)
 
             logger.info("Job %s (%s) completed", job.id, job.job_type)
 

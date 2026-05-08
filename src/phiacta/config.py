@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # rolling-restart of the worker does not cancel jobs that are still
     # legitimately running. Default 600s = 10 minutes (current longest
     # handler timeout is 480s).
-    job_recovery_grace_seconds: int = 600
+    job_recovery_grace_seconds: int = Field(default=600, gt=0)
 
     # Plugins
     enabled_plugins: list[str] = Field(default_factory=list)
