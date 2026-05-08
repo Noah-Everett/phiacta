@@ -396,9 +396,28 @@ async def merge_edit_proposal(
             status_code=409, detail="Edit proposal is closed",
         )
 
-    # Pre-merge validation: check diff for .phiacta/ files.
+    # Pre-merge validation: re-check diff for invalid file paths. We
+    # already validate at proposal-creation time, but a malicious actor
+    # could have pushed extra commits to the proposal branch since
+    # then. If we can't fetch the diff, fail closed — silently
+    # proceeding would let a path-traversal proposal merge.
     try:
         diff_info = await git_service.get_pull_request_diff(entry_id, number)
+    except RepoNotFoundError:
+        # PR genuinely doesn't exist — Forgejo will reject the merge below.
+        diff_info = None
+    except ForgejoError as exc:
+        # We can't verify safety. Refuse rather than fall through.
+        logger.warning(
+            "Merge blocked: failed to fetch diff for PR #%d on entry %s: %s",
+            number, entry_id, exc,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Git service unavailable",
+        ) from exc
+
+    if diff_info is not None:
         for fd in diff_info.files_changed:
             try:
                 validate_file_path(fd.path)
@@ -411,10 +430,6 @@ async def merge_edit_proposal(
                     status_code=422,
                     detail="Proposal contains an invalid file path",
                 ) from exc
-    except HTTPException:
-        raise
-    except (RepoNotFoundError, ForgejoError):
-        pass  # If we can't get the diff, proceed — Forgejo will catch conflicts.
 
     # Merge.
     try:
@@ -577,6 +592,7 @@ async def add_edit_proposal_comment(
             parent_id=entry_id,
             issue_external_ref=f"pulls/{number}",
             created_by=user.id,
+            action="edit.commented",
         )
         await db.commit()
     except IntegrityError:

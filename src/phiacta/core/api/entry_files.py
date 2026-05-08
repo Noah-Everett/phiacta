@@ -10,7 +10,6 @@ operations on entry git repos via the GitService.
 from __future__ import annotations
 
 import mimetypes
-import urllib.parse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
@@ -45,14 +44,25 @@ router = APIRouter(prefix="/entries", tags=["entries"])
 def _validate_path_common(path: str) -> list[str]:
     """Common path validation — traversal and format checks.
 
+    Reject any path that contains ``%`` outright. Forgejo URL-decodes
+    paths once when handling commit/diff payloads, so a path like
+    ``..%252Fevil.txt`` would survive a single ``unquote()`` here
+    (decoding to ``..%2Fevil.txt`` — one segment, no literal ``..``)
+    and then be decoded a second time downstream into ``../evil.txt``,
+    escaping the entry's directory. Filesystem paths sent to this
+    endpoint as JSON strings never need URL-escapes — spaces and
+    other special characters are valid bytes in a path — so rejecting
+    ``%`` is both safe and the simplest defensive posture.
+
     Returns normalized path segments.
     """
     if not path:
         raise ValueError("Invalid file path")
-    normalized = urllib.parse.unquote(path)
-    if normalized.startswith("/"):
+    if "%" in path:
         raise ValueError("Invalid file path")
-    segments = normalized.split("/")
+    if path.startswith("/"):
+        raise ValueError("Invalid file path")
+    segments = path.split("/")
     if ".." in segments:
         raise ValueError("Invalid file path")
     return segments
