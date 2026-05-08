@@ -41,6 +41,12 @@ class Settings(BaseSettings):
 
     # Jobs
     max_active_jobs_per_user: int = 10
+    # Grace period before a 'running' job is considered crashed and reset.
+    # Must comfortably exceed the longest job timeout_seconds so that
+    # rolling-restart of the worker does not cancel jobs that are still
+    # legitimately running. Default 600s = 10 minutes (current longest
+    # handler timeout is 480s).
+    job_recovery_grace_seconds: int = 600
 
     # Plugins
     enabled_plugins: list[str] = Field(default_factory=list)

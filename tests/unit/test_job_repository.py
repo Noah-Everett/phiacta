@@ -234,14 +234,17 @@ class TestJobMarkRetry:
 
 
 class TestJobRecoverStale:
-    async def test_running_jobs_reset_to_pending_on_recovery(self, db_session: AsyncSession) -> None:
+    async def test_stale_running_job_reset_to_pending_on_recovery(self, db_session: AsyncSession) -> None:
+        """A running job claimed long enough ago is reset to pending."""
         user = await _seed_user(db_session)
         repo = JobRepository(db_session)
         job = await repo.create(job_type="test", submitted_by=user.id, input={})
         job.status = "running"
+        # Claimed well before the grace window — definitely stale.
+        job.claimed_at = datetime.now(UTC) - timedelta(seconds=10_000)
         await db_session.commit()
 
-        count = await repo.recover_stale()
+        count = await repo.recover_stale(grace_seconds=600)
         await db_session.commit()
         assert count == 1
 
@@ -257,10 +260,81 @@ class TestJobRecoverStale:
         completed.status = "completed"
         await db_session.commit()
 
-        count = await repo.recover_stale()
+        count = await repo.recover_stale(grace_seconds=600)
         assert count == 0
 
         p = await _reload(db_session, pending.id)
         c = await _reload(db_session, completed.id)
         assert p.status == "pending"
         assert c.status == "completed"
+
+    async def test_fresh_running_job_within_grace_is_not_touched(self, db_session: AsyncSession) -> None:
+        """A running job claimed seconds ago must NOT be reset on worker restart.
+
+        Regression test: rolling restart of one worker must not cancel
+        in-flight jobs that another worker (or the same worker after a
+        quick recycle) is legitimately processing.
+        """
+        user = await _seed_user(db_session)
+        repo = JobRepository(db_session)
+        job = await repo.create(job_type="test", submitted_by=user.id, input={})
+        job.status = "running"
+        # Claimed just now — well inside the grace window.
+        job.claimed_at = datetime.now(UTC) - timedelta(seconds=2)
+        await db_session.commit()
+
+        count = await repo.recover_stale(grace_seconds=600)
+        await db_session.commit()
+        assert count == 0
+
+        refreshed = await _reload(db_session, job.id)
+        assert refreshed.status == "running", "fresh running job must stay running"
+        assert refreshed.attempts == 0, "attempts must not be incremented for fresh job"
+
+    async def test_stale_running_job_at_max_attempts_is_failed_not_retried(
+        self, db_session: AsyncSession,
+    ) -> None:
+        """A stale running job that would exhaust max_attempts is moved to failed,
+        and the second UPDATE (the retry branch) does NOT touch it again."""
+        user = await _seed_user(db_session)
+        repo = JobRepository(db_session)
+        job = await repo.create(
+            job_type="test", submitted_by=user.id, input={}, max_attempts=2,
+        )
+        job.status = "running"
+        job.attempts = 1  # next attempt would hit max_attempts (1 + 1 == 2)
+        job.claimed_at = datetime.now(UTC) - timedelta(seconds=10_000)
+        await db_session.commit()
+
+        count = await repo.recover_stale(grace_seconds=600)
+        await db_session.commit()
+        assert count == 1
+
+        refreshed = await _reload(db_session, job.id)
+        assert refreshed.status == "failed"
+        # Must be incremented exactly once across both UPDATEs.
+        assert refreshed.attempts == 2
+        assert refreshed.last_error is not None
+        assert "max attempts" in refreshed.last_error.lower()
+
+    async def test_running_job_with_null_claimed_at_is_recovered(
+        self, db_session: AsyncSession,
+    ) -> None:
+        """Legacy/pre-cutoff rows with NULL claimed_at are still recovered.
+
+        Without this, jobs created before the claimed_at column was populated
+        could get stuck running forever.
+        """
+        user = await _seed_user(db_session)
+        repo = JobRepository(db_session)
+        job = await repo.create(job_type="test", submitted_by=user.id, input={})
+        job.status = "running"
+        job.claimed_at = None
+        await db_session.commit()
+
+        count = await repo.recover_stale(grace_seconds=600)
+        await db_session.commit()
+        assert count == 1
+
+        refreshed = await _reload(db_session, job.id)
+        assert refreshed.status == "pending"

@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func as sa_func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.config import get_settings
 from phiacta.core.pagination import keyset_condition
 
 from phiacta.jobs.models import Job
@@ -195,18 +196,39 @@ class JobRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def recover_stale(self) -> int:
+    async def recover_stale(self, grace_seconds: int | None = None) -> int:
         """Reset jobs stuck in 'running' from a previous crash. Returns count.
+
+        Only touches rows whose ``claimed_at`` is older than ``grace_seconds``
+        ago (default: ``settings.job_recovery_grace_seconds``). This prevents
+        a worker rolling-restart from cancelling jobs that are still
+        legitimately running on a sibling worker. Rows with NULL
+        ``claimed_at`` (legacy data from before claimed_at was populated)
+        are also recovered, since we have no way to know how long they
+        have been running.
 
         Increments ``attempts`` so that jobs which repeatedly crash the
         worker eventually hit ``max_attempts`` and fail permanently.
         """
-        now = datetime.now(UTC)
+        if grace_seconds is None:
+            grace_seconds = get_settings().job_recovery_grace_seconds
 
-        # Fail jobs that have exhausted their attempts
-        failed = await self._session.execute(
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(seconds=grace_seconds)
+
+        # A row is "stale" if it's running AND was claimed before the
+        # cutoff (or has no claimed_at, treated as legacy/pre-cutoff).
+        stale_predicate = (
+            (Job.status == "running")
+            & ((Job.claimed_at < cutoff) | (Job.claimed_at.is_(None)))
+        )
+
+        # Fail jobs that have exhausted their attempts. Both branches use
+        # symmetric guards so a row that just hit max attempts in this
+        # UPDATE cannot be touched again by the second one.
+        failed_result = await self._session.execute(
             update(Job)
-            .where(Job.status == "running", Job.attempts + 1 >= Job.max_attempts)
+            .where(stale_predicate, Job.attempts + 1 >= Job.max_attempts)
             .values(
                 status="failed",
                 attempts=Job.attempts + 1,
@@ -216,12 +238,13 @@ class JobRepository:
             )
             .returning(Job.id)
         )
-        failed_count = len(failed.all())
+        failed_count = len(failed_result.all())
 
-        # Return remaining running jobs to pending with incremented attempts
-        retried = await self._session.execute(
+        # Return remaining running jobs to pending with incremented attempts.
+        # Symmetric guard: skip rows the first UPDATE has already failed.
+        retried_result = await self._session.execute(
             update(Job)
-            .where(Job.status == "running")
+            .where(stale_predicate, Job.attempts + 1 < Job.max_attempts)
             .values(
                 status="pending",
                 attempts=Job.attempts + 1,
@@ -230,6 +253,6 @@ class JobRepository:
             )
             .returning(Job.id)
         )
-        retried_count = len(retried.all())
+        retried_count = len(retried_result.all())
 
         return failed_count + retried_count
