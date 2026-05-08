@@ -153,8 +153,8 @@ def wait_for_ready(
 ) -> bool:
     """Poll until an entry's repo_status becomes 'ready'.  Returns False on timeout."""
     for _ in range(max_wait // 2):
-        detail = get(client, f"{base}/entries/{entry_id}", token=token)
-        if detail.get("repo_status") == "ready":
+        detail = get(client, f"{base}/entries/{entry_id}", token=token, tolerate_409=True)
+        if detail and detail.get("repo_status") == "ready":
             return True
         time.sleep(2)
     return False
