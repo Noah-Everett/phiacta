@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Auth
     jwt_secret_key: str
-    access_token_expire_minutes: int = 1440
+    access_token_expire_minutes: int = 43200  # 30 days
 
     # Forgejo (git backend)
     forgejo_url: str = "http://forgejo:3000"
@@ -31,9 +31,22 @@ class Settings(BaseSettings):
 
     # Rate limiting
     rate_limit_enabled: bool = True
+    max_json_body_bytes: int = 1 * 1024 * 1024  # 1 MB for JSON bodies
 
     # File upload limits
-    max_file_size_bytes: int = 25 * 1024 * 1024  # 25 MB
+    max_file_size_bytes: int = 25 * 1024 * 1024  # 25 MB per file
+    max_upload_files: int = 10_000  # max files per upload request
+    max_upload_size_bytes: int = 500 * 1024 * 1024  # 500 MB total per request
+    max_repo_size_bytes: int = 1024 * 1024 * 1024  # 1 GB per repo
+
+    # Jobs
+    max_active_jobs_per_user: int = 10
+    # Grace period before a 'running' job is considered crashed and reset.
+    # Must comfortably exceed the longest job timeout_seconds so that
+    # rolling-restart of the worker does not cancel jobs that are still
+    # legitimately running. Default 600s = 10 minutes (current longest
+    # handler timeout is 480s).
+    job_recovery_grace_seconds: int = Field(default=600, gt=0)
 
     # Plugins
     enabled_plugins: list[str] = Field(default_factory=list)

@@ -42,6 +42,7 @@ from phiacta.core.services.git_service import (
     ForgejoUnavailableError,
 )
 from phiacta.core.services.ingestion import ingest_entry
+from phiacta.plugin import IngestContext, IngestTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +354,7 @@ class OutboxWorker:
             await ingest_entry(
                 entry, entry.current_head_sha, session, self._git,
                 on_ingest_hooks=self._on_ingest_hooks,
+                context=IngestContext(trigger=IngestTrigger.METADATA_CHANGED),
             )
             await session.commit()
 
@@ -407,15 +409,16 @@ class OutboxWorker:
             else:
                 raise
 
-        # Step 3: Commit initial .phiacta/content.{ext}
-        # entry.yaml is no longer generated — git stores content only,
-        # DB stores everything else.
-        ext = FORMAT_EXTENSIONS.get(content_format, ".md")
-        content_text = content if content else ""
-
-        files = [
-            FileContent(path=f".phiacta/content{ext}", content=content_text),
-        ]
+        # Step 3: Commit initial content file.
+        # When content is provided, create .phiacta/content.{ext}.
+        # When content is null/empty (e.g. multi-file LaTeX projects that
+        # upload their own files), still create an initial commit with a
+        # placeholder so the repo has a valid main branch.
+        if content:
+            ext = FORMAT_EXTENSIONS.get(content_format, ".md")
+            files = [FileContent(path=f".phiacta/content{ext}", content=content)]
+        else:
+            files = [FileContent(path=".phiacta/.gitkeep", content="")]
         sha = await self._git.commit_files(
             entry_id, files, author, f"Initial entry: {entry_id}"
         )
@@ -447,6 +450,7 @@ class OutboxWorker:
                 await ingest_entry(
                     entry, sha, session, self._git,
                     on_ingest_hooks=self._on_ingest_hooks,
+                    context=IngestContext(trigger=IngestTrigger.INITIAL_PROVISION),
                 )
             await session.commit()
 
@@ -489,6 +493,7 @@ class OutboxWorker:
                 await ingest_entry(
                     entry, sha, session, self._git,
                     on_ingest_hooks=self._on_ingest_hooks,
+                    context=IngestContext(trigger=IngestTrigger.CONTENT_CHANGED),
                 )
             await session.commit()
 

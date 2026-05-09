@@ -42,4 +42,6 @@ async def on_ingest(
     await compute_search_tsv(entity_id=entity_id, content_cache=searchable, version_id=None, db=db)
 
 
+on_ingest.path_patterns = (".phiacta/content.*", ".phiacta/content/*")  # type: ignore[attr-defined]
+
 __all__ = ["manifest", "router", "on_ingest"]

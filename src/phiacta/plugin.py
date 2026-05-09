@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from pydantic_settings import BaseSettings
 
     from phiacta.core.compose import EntryDataProvider
+    from phiacta.tools.base import JobHandler
 
 # Type alias for on_ingest hook functions.
 # Signature: async def on_ingest(entry_id: UUID, content: str | None, metadata: dict, db: AsyncSession) -> None
@@ -46,6 +47,28 @@ class PluginType(Enum):
 
     EXTENSION = "extension"
     TOOL = "tool"
+
+
+class IngestTrigger(Enum):
+    """What kind of change prompted ingestion.
+
+    Hooks declare which triggers they respond to via an ``on_ingest.triggers``
+    attribute.  Hooks without the attribute run on every trigger (backward
+    compatible default).
+    """
+
+    CONTENT_CHANGED = "content_changed"
+    METADATA_CHANGED = "metadata_changed"
+    INITIAL_PROVISION = "initial_provision"
+    RECONCILIATION = "reconciliation"
+
+
+@dataclass(frozen=True)
+class IngestContext:
+    """Describes why ingestion is happening and what changed."""
+
+    trigger: IngestTrigger
+    changed_paths: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -72,6 +95,8 @@ class PluginRegistration:
     entry_data_provider: EntryDataProvider | None = None
     # Optional hook called during ingestion (content changes, reconciliation).
     on_ingest: OnIngestHook | None = None
+    # Optional tool handler for tools that run via the job worker.
+    job_handler: JobHandler | None = None
 
 
 # Maps PluginType to the directory name under src/phiacta/
@@ -227,6 +252,7 @@ class PluginRegistry:
         router = getattr(module, "router", None)
         edp = getattr(module, "entry_data_provider", None)
         on_ingest = getattr(module, "on_ingest", None)
+        job_handler = getattr(module, "job_handler", None)
 
         self._plugins[manifest.name] = PluginRegistration(
             manifest=manifest,
@@ -234,6 +260,7 @@ class PluginRegistry:
             settings=settings,
             entry_data_provider=edp,
             on_ingest=on_ingest,
+            job_handler=job_handler,
         )
 
     def resolve_dependencies(self) -> list[str]:
@@ -308,6 +335,16 @@ class PluginRegistry:
             for reg in self._plugins.values()
             if reg.entry_data_provider is not None
         ]
+
+    def get_job_handlers(self) -> dict[str, JobHandler]:
+        """Return all registered job handlers, keyed by plugin name."""
+        from phiacta.tools.base import JobHandler
+
+        return {
+            name: reg.job_handler
+            for name, reg in self._plugins.items()
+            if reg.job_handler is not None
+        }
 
     def get_on_ingest_hooks(self) -> list[OnIngestHook]:
         """Return all registered on_ingest hooks."""

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Index, String
+from sqlalchemy import Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from phiacta.core.models.base import Base, TimestampMixin, UUIDMixin
@@ -14,6 +14,7 @@ class User(UUIDMixin, TimestampMixin, Base):
 
     username: Mapped[str] = mapped_column(String(50), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    forgejo_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Relationships
     created_entries: Mapped[list[Entry]] = relationship(  # type: ignore[name-defined]  # noqa: F821
@@ -24,4 +25,5 @@ class User(UUIDMixin, TimestampMixin, Base):
 
     __table_args__ = (
         Index("idx_users_username", "username", unique=True),
+        Index("ix_users_forgejo_user_id", "forgejo_user_id", unique=True),
     )

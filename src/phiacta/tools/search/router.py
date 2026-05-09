@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from phiacta.core.api.rate_limit import limiter
 from phiacta.core.tool_deps import get_db, get_optional_user, get_providers, EntryDataProvider
 from phiacta.core.pagination import decode_offset_cursor, encode_offset_cursor
 from phiacta.extensions.search_tsv.repository import get_active_version
@@ -33,6 +34,7 @@ _RESERVED_PARAMS = frozenset({"q", "visibility", "limit", "cursor"})
 
 
 @router.get("/", response_model=SearchResponse)
+@limiter.limit("60/minute")
 async def search_entries(
     request: Request,
     q: str = Query(..., min_length=1, max_length=500),

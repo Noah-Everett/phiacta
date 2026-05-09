@@ -147,10 +147,17 @@ class EntityService:
         created_by: UUID,
         external_ref: str | None = None,
         metadata: dict | None = None,
+        action: str = "issue.commented",
     ) -> Entity | None:
-        """Register a comment entity under an issue entity and log activity.
+        """Register a comment entity under a parent entity and log activity.
 
-        Looks up the issue entity by external_ref. If not found, logs a
+        Despite the parameter name ``issue_external_ref`` (kept for
+        backwards compatibility), the parent entity may be either an
+        issue or an edit proposal. Callers commenting on an edit
+        proposal should pass ``action="edit.commented"`` so the activity
+        feed reflects the correct event type.
+
+        Looks up the parent entity by external_ref. If not found, logs a
         warning and returns None (graceful degradation).
         """
         issue_entity = await self.get_entity_by_external_ref(
@@ -158,7 +165,7 @@ class EntityService:
         )
         if issue_entity is None:
             logger.warning(
-                "Issue entity not found for %s on parent=%s, "
+                "Parent entity not found for %s on parent=%s, "
                 "skipping comment entity registration",
                 issue_external_ref, parent_id,
             )
@@ -172,7 +179,7 @@ class EntityService:
         )
         await self.log_activity(
             actor_id=created_by,
-            action="issue.commented",
+            action=action,
             entity_id=comment_entity.id,
             metadata=metadata,
         )

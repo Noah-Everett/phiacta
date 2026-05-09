@@ -34,11 +34,16 @@ from phiacta.core.db.session import get_db
 from phiacta.core.models.user import User
 from phiacta.core.schemas.entry_edit import (
     EditProposalCloseResponse,
+    EditProposalCommentCreate,
     EditProposalCreate,
     EditProposalDetail,
     EditProposalFileDiff,
     EditProposalListItem,
     EditProposalMergeResponse,
+)
+from phiacta.core.schemas.entry_issue import (
+    IssueAuthor,
+    IssueCommentResponse,
 )
 from phiacta.core.services.entity_service import EntityService
 from phiacta.core.services.git_service import (
@@ -47,6 +52,7 @@ from phiacta.core.services.git_service import (
     ForgejoError,
     ForgejoUnavailableError,
     GitService,
+    IssueCommentInfo,
     PullRequestInfo,
     RepoNotFoundError,
 )
@@ -112,6 +118,18 @@ async def _cleanup_branch(
         )
 
 
+def _comment_to_response(
+    comment: IssueCommentInfo, user_username: str | None = None,
+) -> IssueCommentResponse:
+    return IssueCommentResponse(
+        id=comment.id,
+        body=comment.body,
+        author=IssueAuthor(username=user_username or comment.author_name),
+        created_at=comment.created_at,
+        updated_at=comment.updated_at,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Create edit proposal
 # ---------------------------------------------------------------------------
@@ -134,6 +152,8 @@ async def create_edit_proposal(
 ) -> EditProposalListItem:
     """Create an edit proposal (branch + PR) for an entry."""
     entry = await get_proposable_entry(entry_id, db, user=user)
+
+    await git_service.ensure_forgejo_user(user, db)
 
     # Validate all file paths before touching Forgejo.
     for fc in body.files:
@@ -179,6 +199,8 @@ async def create_edit_proposal(
             entry_id, validated_files, author, message, branch=branch_name,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
+        import logging
+        logging.getLogger(__name__).error("Edit proposal commit failed: %s", exc)
         await _cleanup_branch(git_service, entry_id, branch_name)
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
@@ -194,6 +216,7 @@ async def create_edit_proposal(
             head_branch=branch_name,
             base_branch="main",
             author_name=user.username,
+            sudo_username=user.username,
         )
     except (RepoNotFoundError, ForgejoError) as exc:
         await _cleanup_branch(git_service, entry_id, branch_name)
@@ -316,8 +339,17 @@ async def get_edit_proposal_detail(
                 deletions=fd.deletions,
             ))
 
+    try:
+        comments = await git_service.get_issue_comments(entry_id, number)
+    except (RepoNotFoundError, ForgejoError):
+        comments = []
+
     base = _pr_to_list_item(pr)
-    return EditProposalDetail(**base.model_dump(), diff=diff_files)
+    return EditProposalDetail(
+        **base.model_dump(),
+        diff=diff_files,
+        comments=[_comment_to_response(c) for c in comments],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +373,8 @@ async def merge_edit_proposal(
     """Merge an edit proposal. Only the entry owner can merge."""
     await get_writable_entry(entry_id, user, db)
 
+    await git_service.ensure_forgejo_user(user, db)
+
     # Verify the PR exists and is open.
     try:
         pr = await git_service.get_pull_request(entry_id, number)
@@ -362,9 +396,28 @@ async def merge_edit_proposal(
             status_code=409, detail="Edit proposal is closed",
         )
 
-    # Pre-merge validation: check diff for .phiacta/ files.
+    # Pre-merge validation: re-check diff for invalid file paths. We
+    # already validate at proposal-creation time, but a malicious actor
+    # could have pushed extra commits to the proposal branch since
+    # then. If we can't fetch the diff, fail closed — silently
+    # proceeding would let a path-traversal proposal merge.
     try:
         diff_info = await git_service.get_pull_request_diff(entry_id, number)
+    except RepoNotFoundError:
+        # PR genuinely doesn't exist — Forgejo will reject the merge below.
+        diff_info = None
+    except ForgejoError as exc:
+        # We can't verify safety. Refuse rather than fall through.
+        logger.warning(
+            "Merge blocked: failed to fetch diff for PR #%d on entry %s: %s",
+            number, entry_id, exc,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Git service unavailable",
+        ) from exc
+
+    if diff_info is not None:
         for fd in diff_info.files_changed:
             try:
                 validate_file_path(fd.path)
@@ -377,14 +430,10 @@ async def merge_edit_proposal(
                     status_code=422,
                     detail="Proposal contains an invalid file path",
                 ) from exc
-    except HTTPException:
-        raise
-    except (RepoNotFoundError, ForgejoError):
-        pass  # If we can't get the diff, proceed — Forgejo will catch conflicts.
 
     # Merge.
     try:
-        sha = await git_service.merge_pull_request(entry_id, number)
+        sha = await git_service.merge_pull_request(entry_id, number, sudo_username=user.username)
     except RepoNotFoundError as exc:
         raise HTTPException(
             status_code=409,
@@ -394,6 +443,12 @@ async def merge_edit_proposal(
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
+
+    # Clean up the proposal branch (best-effort)
+    try:
+        await git_service.delete_branch(entry_id, pr.head_branch)
+    except Exception:
+        logger.debug("Failed to delete branch %s after merge", pr.head_branch, exc_info=True)
 
     # Log activity via service
     entity_service = EntityService(db)
@@ -437,13 +492,15 @@ async def close_edit_proposal(
     """Close/reject an edit proposal. Only the entry owner can close."""
     entry = await get_owned_entry(entry_id, user, db)
 
+    await git_service.ensure_forgejo_user(user, db)
+
     if entry.repo_status != "ready":
         raise HTTPException(
             status_code=409, detail="Entry repository is not yet ready",
         )
 
     try:
-        await git_service.close_pull_request(entry_id, number)
+        pr = await git_service.get_pull_request(entry_id, number)
     except RepoNotFoundError as exc:
         raise HTTPException(
             status_code=404, detail="Edit proposal not found",
@@ -452,6 +509,23 @@ async def close_edit_proposal(
         raise HTTPException(
             status_code=502, detail="Git service unavailable",
         ) from exc
+
+    try:
+        await git_service.close_pull_request(entry_id, number, sudo_username=user.username)
+    except RepoNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="Edit proposal not found",
+        ) from exc
+    except ForgejoError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+
+    # Clean up the proposal branch (best-effort)
+    try:
+        await git_service.delete_branch(entry_id, pr.head_branch)
+    except Exception:
+        logger.debug("Failed to delete branch %s after close", pr.head_branch, exc_info=True)
 
     # Log activity via service
     entity_service = EntityService(db)
@@ -471,3 +545,61 @@ async def close_edit_proposal(
         )
 
     return EditProposalCloseResponse(detail="Edit proposal closed")
+
+
+# ---------------------------------------------------------------------------
+# Add comment to proposal
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{entry_id}/edits/{number}/comments",
+    response_model=IssueCommentResponse,
+    status_code=201,
+)
+@limiter.limit("30/minute")
+async def add_edit_proposal_comment(
+    request: Request,
+    entry_id: UUID,
+    number: int,
+    body: EditProposalCommentCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    git_service: GitService = Depends(get_git_service),
+) -> IssueCommentResponse:
+    """Add a comment to an edit proposal."""
+    await get_readable_entry(entry_id, db, user=user)
+
+    await git_service.ensure_forgejo_user(user, db)
+
+    try:
+        comment = await git_service.create_issue_comment(
+            entry_id, number, body=body.body,
+            sudo_username=user.username,
+        )
+    except ForgejoUnavailableError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+    except (RepoNotFoundError, ForgejoError) as exc:
+        raise HTTPException(
+            status_code=404, detail="Edit proposal not found",
+        ) from exc
+
+    entity_service = EntityService(db)
+    try:
+        await entity_service.register_comment_and_log(
+            parent_id=entry_id,
+            issue_external_ref=f"pulls/{number}",
+            created_by=user.id,
+            action="edit.commented",
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "Comment entity registration failed for edit PR %d on entry %s",
+            number, entry_id,
+        )
+
+    return _comment_to_response(comment, user.username)

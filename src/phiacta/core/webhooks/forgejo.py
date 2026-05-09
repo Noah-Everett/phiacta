@@ -21,6 +21,7 @@ import hashlib
 import hmac
 import logging
 import re
+from fnmatch import fnmatch
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -32,12 +33,43 @@ from phiacta.core.repositories.entry_repository import EntryRepository
 from phiacta.core.services.git_service import GitService
 from phiacta.core.services.git_service_dep import get_git_service
 from phiacta.core.services.ingestion import ingest_entry
+from phiacta.plugin import IngestContext, IngestTrigger
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+def _any_hook_matches(commits: list[dict], hooks: list) -> bool:
+    """Check whether any hook's path_patterns match the changed files.
+
+    Returns True if:
+    - any hook lacks a ``path_patterns`` attribute (wants all files), OR
+    - any changed path matches any hook's declared patterns (via fnmatch).
+
+    When no commits are provided, returns True (safe default).
+    """
+    if not commits:
+        return True
+
+    # Collect all patterns; if any hook has no path_patterns, match everything.
+    all_patterns: list[str] = []
+    for hook in hooks:
+        patterns = getattr(hook, "path_patterns", None)
+        if patterns is None:
+            return True  # This hook wants all file changes
+        all_patterns.extend(patterns)
+
+    if not all_patterns:
+        return True  # No hooks with patterns = nothing to filter
+
+    for commit in commits:
+        for key in ("added", "modified", "removed"):
+            for path in commit.get(key, []):
+                if any(fnmatch(path, pat) for pat in all_patterns):
+                    return True
+    return False
 
 
 def _verify_signature(body: bytes, signature: str, secret: str) -> bool:
@@ -156,11 +188,30 @@ async def _handle_push(
         logger.debug("SHA %s already ingested for entry %s, skipping", after_sha[:12], entry_id)
         return
 
-    # Run ingestion — wrapped in try/except to always return 200.
-    # Update current_head_sha only AFTER successful ingestion so that
-    # a transient failure will be retried on the next push.
+    # Check whether any hook cares about the changed files.  Each hook
+    # declares path_patterns (glob); if none match, skip ingestion and
+    # just update the head SHA.
+    content_changed = _any_hook_matches(commits, hooks)
+
     try:
-        await ingest_entry(entry, after_sha, db, git_service, on_ingest_hooks=hooks)
+        if content_changed:
+            paths: set[str] = set()
+            for commit in commits:
+                for key in ("added", "modified", "removed"):
+                    paths.update(commit.get(key, []))
+            context = IngestContext(
+                trigger=IngestTrigger.CONTENT_CHANGED,
+                changed_paths=frozenset(paths),
+            )
+            await ingest_entry(
+                entry, after_sha, db, git_service,
+                on_ingest_hooks=hooks, context=context,
+            )
+        else:
+            logger.debug(
+                "No content files changed for entry %s at %s, skipping ingestion",
+                entry_id, after_sha[:12],
+            )
         entry.current_head_sha = after_sha
     except Exception:
         logger.exception("Ingestion failed for entry %s at SHA %s", entry_id, after_sha[:12])

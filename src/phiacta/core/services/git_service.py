@@ -12,10 +12,16 @@ from __future__ import annotations
 
 import base64
 import logging
+import secrets
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from phiacta.core.models.user import User
 
 import httpx
 
@@ -204,6 +210,12 @@ class GitService(Protocol):
         """List files and directories at a given path and ref."""
         ...
 
+    async def list_tree_paths(
+        self, entry_id: UUID, prefix: str = "", ref: str = "main"
+    ) -> list[str]:
+        """List all file paths recursively, optionally filtered by prefix."""
+        ...
+
     # --- History ---
 
     async def list_commits(
@@ -254,6 +266,7 @@ class GitService(Protocol):
         head_branch: str,
         base_branch: str = "main",
         author_name: str = "",
+        sudo_username: str | None = None,
     ) -> PullRequestInfo:
         """Create a pull request and return its info."""
         ...
@@ -281,13 +294,15 @@ class GitService(Protocol):
         ...
 
     async def merge_pull_request(
-        self, entry_id: UUID, number: int, merge_style: str = "merge"
+        self, entry_id: UUID, number: int, merge_style: str = "merge",
+        sudo_username: str | None = None,
     ) -> str:
         """Merge a pull request. Returns the merge commit SHA."""
         ...
 
     async def close_pull_request(
-        self, entry_id: UUID, number: int
+        self, entry_id: UUID, number: int,
+        sudo_username: str | None = None,
     ) -> None:
         """Close a pull request without merging."""
         ...
@@ -300,6 +315,7 @@ class GitService(Protocol):
         title: str,
         body: str,
         author_name: str = "",
+        sudo_username: str | None = None,
     ) -> IssueInfo:
         """Create an issue on an entry's repository."""
         ...
@@ -327,15 +343,25 @@ class GitService(Protocol):
         ...
 
     async def create_issue_comment(
-        self, entry_id: UUID, number: int, body: str
+        self, entry_id: UUID, number: int, body: str,
+        sudo_username: str | None = None,
     ) -> IssueCommentInfo:
         """Add a comment to an issue."""
         ...
 
     async def close_issue(
-        self, entry_id: UUID, number: int
+        self, entry_id: UUID, number: int,
+        sudo_username: str | None = None,
     ) -> None:
         """Close an issue."""
+        ...
+
+    # --- User provisioning ---
+
+    async def ensure_forgejo_user(
+        self, user: User, db: AsyncSession,
+    ) -> None:
+        """Provision a Forgejo account for the user if one does not exist."""
         ...
 
     # --- Reconciliation ---
@@ -351,6 +377,10 @@ class GitService(Protocol):
 
         Returns ``None`` if the repo or branch does not exist.
         """
+        ...
+
+    async def get_repo_size(self, entry_id: UUID) -> int:
+        """Return the repository size in bytes."""
         ...
 
     # --- Health / Lifecycle ---
@@ -455,12 +485,13 @@ class ForgejoGitService:
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
-            timeout=httpx.Timeout(30.0, connect=10.0),
+            timeout=httpx.Timeout(120.0, connect=10.0),
             limits=httpx.Limits(
                 max_connections=20,
                 max_keepalive_connections=10,
             ),
         )
+        self._members_team_id: int | None = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -470,6 +501,20 @@ class ForgejoGitService:
         """Return the ``owner/repo`` slug for an entry."""
         return f"{self._org}/{entry_id}"
 
+    async def _get_members_team_id(self) -> int:
+        """Return the Forgejo team ID for the org's 'Members' team (cached)."""
+        if self._members_team_id is not None:
+            return self._members_team_id
+        resp = await self._request("GET", f"/orgs/{self._org}/teams")
+        for team in resp.json():
+            if team["name"] == "Members":
+                self._members_team_id = team["id"]
+                return self._members_team_id
+        raise ForgejoError(
+            f"No 'Members' team found in org '{self._org}'. "
+            "Ensure the Forgejo entrypoint creates it."
+        )
+
     async def _request(
         self,
         method: str,
@@ -478,8 +523,12 @@ class ForgejoGitService:
         json: dict | list | None = None,
         params: dict | None = None,
         content: bytes | None = None,
+        sudo_username: str | None = None,
     ) -> httpx.Response:
         """Send a request and translate HTTP errors to domain exceptions."""
+        headers: dict[str, str] | None = None
+        if sudo_username:
+            headers = {"Sudo": sudo_username}
         try:
             resp = await self._client.request(
                 method,
@@ -487,6 +536,7 @@ class ForgejoGitService:
                 json=json,
                 params=params,
                 content=content,
+                headers=headers,
             )
         except httpx.ConnectError as exc:
             raise ForgejoUnavailableError(
@@ -499,8 +549,10 @@ class ForgejoGitService:
 
         if resp.status_code == 404:
             raise RepoNotFoundError(f"Not found: {method} {path}")
-        if resp.status_code == 503:
-            raise ForgejoUnavailableError("Forgejo returned 503 Service Unavailable")
+        if resp.status_code in (429, 503):
+            raise ForgejoUnavailableError(
+                f"Forgejo returned {resp.status_code} on {method} {path}"
+            )
         if resp.status_code >= 400:
             detail = resp.text[:500] if resp.text else str(resp.status_code)
             raise ForgejoError(
@@ -573,11 +625,23 @@ class ForgejoGitService:
                 "private": True,
                 "auto_init": False,
                 "default_branch": "main",
+                "has_pull_requests": True,
             },
         )
         repo_data = resp.json()
         repo_id: int = repo_data["id"]
         logger.info("Created repo %s/%s (id=%d)", self._org, repo_name, repo_id)
+
+        # Grant the Members team access to the new repo.
+        try:
+            team_id = await self._get_members_team_id()
+            await self._request(
+                "PUT",
+                f"/teams/{team_id}/repos/{self._org}/{repo_name}",
+            )
+        except (ForgejoError, RepoNotFoundError):
+            logger.warning("Failed to add repo %s to Members team", repo_name)
+
         return repo_id
 
     async def archive_repo(self, entry_id: UUID) -> None:
@@ -664,46 +728,83 @@ class ForgejoGitService:
         message: str,
         branch: str = "main",
     ) -> str:
-        """Commit one or more files via the Forgejo Contents API.
+        """Commit one or more files atomically via the Forgejo multi-file API.
 
-        Uses the ``POST /repos/{owner}/{repo}/contents/{filepath}`` and
-        ``PUT /repos/{owner}/{repo}/contents/{filepath}`` endpoints to create
-        or update files.  Each file is committed individually (Forgejo does not
-        support multi-file atomic commits via its REST API).
+        Uses ``POST /repos/{owner}/{repo}/contents`` with a ``files``
+        array to create or update all files in a single atomic commit.
 
-        Returns the SHA of the last commit created.
+        Returns the SHA of the created commit.
         """
-        repo = self._repo_path(entry_id)
-        last_sha = ""
+        if not files:
+            return ""
 
-        for i, fc in enumerate(files):
+        repo = self._repo_path(entry_id)
+
+        # Get the full file tree in one request to decide create vs update.
+        # This replaces N per-file GET requests with a single recursive tree fetch.
+        existing_paths: set[str] = set()
+        tree_truncated = False
+        try:
+            ref_resp = await self._request(
+                "GET", f"/repos/{repo}/git/refs/heads/{branch}",
+            )
+            ref_data = ref_resp.json()
+            if isinstance(ref_data, list):
+                ref_data = ref_data[0]
+            head_sha = ref_data["object"]["sha"]
+
+            tree_resp = await self._request(
+                "GET",
+                f"/repos/{repo}/git/trees/{head_sha}",
+                params={"recursive": "true"},
+            )
+            tree_data = tree_resp.json()
+            for entry in tree_data.get("tree", []):
+                if entry.get("type") == "blob":
+                    existing_paths.add(entry["path"])
+            # Forgejo caps recursive tree responses at 1000 entries.
+            # If truncated, files beyond the cutoff would be mis-classified
+            # as "create" instead of "update".  Fall back to per-file HEAD
+            # requests for any file not found in the partial tree.
+            tree_truncated = tree_data.get("truncated", False)
+        except (RepoNotFoundError, KeyError):
+            pass  # new repo or empty branch
+
+        # Build file operations
+        file_ops = []
+        for fc in files:
             raw = fc.content if isinstance(fc.content, bytes) else fc.content.encode()
             encoded = base64.b64encode(raw).decode()
-
-            # Disambiguate commit messages when committing multiple files
-            file_msg = f"{message} ({fc.path})" if len(files) > 1 else message
-
-            # Check if the file already exists (to decide create vs update).
-            existing_sha: str | None = None
-            try:
-                resp = await self._request(
-                    "GET",
-                    f"/repos/{repo}/contents/{fc.path}",
-                    params={"ref": branch},
-                )
-                data = resp.json()
-                # Forgejo may return a list (directory listing) instead of a
-                # file object for paths containing directories.  If so, the
-                # specific file doesn't exist yet at this exact path.
-                if isinstance(data, dict):
-                    existing_sha = data.get("sha")
-            except RepoNotFoundError:
-                pass  # file does not exist yet
-
-            payload: dict = {
-                "message": file_msg,
+            # Determine operation: if the file is in the tree, update it.
+            # If the tree was truncated and the file wasn't found, check
+            # individually via HEAD request to avoid mis-classifying.
+            if fc.path in existing_paths:
+                op = "update"
+            elif tree_truncated:
+                try:
+                    await self._request(
+                        "GET",
+                        f"/repos/{repo}/contents/{fc.path}",
+                        params={"ref": branch},
+                    )
+                    op = "update"
+                except (RepoNotFoundError, ForgejoError):
+                    op = "create"
+            else:
+                op = "create"
+            file_ops.append({
+                "operation": op,
+                "path": fc.path,
                 "content": encoded,
+            })
+
+        resp = await self._request(
+            "POST",
+            f"/repos/{repo}/contents",
+            json={
+                "message": message,
                 "branch": branch,
+                "files": file_ops,
                 "author": {
                     "name": author.name,
                     "email": author.email,
@@ -712,27 +813,24 @@ class ForgejoGitService:
                     "name": "phiacta-service",
                     "email": "service@phiacta.local",
                 },
-            }
-            if existing_sha is not None:
-                payload["sha"] = existing_sha
+            },
+        )
 
-            method = "PUT" if existing_sha is not None else "POST"
-            resp = await self._request(
-                method,
-                f"/repos/{repo}/contents/{fc.path}",
-                json=payload,
-            )
-            commit_data = resp.json().get("commit", {})
-            last_sha = commit_data.get("sha", last_sha)
+        # Extract the commit SHA from the response
+        resp_data = resp.json()
+        commit_sha = ""
+        resp_files = resp_data.get("files", [])
+        if resp_files:
+            commit_sha = resp_files[0].get("last_commit_sha", "")
 
         logger.info(
             "Committed %d file(s) to %s@%s (sha=%s)",
             len(files),
             repo,
             branch,
-            last_sha[:12] if last_sha else "?",
+            commit_sha[:12] if commit_sha else "?",
         )
-        return last_sha
+        return commit_sha
 
     async def read_file(
         self, entry_id: UUID, path: str, ref: str = "main"
@@ -774,6 +872,37 @@ class ForgejoGitService:
             )
             for item in items
         ]
+
+    async def list_tree_paths(
+        self, entry_id: UUID, prefix: str = "", ref: str = "main"
+    ) -> list[str]:
+        """List all file paths recursively via the git tree API.
+
+        Returns blob paths optionally filtered to those starting with *prefix*.
+        Uses a single API call regardless of directory depth.
+        """
+        repo = self._repo_path(entry_id)
+        # Resolve ref to a SHA
+        ref_resp = await self._request(
+            "GET", f"/repos/{repo}/git/refs/heads/{ref}",
+        )
+        ref_data = ref_resp.json()
+        if isinstance(ref_data, list):
+            ref_data = ref_data[0]
+        head_sha = ref_data["object"]["sha"]
+
+        tree_resp = await self._request(
+            "GET",
+            f"/repos/{repo}/git/trees/{head_sha}",
+            params={"recursive": "true"},
+        )
+        paths = []
+        for entry in tree_resp.json().get("tree", []):
+            if entry.get("type") == "blob":
+                p = entry["path"]
+                if not prefix or p.startswith(prefix):
+                    paths.append(p)
+        return paths
 
     async def delete_file(
         self,
@@ -1001,6 +1130,7 @@ class ForgejoGitService:
         head_branch: str,
         base_branch: str = "main",
         author_name: str = "",
+        sudo_username: str | None = None,
     ) -> PullRequestInfo:
         """Create a pull request on a repo."""
         repo = self._repo_path(entry_id)
@@ -1013,6 +1143,7 @@ class ForgejoGitService:
                 "head": head_branch,
                 "base": base_branch,
             },
+            sudo_username=sudo_username,
         )
         pr = self._parse_pull_request(resp.json())
         logger.info("Created PR #%d on %s (%s -> %s)", pr.number, repo, head_branch, base_branch)
@@ -1100,6 +1231,7 @@ class ForgejoGitService:
 
     async def merge_pull_request(
         self, entry_id: UUID, number: int, merge_style: str = "merge",
+        sudo_username: str | None = None,
     ) -> str:
         """Merge a pull request. Returns the merge commit SHA."""
         repo = self._repo_path(entry_id)
@@ -1107,6 +1239,7 @@ class ForgejoGitService:
             "POST",
             f"/repos/{repo}/pulls/{number}/merge",
             json={"Do": merge_style},
+            sudo_username=sudo_username,
         )
         # Forgejo may return 204 (no body) on some merge styles.
         sha = ""
@@ -1123,6 +1256,7 @@ class ForgejoGitService:
 
     async def close_pull_request(
         self, entry_id: UUID, number: int,
+        sudo_username: str | None = None,
     ) -> None:
         """Close a pull request without merging."""
         repo = self._repo_path(entry_id)
@@ -1130,8 +1264,69 @@ class ForgejoGitService:
             "PATCH",
             f"/repos/{repo}/pulls/{number}",
             json={"state": "closed"},
+            sudo_username=sudo_username,
         )
         logger.info("Closed PR #%d on %s", number, repo)
+
+    # ------------------------------------------------------------------
+    # User provisioning
+    # ------------------------------------------------------------------
+
+    async def ensure_forgejo_user(
+        self, user: User, db: AsyncSession,
+    ) -> None:
+        """Lazily provision a Forgejo user account for a Phiacta user.
+
+        Idempotent: if ``user.forgejo_user_id`` is already set, this is a
+        no-op.  Creates the Forgejo user via the admin API, adds them to
+        the org, and stores the Forgejo user ID on the Phiacta user record.
+        """
+        if user.forgejo_user_id is not None:
+            return
+
+        username = user.username
+        email = f"{user.id}@phiacta.local"
+        password = secrets.token_urlsafe(32)
+
+        # Step 1: Create Forgejo user via admin API.
+        try:
+            resp = await self._request(
+                "POST",
+                "/admin/users",
+                json={
+                    "username": username,
+                    "email": email,
+                    "password": password,
+                    "must_change_password": False,
+                    "visibility": "private",
+                },
+            )
+            forgejo_user_id: int = resp.json()["id"]
+        except ForgejoError:
+            # Username may already exist (prior partial provisioning).
+            try:
+                resp = await self._request("GET", f"/users/{username}")
+                forgejo_user_id = resp.json()["id"]
+                logger.info(
+                    "Forgejo user %s already exists (id=%d), reusing",
+                    username, forgejo_user_id,
+                )
+            except (RepoNotFoundError, ForgejoError):
+                logger.error("Failed to create or find Forgejo user %s", username)
+                raise
+
+        # Step 2: Add user to the org's Members team (idempotent).
+        team_id = await self._get_members_team_id()
+        await self._request("PUT", f"/teams/{team_id}/members/{username}")
+
+        # Step 3: Store Forgejo user ID on the Phiacta user record.
+        user.forgejo_user_id = forgejo_user_id
+        db.add(user)
+        await db.flush()
+        logger.info(
+            "Provisioned Forgejo user %s (forgejo_id=%d) for Phiacta user %s",
+            username, forgejo_user_id, user.id,
+        )
 
     # ------------------------------------------------------------------
     # Issues
@@ -1169,6 +1364,7 @@ class ForgejoGitService:
         title: str,
         body: str,
         author_name: str = "",
+        sudo_username: str | None = None,
     ) -> IssueInfo:
         """Create an issue on an entry's repository."""
         repo = self._repo_path(entry_id)
@@ -1176,6 +1372,7 @@ class ForgejoGitService:
             "POST",
             f"/repos/{repo}/issues",
             json={"title": title, "body": body},
+            sudo_username=sudo_username,
         )
         issue = self._parse_issue(resp.json())
         logger.info("Created issue #%d on %s", issue.number, repo)
@@ -1224,6 +1421,7 @@ class ForgejoGitService:
 
     async def create_issue_comment(
         self, entry_id: UUID, number: int, body: str,
+        sudo_username: str | None = None,
     ) -> IssueCommentInfo:
         """Add a comment to an issue."""
         repo = self._repo_path(entry_id)
@@ -1231,6 +1429,7 @@ class ForgejoGitService:
             "POST",
             f"/repos/{repo}/issues/{number}/comments",
             json={"body": body},
+            sudo_username=sudo_username,
         )
         comment = self._parse_issue_comment(resp.json())
         logger.info("Added comment #%d to issue #%d on %s", comment.id, number, repo)
@@ -1238,6 +1437,7 @@ class ForgejoGitService:
 
     async def close_issue(
         self, entry_id: UUID, number: int,
+        sudo_username: str | None = None,
     ) -> None:
         """Close an issue."""
         repo = self._repo_path(entry_id)
@@ -1245,6 +1445,7 @@ class ForgejoGitService:
             "PATCH",
             f"/repos/{repo}/issues/{number}",
             json={"state": "closed"},
+            sudo_username=sudo_username,
         )
         logger.info("Closed issue #%d on %s", number, repo)
 
@@ -1256,6 +1457,92 @@ class ForgejoGitService:
         """List all repository names in the organisation."""
         raw_list = await self._paginate_all(f"/orgs/{self._org}/repos")
         return [r["name"] for r in raw_list]
+
+    async def run_startup_migrations(self) -> dict[str, int]:
+        """Fix Forgejo repo/user settings that were missed by older code.
+
+        Idempotent — safe to call on every startup.  Returns counts of
+        patched resources keyed by migration name.
+        """
+        counts: dict[str, int] = {}
+
+        team_id = await self._get_members_team_id()
+
+        # 0. Ensure Members team has required units (repo.code needed for PR
+        #    creation, repo.pulls for PR access, repo.issues for issue access).
+        required_units = {"repo.code", "repo.issues", "repo.pulls"}
+        resp = await self._request("GET", f"/teams/{team_id}")
+        team_data = resp.json()
+        team_units = set(team_data.get("units", []))
+        missing = required_units - team_units
+        if missing:
+            team_units |= missing
+            await self._request(
+                "PATCH",
+                f"/teams/{team_id}",
+                json={"units": sorted(team_units)},
+            )
+            logger.info("Added repo.pulls unit to Members team")
+            counts["team_units_patched"] = 1
+        else:
+            counts["team_units_patched"] = 0
+
+        # 1. Enable pull requests on repos created before has_pull_requests
+        #    was added to the create-repo payload.
+        repos = await self._paginate_all(f"/orgs/{self._org}/repos")
+        pr_patched = 0
+        for repo in repos:
+            if not repo.get("has_pull_requests"):
+                await self._request(
+                    "PATCH",
+                    f"/repos/{self._org}/{repo['name']}",
+                    json={"has_pull_requests": True},
+                )
+                logger.info("Enabled pull requests on %s/%s", self._org, repo["name"])
+                pr_patched += 1
+        counts["pull_requests_enabled"] = pr_patched
+
+        # 2. Add repos to the Members team.  Repos created before team-based
+        #    provisioning were never added, so Sudo-based issue creation
+        #    fails on them.
+        team_repos = await self._paginate_all(f"/teams/{team_id}/repos")
+        team_repo_names = {r["name"] for r in team_repos}
+        repos_added = 0
+        for repo in repos:
+            if repo["name"] not in team_repo_names:
+                await self._request(
+                    "PUT",
+                    f"/teams/{team_id}/repos/{self._org}/{repo['name']}",
+                )
+                logger.info("Added %s/%s to Members team", self._org, repo["name"])
+                repos_added += 1
+        counts["repos_added_to_team"] = repos_added
+
+        # 3. Add provisioned users to the Members team.  The old code used
+        #    PUT /orgs/{org}/members/{username} which returned 405 and was
+        #    silently swallowed, so existing users aren't org members.
+        team_members = await self._paginate_all(f"/teams/{team_id}/members")
+        team_member_names = {m["login"] for m in team_members}
+        # List all Forgejo users to catch provisioned users that aren't
+        # in the team yet (the 405 bug meant they were never added).
+        all_users = await self._paginate_all("/admin/users")
+        # Provisioned users have the synthetic email pattern.
+        provisioned = [
+            u for u in all_users
+            if u.get("email", "").endswith(f"@{self._org}.local")
+            and u["login"] not in team_member_names
+        ]
+        users_added = 0
+        for user in provisioned:
+            await self._request(
+                "PUT",
+                f"/teams/{team_id}/members/{user['login']}",
+            )
+            logger.info("Added user %s to Members team", user["login"])
+            users_added += 1
+        counts["users_added_to_team"] = users_added
+
+        return counts
 
     async def get_repo_head_sha(
         self, entry_id: UUID, branch: str = "main"
@@ -1274,6 +1561,14 @@ class ForgejoGitService:
             return commit.get("id") or commit.get("sha")
         except RepoNotFoundError:
             return None
+
+    async def get_repo_size(self, entry_id: UUID) -> int:
+        """Return the repository size in bytes."""
+        resp = await self._request(
+            "GET", f"/repos/{self._repo_path(entry_id)}",
+        )
+        # Forgejo returns size in KiB
+        return resp.json().get("size", 0) * 1024
 
     # ------------------------------------------------------------------
     # Health

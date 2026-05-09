@@ -35,6 +35,10 @@ class TestValidateFilePathAcceptsValidPaths:
         """A path with spaces like 'file with spaces.md' is valid."""
         validate_file_path("file with spaces.md")
 
+    def test_file_with_unicode(self) -> None:
+        """Unicode bytes are fine — the rejection is on URL escapes only."""
+        validate_file_path("résumé.md")
+
     def test_dotfile_not_phiacta(self) -> None:
         """A dotfile that is not .phiacta is valid."""
         validate_file_path(".gitignore")
@@ -187,6 +191,55 @@ class TestValidateFilePathEdgeCases:
     def test_phiacta_entry_yaml_edge_case(self) -> None:
         """'.phiacta/entry.yaml' is writable (no longer protected)."""
         validate_file_path(".phiacta/entry.yaml")
+
+
+class TestValidateFilePathRejectsPercentEncoding:
+    """Any path containing '%' is rejected.
+
+    Forgejo URL-decodes paths once during commit/diff handling.  If the
+    validator only decoded once here, a payload like ``..%252Fevil.txt``
+    would survive validation (becoming ``..%2Fevil.txt`` — one segment,
+    no literal ``..``) and then be decoded to ``../evil.txt`` by Forgejo,
+    escaping the entry directory.
+
+    Filesystem paths sent as JSON strings never need URL escaping, so
+    rejecting ``%`` outright is the safest defensive posture.
+    """
+
+    def test_double_url_encoded_traversal_is_rejected(self) -> None:
+        """'..%252Fevil.txt' (double-encoded '../') must be rejected."""
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path("..%252Fevil.txt")
+
+    def test_single_url_encoded_slash_is_rejected(self) -> None:
+        """'..%2Fevil.txt' (URL-encoded slash) must be rejected."""
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path("..%2Fevil.txt")
+
+    def test_url_encoded_backslash_is_rejected(self) -> None:
+        """'..%5cwin.txt' (URL-encoded backslash on Windows) must be rejected."""
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path("..%5cwin.txt")
+
+    def test_percent_encoded_space_is_rejected(self) -> None:
+        """'with%20space.txt' is rejected — paths shouldn't be URL-escaped."""
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path("with%20space.txt")
+
+    def test_lone_percent_is_rejected(self) -> None:
+        """A bare '%' anywhere in the path is rejected."""
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path("100%done.txt")
+
+    def test_url_encoded_dotdot_is_rejected(self) -> None:
+        """'%2e%2e/foo' (URL-encoded '..') must be rejected."""
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path("%2e%2e/foo")
+
+    def test_read_validator_also_rejects_percent(self) -> None:
+        """Read-side validator must apply the same rule."""
+        with pytest.raises(ValueError, match="[Ii]nvalid file path"):
+            validate_file_path_read("..%252Fevil.txt")
 
 
 # ---------------------------------------------------------------------------

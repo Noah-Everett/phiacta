@@ -635,6 +635,7 @@ class TestRegressionEntryOperations:
     async def test_entry_get_still_works_after_entity_creation(
         self,
         owner: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """GET /v1/entries/{id} works after entity registration is wired in."""
         client, _, token = owner
@@ -645,6 +646,7 @@ class TestRegressionEntryOperations:
         )
         assert resp.status_code == 201
         entry_id = resp.json()["id"]
+        await set_entry_repo_status(e2e_session_factory, entry_id, "ready")
 
         resp = await client.get(f"/v1/entries/{entry_id}")
         assert resp.status_code == 200

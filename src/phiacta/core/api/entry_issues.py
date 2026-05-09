@@ -111,11 +111,13 @@ async def create_issue(
     entry = await get_proposable_entry(entry_id, db, user=user)
 
     try:
+        await git_service.ensure_forgejo_user(user, db)
         issue = await git_service.create_issue(
             entry_id,
             title=body.title,
             body=body.body or "",
             author_name=user.username,
+            sudo_username=user.username,
         )
     except ForgejoUnavailableError as exc:
         raise HTTPException(
@@ -256,9 +258,12 @@ async def add_issue_comment(
     """Add a comment to an issue."""
     await get_readable_entry(entry_id, db, user=user)
 
+    await git_service.ensure_forgejo_user(user, db)
+
     try:
         comment = await git_service.create_issue_comment(
             entry_id, number, body=body.body,
+            sudo_username=user.username,
         )
     except ForgejoUnavailableError as exc:
         raise HTTPException(
@@ -310,8 +315,10 @@ async def close_issue(
     """Close an issue. Only the entry owner can close."""
     await get_owned_entry(entry_id, user, db)
 
+    await git_service.ensure_forgejo_user(user, db)
+
     try:
-        await git_service.close_issue(entry_id, number)
+        await git_service.close_issue(entry_id, number, sudo_username=user.username)
     except ForgejoUnavailableError as exc:
         raise HTTPException(
             status_code=502, detail="Git service unavailable",

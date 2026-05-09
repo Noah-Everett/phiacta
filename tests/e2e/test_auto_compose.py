@@ -305,6 +305,7 @@ class TestUnifiedPatch:
 class TestGracefulDegradation:
     async def test_response_works_without_providers(
         self, client: httpx.AsyncClient,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Entry responses work even with no providers registered."""
         from phiacta.main import app as _app
@@ -315,6 +316,7 @@ class TestGracefulDegradation:
         try:
             auth = await register_user(client, username=f"noprov-{uuid4().hex[:8]}")
             entry = await create_entry(client, auth["access_token"], title="Bare")
+            await set_entry_repo_status(e2e_session_factory, entry["id"], "ready")
             data = (await client.get(f"/v1/entries/{entry['id']}")).json()
             assert data["id"] == entry["id"]
             # Extension fields should be null

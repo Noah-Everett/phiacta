@@ -9,6 +9,8 @@ keeps tool code decoupled from internal module paths and makes it easy
 to swap or extend dependency wiring in one place.
 """
 
+from __future__ import annotations
+
 from phiacta.core.db.session import get_db as get_db  # noqa: F401
 from phiacta.core.auth.dependencies import get_optional_user as get_optional_user  # noqa: F401
 from phiacta.core.auth.dependencies import get_current_user as get_current_user  # noqa: F401

@@ -12,6 +12,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from phiacta.core.schemas.entry_issue import IssueCommentResponse
+
 
 class EditProposalFileChange(BaseModel):
     """A single file change in an edit proposal."""
@@ -66,9 +68,16 @@ class EditProposalFileDiff(BaseModel):
 
 
 class EditProposalDetail(EditProposalListItem):
-    """Full detail for a single edit proposal, including diff."""
+    """Full detail for a single edit proposal, including diff and comments."""
 
     diff: list[EditProposalFileDiff]
+    comments: list[IssueCommentResponse] = []
+
+
+class EditProposalCommentCreate(BaseModel):
+    """Request body for POST /entries/{entry_id}/edits/{number}/comments."""
+
+    body: str = Field(min_length=1, max_length=10000)
 
 
 class EditProposalMergeResponse(BaseModel):

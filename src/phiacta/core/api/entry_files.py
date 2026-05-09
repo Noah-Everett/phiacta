@@ -10,7 +10,6 @@ operations on entry git repos via the GitService.
 from __future__ import annotations
 
 import mimetypes
-import urllib.parse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
@@ -45,14 +44,25 @@ router = APIRouter(prefix="/entries", tags=["entries"])
 def _validate_path_common(path: str) -> list[str]:
     """Common path validation — traversal and format checks.
 
+    Reject any path that contains ``%`` outright. Forgejo URL-decodes
+    paths once when handling commit/diff payloads, so a path like
+    ``..%252Fevil.txt`` would survive a single ``unquote()`` here
+    (decoding to ``..%2Fevil.txt`` — one segment, no literal ``..``)
+    and then be decoded a second time downstream into ``../evil.txt``,
+    escaping the entry's directory. Filesystem paths sent to this
+    endpoint as JSON strings never need URL-escapes — spaces and
+    other special characters are valid bytes in a path — so rejecting
+    ``%`` is both safe and the simplest defensive posture.
+
     Returns normalized path segments.
     """
     if not path:
         raise ValueError("Invalid file path")
-    normalized = urllib.parse.unquote(path)
-    if normalized.startswith("/"):
+    if "%" in path:
         raise ValueError("Invalid file path")
-    segments = normalized.split("/")
+    if path.startswith("/"):
+        raise ValueError("Invalid file path")
+    segments = path.split("/")
     if ".." in segments:
         raise ValueError("Invalid file path")
     return segments
@@ -170,6 +180,101 @@ async def get_entry_file_content(
 # ---------------------------------------------------------------------------
 
 
+@router.post(
+    "/{entry_id}/files",
+    response_model=FileWriteResponse,
+)
+@limiter.limit("30/minute")
+async def post_entry_files(
+    request: Request,
+    entry_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    git_service: GitService = Depends(get_git_service),
+    settings: Settings = Depends(get_settings),
+) -> FileWriteResponse:
+    """Upload multiple files in a single atomic commit.
+
+    Accepts parallel ``files`` and ``paths`` form fields.  Each file is
+    committed to the corresponding path in one git commit.
+
+    Parses the multipart form manually to raise Starlette's default
+    ``max_files=1000`` / ``max_fields=1000`` / ``max_part_size=1MB``
+    limits.
+    """
+    form = await request.form(
+        max_files=settings.max_upload_files,
+        max_fields=settings.max_upload_files,
+        max_part_size=settings.max_file_size_bytes,
+    )
+    files: list[UploadFile] = form.getlist("files")  # type: ignore[assignment]
+    paths: list[str] = form.getlist("paths")  # type: ignore[assignment]
+    message: str | None = form.get("message")  # type: ignore[assignment]
+
+    if len(files) != len(paths):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Mismatch: {len(files)} files but {len(paths)} paths",
+        )
+    if len(files) == 0:
+        raise HTTPException(status_code=422, detail="No files provided")
+
+    await _get_writable_entry(entry_id, user, db)
+
+    file_contents: list[FileContent] = []
+    total_size = 0
+    for upload, path in zip(files, paths):
+        try:
+            validate_file_path(path)
+        except ValueError:
+            raise HTTPException(
+                status_code=422, detail=f"Invalid file path: {path}",
+            )
+
+        data = await upload.read()
+        if len(data) > settings.max_file_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File {path} exceeds maximum size of {settings.max_file_size_bytes} bytes",
+            )
+        total_size += len(data)
+        if total_size > settings.max_upload_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Total upload size exceeds maximum of {settings.max_upload_size_bytes} bytes",
+            )
+        file_contents.append(FileContent(path=path, content=data))
+
+    # Check repo size limit
+    try:
+        repo_size = await git_service.get_repo_size(entry_id)
+        if repo_size + total_size > settings.max_repo_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Upload would exceed repository size limit of {settings.max_repo_size_bytes} bytes",
+            )
+    except RepoNotFoundError:
+        pass  # new repo, no size to check
+
+    commit_message = message or f"Upload {len(file_contents)} file(s)"
+    author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")
+
+    try:
+        sha = await git_service.commit_files(
+            entry_id, file_contents, author, commit_message,
+        )
+    except RepoNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="Entry repository not found",
+        ) from exc
+    except ForgejoError as exc:
+        raise HTTPException(
+            status_code=502, detail="Git service unavailable",
+        ) from exc
+
+    return FileWriteResponse(sha=sha)
+
+
 @router.put(
     "/{entry_id}/files/{path:path}",
     response_model=FileWriteResponse,
@@ -198,6 +303,17 @@ async def put_entry_file(
         )
 
     await _get_writable_entry(entry_id, user, db)
+
+    # Check repo size limit
+    try:
+        repo_size = await git_service.get_repo_size(entry_id)
+        if repo_size + len(data) > settings.max_repo_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Upload would exceed repository size limit of {settings.max_repo_size_bytes} bytes",
+            )
+    except RepoNotFoundError:
+        pass
 
     commit_message = message or f"Update {path}"
     author = AuthorInfo(name=user.username, email=f"{user.id}@phiacta.local")

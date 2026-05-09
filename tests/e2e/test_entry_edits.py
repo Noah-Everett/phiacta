@@ -474,19 +474,22 @@ class TestCreateEditProposalErrors:
         )
         assert resp.status_code == 201
 
-    async def test_create_file_exceeds_size_limit_400(
+    async def test_create_file_exceeds_size_limit_413(
         self,
         owner: AuthedFixture,
         proposer: AuthedFixture,
         e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        """POST /edits with a file exceeding schema max_length returns 422."""
+        """POST /edits with a file exceeding the body size limit returns 413.
+
+        ContentSizeLimitMiddleware (1MB) rejects the request before
+        Pydantic validation runs.
+        """
         client, _, owner_token = owner
         _, _, proposer_token = proposer
         entry = await _create_ready_entry(client, owner_token, e2e_session_factory)
         entry_id = entry["id"]
 
-        # Schema max_length is 10MB; Pydantic rejects before our size check
         oversized = "x" * (10_000_001)
 
         resp = await client.post(
@@ -499,7 +502,7 @@ class TestCreateEditProposalErrors:
             },
             headers=auth_header(proposer_token),
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 413
 
 
 # ---------------------------------------------------------------------------

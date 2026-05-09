@@ -1031,10 +1031,12 @@ class TestAutoComposedTags:
     async def test_entry_response_includes_tags_field(
         self,
         authed: AuthedFixture,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         """Entry responses include tags (empty list when none set)."""
         client, _, token = authed
         entry = await create_entry(client, token, title="Tags Compose Entry")
+        await set_entry_repo_status(e2e_session_factory, entry["id"], "ready")
         data = (await client.get(f"/v1/entries/{entry['id']}")).json()
         assert "tags" in data
         assert data["tags"] == []
