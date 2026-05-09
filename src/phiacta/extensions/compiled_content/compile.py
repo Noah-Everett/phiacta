@@ -168,10 +168,14 @@ async def _run_latexmk(tex_file: Path, work_dir: Path) -> CompileResult:
     """Compile with latexmk (TeX Live). Preferred compiler."""
     import os
 
+    # Pass a relative path so openin_any=p (paranoid mode) doesn't block
+    # reads. Absolute paths like /tmp/.../main.tex trigger pdflatex's
+    # security check even when the file is inside the working directory.
+    tex_rel = tex_file.relative_to(work_dir)
     env = {**os.environ, **_LATEX_SAFE_ENV}
     proc = await asyncio.create_subprocess_exec(
         "latexmk", "-pdf", "-interaction=nonstopmode",
-        "-halt-on-error", "-no-shell-escape", str(tex_file),
+        "-halt-on-error", "-no-shell-escape", str(tex_rel),
         cwd=str(work_dir),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -210,9 +214,10 @@ async def _run_tectonic(tex_file: Path, work_dir: Path) -> CompileResult:
     """Compile with Tectonic. Fallback when TeX Live is not installed."""
     import os
 
+    tex_rel = tex_file.relative_to(work_dir)
     env = {**os.environ, **_LATEX_SAFE_ENV}
     proc = await asyncio.create_subprocess_exec(
-        "tectonic", "-X", "compile", str(tex_file),
+        "tectonic", "-X", "compile", str(tex_rel),
         cwd=str(work_dir),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
