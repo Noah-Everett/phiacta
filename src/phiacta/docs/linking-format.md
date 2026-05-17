@@ -51,9 +51,21 @@ figures/loss-curve.png        # conventional
 figures/loss curve.png         # also works
 ```
 
+## Linking within the same entry
+
+To link to a heading inside the same entry, use a `#` anchor link:
+
+```markdown
+[Appendix A](#appendix-a-derivation)
+[back to overview](#overview)
+```
+
+These resolve to a same-page scroll — the slug after `#` should match the auto-generated heading id (lowercase, hyphens for spaces).
+
 ## How linking works
 
 - **Entry links** start with `/entries/` or `/users/` (absolute path with a UUID). These link to other pages on the platform.
 - **File links and images** use relative paths (no leading `/`). These resolve to files in the current entry's repository.
+- **Hash anchors** start with `#`. These scroll to a heading inside the current entry.
 
-A relative path always means "a file in this entry's repo." An absolute `/entries/` path always means "another entry on the platform."
+A relative path always means "a file in this entry's repo." An absolute `/entries/` path always means "another entry on the platform." A `#` prefix always means "a heading in this entry."
