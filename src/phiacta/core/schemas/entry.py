@@ -61,10 +61,12 @@ class EntryUpdate(BaseModel):
         if "content" in data:
             raise ValueError(
                 "Field 'content' cannot be updated via PATCH /v1/entries/{id}. "
-                "Entry content lives in the entry's git repository and is "
-                "changed through the edit-proposal workflow: "
-                "POST /v1/entries/{id}/edits with the new file contents. "
-                "This preserves history, attribution, and review.",
+                "Entry content lives in the entry's git repository. "
+                "If you own the entry, write directly: "
+                "PUT /v1/entries/{id}/files/.phiacta/content.md "
+                "(MCP tool: put_entry_file). If you don't own the entry, "
+                "propose an edit: POST /v1/entries/{id}/edits "
+                "(MCP tool: create_edit_proposal) — the owner reviews and merges.",
             )
         if "content_format" in data:
             raise ValueError(

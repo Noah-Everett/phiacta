@@ -65,11 +65,13 @@ class TestRejectImmutableFields:
         )
         assert resp.status_code == 422, resp.text
 
-    async def test_patch_content_error_mentions_edit_proposals(
+    async def test_patch_content_error_points_at_both_owner_and_proposer_paths(
         self, ready_entry: tuple[AuthedFixture, dict],
     ) -> None:
-        """The 422 message must point the caller at the edit-proposals
-        endpoint so an agent can self-correct without reading docs."""
+        """The 422 message must point the caller at both the owner write
+        path (put_entry_file) and the non-owner proposal path
+        (create_edit_proposal) so an agent can self-correct without
+        reading docs — regardless of which role they're in."""
         (client, _, token), entry = ready_entry
         resp = await client.patch(
             f"/v1/entries/{entry['id']}",
@@ -77,9 +79,12 @@ class TestRejectImmutableFields:
             headers=auth_header(token),
         )
         assert resp.status_code == 422
-        body = resp.text.lower()
-        assert "edit" in body and "proposal" in body
-        assert "content" in body
+        body = resp.text
+        assert "content" in body.lower()
+        # Owner path
+        assert "put_entry_file" in body or "/files/" in body
+        # Non-owner path
+        assert "create_edit_proposal" in body or "/edits" in body
 
     async def test_patch_content_format_returns_422(
         self, ready_entry: tuple[AuthedFixture, dict],

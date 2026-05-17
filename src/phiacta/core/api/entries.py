@@ -187,10 +187,15 @@ async def create_entry(
         "Unknown extension fields are silently ignored for plugin forward-"
         "compatibility.\n\n"
         "**Cannot update `content` or `content_format` here.** Content lives "
-        "in the entry's git repository and is changed through edit proposals: "
-        "POST /v1/entries/{id}/edits with the new file contents. This "
-        "preserves history, attribution, and review. Sending `content` to "
-        "this endpoint returns 422 with a pointer to the edit-proposal flow."
+        "in the entry's git repository. To change it:\n"
+        "- **Owner**: write the file directly with "
+        "`PUT /v1/entries/{id}/files/.phiacta/content.md` (MCP tool: "
+        "`put_entry_file`).\n"
+        "- **Non-owner**: propose an edit with "
+        "`POST /v1/entries/{id}/edits` (MCP tool: `create_edit_proposal`) — "
+        "the owner reviews and merges.\n\n"
+        "Sending `content` to this endpoint returns 422 with a pointer to "
+        "both routes."
     ),
 )
 @limiter.limit("30/minute")
