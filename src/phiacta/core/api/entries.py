@@ -44,7 +44,17 @@ from phiacta.core.services.entry_service import EntryService
 router = APIRouter(prefix="/entries", tags=["entries"])
 
 
-@router.get("", response_model=CursorPage[EntryListItem])
+@router.get(
+    "",
+    response_model=CursorPage[EntryListItem],
+    summary="List entries",
+    description=(
+        "Paginated list of entries the caller can read. Use the `include` "
+        "query param to choose which extension fields appear on each item "
+        "(comma-separated; replaces defaults). Cursor-paginated — pass the "
+        "previous response's `next_cursor` to fetch the next page."
+    ),
+)
 @limiter.limit("300/minute")
 async def list_entries(
     request: Request,
@@ -98,7 +108,17 @@ async def list_entries(
     return CursorPage(items=items, limit=limit, has_more=has_more, next_cursor=next_cursor)
 
 
-@router.get("/{entry_id}", response_model=EntryDetailResponse)
+@router.get(
+    "/{entry_id}",
+    response_model=EntryDetailResponse,
+    summary="Get a single entry",
+    description=(
+        "Fetch one entry by ID, including all readable extension fields. "
+        "Use the `include` query param to narrow the response to specific "
+        "extension fields. Entry content is NOT returned here — read it "
+        "from the entry's git repository via the file endpoints."
+    ),
+)
 @limiter.limit("300/minute")
 async def get_entry(
     request: Request,
@@ -116,7 +136,24 @@ async def get_entry(
     return EntryDetailResponse(**composed)
 
 
-@router.post("", response_model=EntryResponse, status_code=201)
+@router.post(
+    "",
+    response_model=EntryResponse,
+    status_code=201,
+    summary="Create an entry",
+    description=(
+        "Create a new entry in a single call. Accepts core fields "
+        "(`content`, `content_format`, `visibility`) plus any writable "
+        "extension fields (e.g. `title`, `summary`, `entry_type`, `tags`). "
+        "After this returns, the entry exists but its git repo is being "
+        "provisioned asynchronously — watch `repo_status` for `ready`.\n\n"
+        "References between entries are NOT created here. After creating "
+        "entries that depend on, contain, cite, or contradict each other, "
+        "call `create_reference` (POST /v1/extensions/references/{entry_id}) "
+        "to wire them up. References are what turn entries into a knowledge "
+        "graph — without them, related entries are isolated."
+    ),
+)
 @limiter.limit("30/minute")
 async def create_entry(
     request: Request, body: EntryCreate,
@@ -140,7 +177,22 @@ async def create_entry(
     return EntryResponse(**composed)
 
 
-@router.patch("/{entry_id}", response_model=EntryResponse)
+@router.patch(
+    "/{entry_id}",
+    response_model=EntryResponse,
+    summary="Update entry metadata",
+    description=(
+        "Patch entry metadata fields (e.g. `title`, `summary`, `entry_type`, "
+        "`tags`, `visibility`). Only the fields you include are changed. "
+        "Unknown extension fields are silently ignored for plugin forward-"
+        "compatibility.\n\n"
+        "**Cannot update `content` or `content_format` here.** Content lives "
+        "in the entry's git repository and is changed through edit proposals: "
+        "POST /v1/entries/{id}/edits with the new file contents. This "
+        "preserves history, attribution, and review. Sending `content` to "
+        "this endpoint returns 422 with a pointer to the edit-proposal flow."
+    ),
+)
 @limiter.limit("30/minute")
 async def update_entry(
     request: Request, entry_id: UUID, body: EntryUpdate,

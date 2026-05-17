@@ -139,6 +139,17 @@ def _comment_to_response(
     "/{entry_id}/edits",
     response_model=EditProposalListItem,
     status_code=201,
+    summary="Propose changes to an entry's content (or any file in its repo)",
+    description=(
+        "Create an edit proposal — a Forgejo branch + pull request against "
+        "the entry's repo. **This is how you change entry content.** "
+        "PATCH /v1/entries/{id} cannot change content; it only updates "
+        "metadata.\n\n"
+        "To replace the entry's content, send a file with path "
+        "`.phiacta/content.md` (or `.tex`/`.txt` depending on the entry's "
+        "`content_format`) and the new contents. Any authenticated user "
+        "can propose; only the entry owner can merge."
+    ),
 )
 @limiter.limit("30/minute")
 async def create_edit_proposal(

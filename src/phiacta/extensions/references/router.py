@@ -33,7 +33,17 @@ def _to_response(ref) -> ReferenceResponse:
     )
 
 
-@router.get("/", response_model=CursorPage[ReferenceResponse])
+@router.get(
+    "/",
+    response_model=CursorPage[ReferenceResponse],
+    summary="List references for an entry",
+    description=(
+        "List the typed, directed edges that connect this entry to others. "
+        "Use `direction=outgoing` for entries this one points at, "
+        "`direction=incoming` for entries that point at this one, or "
+        "`direction=both` (default) for everything."
+    ),
+)
 async def list_references(
     entry_id: UUID = Query(...),
     direction: str = Query("both", pattern="^(both|incoming|outgoing)$"),
@@ -73,7 +83,26 @@ async def list_references(
     return CursorPage(items=items, limit=limit, has_more=has_more, next_cursor=next_cursor)
 
 
-@router.post("/{entry_id}", response_model=ReferenceResponse, status_code=201)
+@router.post(
+    "/{entry_id}",
+    response_model=ReferenceResponse,
+    status_code=201,
+    summary="Create a reference from one entry to another",
+    description=(
+        "Create a typed, directed reference: source entry "
+        "(path param `entry_id`) → target entry (body field "
+        "`target_entry_id`) with relation `rel`. Read as "
+        '"source [rel] target" (e.g. "this entry `uses` that definition", '
+        '"this paper `contains` this theorem"). Common roles: '
+        "`contains`, `extends`, `uses`, `assumes`, `supports`, "
+        "`contradicts`, `corrects`, `reviews`, `explains`, `applies` — "
+        "but `rel` is an open-ended string, use whatever fits.\n\n"
+        "Call this after creating entries that meaningfully relate to "
+        "each other. Without references, related entries are isolated "
+        "and unsearchable as a graph. See the `references` doc resource "
+        "for role semantics and when each fits."
+    ),
+)
 @limiter.limit("60/minute")
 async def create_reference(
     request: Request, entry_id: UUID, body: ReferenceCreateRequest,
@@ -97,7 +126,15 @@ async def create_reference(
     return _to_response(ref)
 
 
-@router.delete("/{reference_id}", status_code=204)
+@router.delete(
+    "/{reference_id}",
+    status_code=204,
+    summary="Delete a reference",
+    description=(
+        "Remove a reference edge. Only the user who created the reference "
+        "can delete it. Deleting a reference does not affect either entry."
+    ),
+)
 @limiter.limit("60/minute")
 async def delete_reference(
     request: Request, reference_id: UUID,

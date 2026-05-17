@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from phiacta.formats import FORMAT_EXTENSIONS
 
@@ -40,11 +40,40 @@ class EntryCreate(BaseModel):
 class EntryUpdate(BaseModel):
     """Request body for PATCH /entries/{id}.
 
-    Accepts fields from any writable extension.  Only fields present
-    in the request body are routed to the owning provider.
+    Accepts fields from any writable extension. Only fields present in the
+    request body are routed to the owning provider. Unknown extras are
+    silently ignored for plugin forward-compatibility.
+
+    Two fields are explicitly rejected because they look updatable but are
+    not: ``content`` (use the edit-proposal flow) and ``content_format``
+    (immutable after create — it pins the git file extension). Failing
+    loud on these prevents silent data loss when an agent assumes PATCH
+    accepts the same fields as POST.
     """
 
     model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_known_immutable_fields(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        if "content" in data:
+            raise ValueError(
+                "Field 'content' cannot be updated via PATCH /v1/entries/{id}. "
+                "Entry content lives in the entry's git repository and is "
+                "changed through the edit-proposal workflow: "
+                "POST /v1/entries/{id}/edits with the new file contents. "
+                "This preserves history, attribution, and review.",
+            )
+        if "content_format" in data:
+            raise ValueError(
+                "Field 'content_format' is immutable after entry creation. "
+                "It pins the file extension of the content file in the "
+                "entry's git repository and cannot change without "
+                "rewriting history.",
+            )
+        return data
 
 
 class EntryListItem(BaseModel):
