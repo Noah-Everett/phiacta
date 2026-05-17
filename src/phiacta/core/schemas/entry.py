@@ -61,12 +61,16 @@ class EntryUpdate(BaseModel):
         if "content" in data:
             raise ValueError(
                 "Field 'content' cannot be updated via PATCH /v1/entries/{id}. "
-                "Entry content lives in the entry's git repository. "
-                "If you own the entry, write directly: "
-                "PUT /v1/entries/{id}/files/.phiacta/content.md "
-                "(MCP tool: put_entry_file). If you don't own the entry, "
-                "propose an edit: POST /v1/entries/{id}/edits "
-                "(MCP tool: create_edit_proposal) — the owner reviews and merges.",
+                "Entry content is the entry's git repository, which can hold "
+                "many files (e.g. a LaTeX project with main.tex, "
+                "references.bib, figures/, sections/), so content is not a "
+                "single string that fits on this endpoint. Write files "
+                "directly instead. If you own the entry: "
+                "PUT /v1/entries/{id}/files/{path} (MCP tool: put_entry_file) "
+                "— the main content file is at .phiacta/content.<ext> "
+                "matching the entry's content_format. If you don't own the "
+                "entry: POST /v1/entries/{id}/edits (MCP tool: "
+                "create_edit_proposal) — the owner reviews and merges.",
             )
         if "content_format" in data:
             raise ValueError(
