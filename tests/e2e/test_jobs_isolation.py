@@ -130,3 +130,36 @@ class TestJobsUserIsolation:
         )
         assert resp.status_code == 400
         assert "Invalid status" in resp.json()["detail"]
+
+    async def test_cancelled_status_is_filterable(
+        self,
+        client: httpx.AsyncClient,
+        e2e_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """``cancelled`` is a valid status filter and excluded from
+        ``status=failed`` listings (regression for PHI-287)."""
+        user = await register_user(client, username=f"cancel-{uuid4().hex[:8]}")
+        uid = user["user"]["id"]
+
+        cancelled_job = await insert_job(e2e_session_factory, uid, status="cancelled")
+        failed_job = await insert_job(e2e_session_factory, uid, status="failed")
+
+        # status=cancelled returns the cancelled job, not the failed one.
+        resp = await client.get(
+            "/v1/jobs?status=cancelled",
+            headers=auth_header(user["access_token"]),
+        )
+        assert resp.status_code == 200
+        job_ids = {j["id"] for j in resp.json()["items"]}
+        assert cancelled_job in job_ids
+        assert failed_job not in job_ids
+
+        # status=failed does NOT return cancelled jobs.
+        resp = await client.get(
+            "/v1/jobs?status=failed",
+            headers=auth_header(user["access_token"]),
+        )
+        assert resp.status_code == 200
+        job_ids = {j["id"] for j in resp.json()["items"]}
+        assert failed_job in job_ids
+        assert cancelled_job not in job_ids

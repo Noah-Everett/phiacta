@@ -84,7 +84,7 @@ async def submit_and_wait(
             job = await repo.get(job_id)
             if job is None:
                 raise RuntimeError(f"Job {job_id} disappeared from the database")
-            if job.status in ("completed", "failed"):
+            if job.status in ("completed", "failed", "cancelled"):
                 return job
 
     # Timed out — return whatever state we have

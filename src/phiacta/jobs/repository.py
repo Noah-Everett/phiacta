@@ -114,6 +114,26 @@ class JobRepository:
             )
         )
 
+    async def mark_cancelled(self, job_id: UUID, reason: str) -> None:
+        """Terminate a job without running it. Not a failure.
+
+        Used when a newer event makes a pending job redundant (e.g. a
+        compile job superseded by a later upload). The reason is stored
+        in ``result`` rather than ``last_error`` so cancelled jobs do
+        not show up in failure listings.
+        """
+        now = datetime.now(UTC)
+        await self._session.execute(
+            update(Job)
+            .where(Job.id == job_id)
+            .values(
+                status="cancelled",
+                result={"reason": reason},
+                completed_at=now,
+                updated_at=now,
+            )
+        )
+
     async def mark_failed(
         self, job_id: UUID, error: str, *, increment_attempts: bool = True,
     ) -> None:

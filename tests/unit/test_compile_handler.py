@@ -323,3 +323,35 @@ class TestOnIngestHook:
 
         await on_ingest(uuid4(), None, {}, db_session)
         assert await self._count_jobs(db_session) == 0
+
+    async def test_supersedes_pending_jobs_as_cancelled(self, db_session) -> None:
+        """A second upload cancels prior pending compile jobs.
+
+        Regression test for PHI-287: previously cancelled jobs were
+        marked ``failed`` with ``last_error="Superseded by newer upload"``,
+        which leaked into the user-facing PDF-compilation error banner —
+        even on markdown entries that never compile.
+        """
+        from sqlalchemy import select
+
+        from phiacta.extensions.compiled_content import on_ingest
+        from phiacta.jobs.models import Job
+
+        entry, _ = await self._create_entry(db_session)
+
+        # First upload — creates a pending job.
+        await on_ingest(entry.id, None, {}, db_session)
+        # Second upload — should supersede the first.
+        await on_ingest(entry.id, None, {}, db_session)
+
+        result = await db_session.execute(
+            select(Job).where(Job.entity_id == entry.id).order_by(Job.created_at)
+        )
+        jobs = list(result.scalars().all())
+        assert len(jobs) == 2
+        # First (older) job was superseded — cancelled, not failed.
+        assert jobs[0].status == "cancelled"
+        assert jobs[0].last_error is None
+        assert jobs[0].result == {"reason": "superseded_by_newer_upload"}
+        # Second job is the new pending compilation.
+        assert jobs[1].status == "pending"

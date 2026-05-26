@@ -20,7 +20,7 @@ from phiacta.jobs.repository import JobRepository
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
-_VALID_STATUSES = {"pending", "running", "completed", "failed"}
+_VALID_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
 _DEFAULT_STATUSES = ["pending", "running"]
 
 

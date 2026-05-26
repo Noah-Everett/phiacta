@@ -162,6 +162,29 @@ class TestJobMarkCompleted:
         assert refreshed.completed_at is not None
 
 
+# --- Cancel -----------------------------------------------------------------
+
+
+class TestJobMarkCancelled:
+    async def test_cancelled_job_stores_reason_not_error(
+        self, db_session: AsyncSession,
+    ) -> None:
+        user = await _seed_user(db_session)
+        repo = JobRepository(db_session)
+        job = await repo.create(job_type="test", submitted_by=user.id, input={})
+        await db_session.commit()
+
+        await repo.mark_cancelled(job.id, "superseded_by_newer_upload")
+        await db_session.commit()
+
+        refreshed = await _reload(db_session, job.id)
+        assert refreshed.status == "cancelled"
+        # Reason lives in result, NOT last_error — cancellation is not a failure.
+        assert refreshed.last_error is None
+        assert refreshed.result == {"reason": "superseded_by_newer_upload"}
+        assert refreshed.completed_at is not None
+
+
 # --- Fail -------------------------------------------------------------------
 
 
