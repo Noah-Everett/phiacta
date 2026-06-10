@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     forgejo_admin_password: str = ""
     forgejo_org: str = "phiacta"
     forgejo_webhook_secret: str = ""
+    # Optional Forgejo API token. When set (directly or via a file written by
+    # the Forgejo bootstrap), the git adapter authenticates with the token
+    # instead of BasicAuth — avoiding Forgejo's per-request password KDF
+    # (~180ms). Falls back to BasicAuth when neither is available.
+    forgejo_admin_token: str = ""
+    forgejo_admin_token_file: str = ""
     webhook_callback_url: str = "http://backend:8000/webhooks/forgejo"
 
     # Rate limiting

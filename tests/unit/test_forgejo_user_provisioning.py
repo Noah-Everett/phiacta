@@ -38,6 +38,8 @@ def _make_service() -> ForgejoGitService:
         settings.forgejo_admin_user = "phiacta-admin"
         settings.forgejo_admin_password = "secret"
         settings.forgejo_webhook_secret = "webhook-secret"
+        settings.forgejo_admin_token = ""
+        settings.forgejo_admin_token_file = ""
         mock_settings.return_value = settings
         return ForgejoGitService()
 

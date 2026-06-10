@@ -15,6 +15,7 @@ import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
@@ -478,9 +479,24 @@ class ForgejoGitService:
         self._org = settings.forgejo_org
         self._webhook_secret = settings.forgejo_webhook_secret
 
+        # Auth: prefer an API token (a fast lookup) over BasicAuth, which makes
+        # Forgejo run its password KDF on every request (~180ms). The token may
+        # be configured directly or written to a file by the Forgejo bootstrap
+        # *after* this process starts, so it's resolved lazily on first use.
+        # BasicAuth is the always-available fallback, so a missing token never
+        # breaks anything — it's just slower.
+        self._basic_auth = httpx.BasicAuth(
+            settings.forgejo_admin_user, settings.forgejo_admin_password,
+        )
+        self._configured_token = (settings.forgejo_admin_token or "").strip()
+        self._token_file = (settings.forgejo_admin_token_file or "").strip()
+        self._token: str | None = self._configured_token or None
+        # A token value Forgejo has rejected (e.g. rotated on a Forgejo
+        # restart); skipped until a different value appears.
+        self._failed_token: str | None = None
+
         self._client = httpx.AsyncClient(
             base_url=f"{self._base_url}/api/v1",
-            auth=httpx.BasicAuth(settings.forgejo_admin_user, settings.forgejo_admin_password),
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json",
@@ -492,6 +508,27 @@ class ForgejoGitService:
             ),
         )
         self._members_team_id: int | None = None
+
+    def _resolve_token(self) -> str | None:
+        """Return the Forgejo API token to use, or ``None`` to use BasicAuth.
+
+        Resolves from the configured value or, lazily, a token file written by
+        the Forgejo bootstrap. The file may not exist yet when the backend
+        starts, so it is re-read until found. A token Forgejo has rejected is
+        skipped until a different value appears.
+        """
+        if self._token:
+            return self._token
+        token = self._configured_token
+        if not token and self._token_file:
+            try:
+                token = Path(self._token_file).read_text(encoding="utf-8").strip()
+            except OSError:
+                token = ""
+        if not token or token == self._failed_token:
+            return None
+        self._token = token
+        return self._token
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -525,28 +562,57 @@ class ForgejoGitService:
         content: bytes | None = None,
         sudo_username: str | None = None,
     ) -> httpx.Response:
-        """Send a request and translate HTTP errors to domain exceptions."""
-        headers: dict[str, str] | None = None
-        if sudo_username:
-            headers = {"Sudo": sudo_username}
-        try:
-            resp = await self._client.request(
-                method,
-                path,
-                json=json,
-                params=params,
-                content=content,
-                headers=headers,
-            )
-        except httpx.ConnectError as exc:
-            raise ForgejoUnavailableError(
-                f"Cannot connect to Forgejo at {self._base_url}"
-            ) from exc
-        except httpx.TimeoutException as exc:
-            raise ForgejoUnavailableError(
-                f"Forgejo request timed out: {method} {path}"
-            ) from exc
+        """Send a request and translate HTTP errors to domain exceptions.
 
+        Authenticates with an API token when available (fast), else BasicAuth.
+        If Forgejo rejects the token (401 — e.g. it was rotated on a Forgejo
+        restart), the token is dropped and the request retried once with
+        BasicAuth so it still succeeds.
+        """
+        resp: httpx.Response | None = None
+        force_basic = False
+        for attempt in range(2):
+            token = None if force_basic else self._resolve_token()
+
+            req_headers: dict[str, str] = {}
+            if sudo_username:
+                req_headers["Sudo"] = sudo_username
+            if token:
+                req_headers["Authorization"] = f"token {token}"
+
+            kwargs: dict = {
+                "json": json,
+                "params": params,
+                "content": content,
+                "headers": req_headers or None,
+            }
+            if not token:
+                kwargs["auth"] = self._basic_auth
+
+            try:
+                resp = await self._client.request(method, path, **kwargs)
+            except httpx.ConnectError as exc:
+                raise ForgejoUnavailableError(
+                    f"Cannot connect to Forgejo at {self._base_url}"
+                ) from exc
+            except httpx.TimeoutException as exc:
+                raise ForgejoUnavailableError(
+                    f"Forgejo request timed out: {method} {path}"
+                ) from exc
+
+            # A token Forgejo rejects (rotated/revoked): forget it and retry
+            # once with BasicAuth. Remember it so later requests skip it.
+            if resp.status_code == 401 and token and attempt == 0:
+                logger.warning(
+                    "Forgejo rejected API token; falling back to BasicAuth"
+                )
+                self._failed_token = token
+                self._token = None
+                force_basic = True
+                continue
+            break
+
+        assert resp is not None  # loop always assigns resp or raises
         if resp.status_code == 404:
             raise RepoNotFoundError(f"Not found: {method} {path}")
         if resp.status_code in (429, 503):
@@ -1577,7 +1643,14 @@ class ForgejoGitService:
     async def health_check(self) -> bool:
         """Return ``True`` if Forgejo is reachable and responsive."""
         try:
-            resp = await self._client.get("/settings/api")
+            token = self._resolve_token()
+            if token:
+                resp = await self._client.get(
+                    "/settings/api",
+                    headers={"Authorization": f"token {token}"},
+                )
+            else:
+                resp = await self._client.get("/settings/api", auth=self._basic_auth)
             return resp.status_code == 200
         except (httpx.ConnectError, httpx.TimeoutException):
             return False
